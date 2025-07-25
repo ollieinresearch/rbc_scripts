@@ -6,6 +6,8 @@ written to the (optionally)specified file. Outputs plots of the Nusselt number,
 various profiles and info about the simulation to a text document.
 """
 
+#TODO: update this with the new analysis.py
+
 import h5py  # pyright: ignore
 import numpy as np
 import matplotlib

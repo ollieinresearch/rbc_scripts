@@ -15,7 +15,6 @@ Options:
     --basepath=<dir>  Path to parent folder for output [default: ./analysis]
 """
 
-#TODO Change the logging to use logger
 import h5py  # pyright: ignore
 import numpy as np
 from scipy.integrate import cumulative_trapezoid, simpson
@@ -195,21 +194,29 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             fig, axes = plt.subplots(ncols=2, figsize=(20 * 2, 5), layout="constrained")
 
         
+        inst_ke_ylab = r'$\frac{1}{\Gamma}\int_\Omega u^2+w^2 dxdz$'
+        time_avg_ylab = r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+w^2 dxdzd\hat{t}$'
+
+        if dim == 3:
+            inst_ke_ylab = r'$\frac{1}{\Gamma}\int_\Omega u^2+v^2+w^2 dxdydz$'
+            time_avg_ylab = r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+v^2+w^2 dxdydzd\hat{t}$'
+
         inst_K = np.ravel(avg_K)
         pre_axes[0].plot(full_time, inst_K, linewidth=1)
-        pre_axes[0].hlines(np.mean(inst_K), full_time[0], t_f)   
+        pre_axes[0].hlines(np.mean(inst_K), full_time[0], t_f, color='orange')   
         pre_axes[0].set_xlim([full_time[0], t_f])
         pre_axes[0].set_title('Instantaneous KE')
         pre_axes[0].set_xlabel(r'$t$')
-        pre_axes[0].set_ylabel(r'$\frac{1}{\Gamma}\int_\Omega u^2+v^2+w^2 dxdydz$')
+        pre_axes[0].set_ylabel(inst_ke_ylab)
 
         inst_avg_K = cumulative_trapezoid(inst_K, full_time) / (full_time[1:] - full_time[0])
         pre_axes[1].plot(full_time[1:], inst_avg_K, linewidth=1)
-        pre_axes[1].hlines(inst_avg_K[-1], full_time[0], t_f)   
+        pre_axes[1].hlines(inst_avg_K[-1], full_time[0], t_f, color='orange')   
         pre_axes[1].set_xlim([full_time[0], t_f])
         pre_axes[1].set_title('Instantaneous time average of KE')
         pre_axes[1].set_xlabel(r'$t$')
-        pre_axes[1].set_ylabel(r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+v^2+w^2 dxdydzd\hat{t}$')
+        pre_axes[1].set_ylabel(time_avg_ylab)
+
 
         # Indices for splitting into sections for convergence check. Splits the
         # time array into n_secs portions, with each portion covering the same
@@ -241,7 +248,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             ####################################################################
             # Plot full plots of instantaneous Nu
             pre_axes[ind+2].plot(full_time, inst_nu_full, linewidth=1)
-            pre_axes[ind+2].hlines(inst_ave_Nu_full, full_time[0], t_f)
+            pre_axes[ind+2].hlines(inst_ave_Nu_full, full_time[0], t_f, color='orange')
             pre_axes[ind+2].set_xlim([full_time[0], t_f])
             #pre_axes[ind+2].set_ylim([np.floor(np.min(inst_nu_full)), np.ceil(np.max(inst_nu_full))])
             pre_axes[ind+2].set_title(r'Instantaneous Nu($t$) via ' + lab)
@@ -304,26 +311,26 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             else:
                 axes_ind[0].plot(time, inst_nu, linewidth=1)
             # Line to show average instantaneous Nu
-            axes_ind[0].hlines(inst_ave_Nu, t_0, t_f)
+            axes_ind[0].hlines(inst_ave_Nu, t_0, t_f, color='orange')
             axes_ind[0].set_xlim([t_0, t_f])
             axes_ind[0].set_title(r"Instantaneous Nu$(t)$ calculated via " + lab)
-            axes_ind[0].set_xlabel("t")
+            axes_ind[0].set_xlabel(r"$t$")
             axes_ind[0].set_ylabel("Nu")
 
             # Plot the cumulative Nusselt number
             if len(cumu_nus) > max_points:
-                axes_ind[1].plot(time[1::skip], cumu_nus[1::skip], linewidth=1)
+                axes_ind[1].plot(time[1::skip], cumu_nus[::skip], linewidth=1)
             else:
                 axes_ind[1].plot(time[1:], cumu_nus, linewidth=1)
             # Line to show the final average
-            axes_ind[1].hlines(nus[ind, -1], t_0, t_f)
+            axes_ind[1].hlines(nus[ind, -1], t_0, t_f, color='orange')
             axes_ind[1].set_xlim([t_0, t_f])
             axes_ind[1].set_title(r"Cumulative Nu$(t)$ calculated via " + lab)
             axes_ind[1].set_xlabel(r"$t$")
             axes_ind[1].set_ylabel("Nu")
 
         # Save the cumu/inst Nu plot, and full time plot
-        fig.savefig(output / "Nu_zoomed.png", dpi=400)
+        fig.savefig(output / "Nu.png", dpi=400)
         pre_fig.savefig(pre_output / 'prelim_time_averages.png', dpi=400)
 
         # Save the info file

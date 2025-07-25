@@ -27,6 +27,7 @@ Options:
 
 """
 
+#TODO: Make iter params 
 from docopt import docopt
 import numpy as np
 from mpi4py import MPI # pyright: ignore
@@ -135,7 +136,7 @@ elif stepper == 'SBDF2':
     solver = problem.build_solver(de.timesteppers.SBDF2)
 else:
     solver = problem.build_solver(de.timesteppers.RK443)
-logger.info('Solver built')
+logger.info(f'Solver {stepper} built.')
 
 restart_path = basepath / "restart/restart.h5"
 if not restart_path.exists():
@@ -181,7 +182,7 @@ if snapshots:
 # states saved as checkpoints for restarting. Can adjust iter as necessary.
 state_file = basepath / 'state'
 state_file.mkdir(exist_ok=True)
-state = solver.evaluator.add_file_handler(state_file, iter=1000, max_writes=100, mode=fh_mode)
+state = solver.evaluator.add_file_handler(state_file, iter=1000, max_writes=25, mode=fh_mode)
 state.add_system(solver.state)
 
 # For field_analysis - data saved at 1 point in space INFREQUENTLY
@@ -189,7 +190,6 @@ field_analysis_file = basepath / 'field_analysis'
 field_analysis_file.mkdir(exist_ok=True)
 field_analysis = solver.evaluator.add_file_handler(field_analysis_file, iter=100, max_writes=1000, mode=fh_mode)
 
-#TODO: Do we have to save constant each time?
 field_analysis.add_task('R/P', name='Pr')
 field_analysis.add_task('1/(P*R)', name='Ra')
 field_analysis.add_task("interp(u, x=0, y=0, z=0)", name='u')
@@ -237,8 +237,6 @@ analysis.add_task("kappa_xyz*integ_z(integ_y(integ_x( (dx(u)**2) + dy(u)**2 + dz
 analysis.add_task("kappa_xyz*integ_z(integ_y(integ_x( (dx(T+1/2-z))**2 + (dy(T+1/2-z)**2) + (dz(T+1/2-z)**2) )))", name='avg_grad_T_sq')
 
 
-# horizontal fft of the checkpoint, dedalus-school.org
-
 # Main loop
 try:
     logger.info('Starting loop.')
@@ -253,7 +251,7 @@ try:
             solver,
             initial_dt=arg_dt,
             cadence=25,
-            safety=0.5,
+            safety=0.75,
             max_dt=0.1,
             max_change=1.5,
             threshold=0.2
@@ -288,6 +286,7 @@ try:
 
     else:
         # Not using CFL
+        dt = arg_dt
         while solver.proceed:
             solver.step(dt)
             if (solver.iteration-1) % message_num_iters == 0:
@@ -305,7 +304,7 @@ finally:
     total_time = end_time-start_time
     dof = nx * ny * nz * len(problem.variables)
 
-    logger.info('Iterations: %i' %solver.iteration)
+    logger.info('Total iterations: %i' total_iter)
     logger.info('Sim end time: %f' %solver.sim_time)
     logger.info('Run time: %.2f sec' %(total_time))
     logger.info('Run time: %f cpu-hr' %((total_time)/60/60*domain.dist.comm_cart.size))

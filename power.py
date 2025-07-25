@@ -9,6 +9,8 @@ Usage:
     power.py <files>...
 """
 
+#TODO: add the y limits as arguments
+
 import h5py as h5
 import numpy as np
 from pathlib import Path

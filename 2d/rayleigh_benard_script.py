@@ -61,7 +61,6 @@ message_num_iters = 500
 if Ra/Pr >= 1e10:
     message_num_iters *= 10
     state_iters *= 10
-    field_analysis_iters *= 2
     snapshots_iters *= 2
 
 
@@ -189,11 +188,8 @@ analysis.add_task('1/(P*R)', name='Ra')
 
 # For calculating Nu
 analysis.add_task("kappa_xz * integ_z(integ_x( (w*(T+1/2-z))))", name='avg_wT')
-
 analysis.add_task("kappa_xz * integ_z( integ_x( (dx(u)**2) + dz(u)**2 + dx(w)**2 + dz(w)**2 ))", name='avg_grad_u_sq')
-
 analysis.add_task("kappa_xz * integ_z( integ_x( (dx(T+1/2-z))**2 + (dz(T+1/2-z)**2) ))", name='avg_grad_T_sq')
-
 analysis.add_task("kappa_xz * integ_z( integ_x( (oy**2) ))", name='avg_oy_sq')
 
 
@@ -243,7 +239,7 @@ try:
             solver,
             initial_dt=dt,
             cadence=10,
-            safety=0.5,
+            safety=0.75,
             max_dt=0.1,
             max_change=1.1,
             threshold=0.1
