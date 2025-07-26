@@ -304,7 +304,7 @@ finally:
     total_time = end_time-start_time
     dof = nx * ny * nz * len(problem.variables)
 
-    logger.info('Total iterations: %i' total_iter)
+    logger.info(f'Total iterations: {total_iter}')
     logger.info('Sim end time: %f' %solver.sim_time)
     logger.info('Run time: %.2f sec' %(total_time))
     logger.info('Run time: %f cpu-hr' %((total_time)/60/60*domain.dist.comm_cart.size))
