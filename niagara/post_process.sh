@@ -15,7 +15,8 @@ module load python/3.10.2 mpi4py fftw-mpi hdf5-mpi
 env=$SLURM_TMPDIR/env
 
 #path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="$BBUFFER/scripts"
+PATH_TO_SCRIPTS="$BBUFFER/rbc_scripts"
+SCRIPTS_3D="$BBUFFER/rbc_scripts/niagara/3d"
 
 # Dedalus performance tip!
 export OMP_NUM_THREADS=1
@@ -66,6 +67,6 @@ mkdir res_check
 mkdir res_check_3d
 
 srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5
-srun python3 $PATH_TO_SCRIPTS/3d/power.py $PWD/state/*.h5
+srun python3 $SCRIPTS_3D/power.py $PWD/state/*.h5
 ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 40 -pix_fmt yuv420p res_check/movie.mp4
 ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 40 -pix_fmt yuv420p res_check_3d/movie.mp4
