@@ -4,7 +4,7 @@ non-dimensionalized using the buoyancy time. Boundary conditions are no slip in
 the z-direction and periodic in the x direction. Using the '--snapshots' 
 option, temperature and vorticity can be saved at regular intervals for 
 visualization. Various (many) other quantities are saved for analysis. This 
-script supports restarts, and integrates using a variable timestep.
+script supports restarts, and can integrate using a variable timestep (--cfl).
 
 Usage:
     rayleigh_benard_script2.py [options]
@@ -22,6 +22,7 @@ Options:
     --snapshots              Flag to activate the snapshots filehandler that saves the temperature for visualisations.
     --cfl                    Flag to activate CFL variable time-stepping.
 """
+
 from docopt import docopt
 import numpy as np
 from mpi4py import MPI # pyright: ignore
@@ -37,21 +38,25 @@ logger = logging.getLogger(__name__)
 
 args = docopt(__doc__)
 
-# Parameters
-Lx, Lz = (int(args['--Gamma']), 1) # fix non-dimensional height of the layer at 1
+# Fix non-dimensional height of the layer at 1
+Lx, Lz = (int(args['--Gamma']), 1) 
+# Rayleigh and Prandtl number
 Pr = 10**np.float64(args['--Pr_exp'])
 Ra = np.float64(args['--Ra'])
+# Resolution for the simulation
 nx, nz = (Lx*int(args['--res']), Lz*int(args['--res']))
+# Problem and solver params
 stepper = str(args['--stepper'])
 flow_bc = "no-slip"
-basepath = Path(str(args['--basepath']))
-arg_dt = np.float64(args['--dt']) #use constant dt
+arg_dt = np.float64(args['--dt'])
 stop_sim_time = np.float64(args['--sim_time'])
-snapshots = args['--snapshots']
 cfl = args['--cfl']
+# File parameters
+basepath = Path(str(args['--basepath']))
+snapshots = args['--snapshots']
 restart_index = int(args['--index'])
 
-
+# Iterations between saves
 state_iters = 2500
 analysis_iters = 50
 field_analysis_iters = 200
@@ -59,23 +64,37 @@ snapshots_iters = 200
 message_num_iters = 500
 
 if Ra/Pr >= 1e10:
+    # The timestep goes very low when Ra big and Pr low; saves should be 
+    # less frequent.
     message_num_iters *= 10
     state_iters *= 10
     snapshots_iters *= 2
-
-
 
 # Create bases and domain
 x_basis = de.Fourier('x', nx, interval=(0, Lx), dealias=3/2)
 z_basis = de.Chebyshev('z', nz, interval=(-Lz/2, Lz/2), dealias=3/2)
 domain = de.Domain([x_basis, z_basis], grid_dtype=np.float64)
 
-# Problem setup: 2D Boussinesq equations; non-dimensionalized by the buoyancy time
-# and written in terms of the vorticity.
+# Problem setup: 2D Boussinesq equations; non-dimensionalized by the buoyancy 
+# time and written in terms of the vorticity.
 problem = de.IVP(domain, variables=['p','T','u','w','Tz','oy'])
 
+# Boundary conditions
 problem.meta['p','T','u','w']['z']['dirichlet'] = True
+problem.add_bc("left(T) = 0")
+problem.add_bc("right(T) = 0")
 
+if flow_bc == "no-slip":
+    problem.add_bc("left(u) = 0")
+    problem.add_bc("right(u) = 0")
+
+if flow_bc == "stress-free":
+    problem.add_bc("left(oy) = 0")
+    problem.add_bc("right(oy) = 0")
+
+problem.add_bc("left(w) = 0")
+problem.add_bc("right(w) = 0", condition="(nx != 0)")
+problem.add_bc("right(p) = 0", condition="(nx == 0)")
 
 # Parameters
 problem.parameters['P'] = (Ra * Pr)**(-1/2)
@@ -92,21 +111,6 @@ problem.add_equation("dt(w) + R*dx(oy) + dz(p) - T         = oy*u")
 problem.add_equation("Tz - dz(T) = 0")
 problem.add_equation("oy + dx(w) - dz(u) = 0")
 
-# Boundary conditions
-problem.add_bc("left(T) = 0")
-problem.add_bc("right(T) = 0")
-
-if flow_bc == "no-slip":
-    problem.add_bc("left(u) = 0")
-    problem.add_bc("right(u) = 0")
-
-if flow_bc == "stress-free":
-    problem.add_bc("left(oy) = 0")
-    problem.add_bc("right(oy) = 0")
-
-problem.add_bc("left(w) = 0")
-problem.add_bc("right(w) = 0", condition="(nx != 0)")
-problem.add_bc("right(p) = 0", condition="(nx == 0)")
 
 # Build solver; timestepper is passed as a CLA
 solver=None
@@ -122,10 +126,13 @@ else:
     solver = problem.build_solver(de.timesteppers.RK443)
 logger.info(f'Solver {stepper} built')
 
+solver.stop_sim_time = stop_sim_time
+
+
 restart_path = basepath / "restart/restart.h5"
 if not restart_path.exists():
-    # start simulation from a static state; initial conditions are parallel friendly
-    # Initial conditions
+    # Start simulation from a static state; initial conditions are parallel
+    # friendly
     logger.info("Restart path not found.")
     z = domain.grid(1)
     T = solver.state['T']
@@ -152,15 +159,17 @@ else:
     # Restart
     write, last_dt = solver.load_state(restart_path, restart_index)
 
-    # Timestepping and output
+    # Timestepping and output - if the last sim was using a smaller timestep,
+    # it's a good idea to use that instead of the user specified.
     if cfl:
         dt = min(last_dt, arg_dt)
     else:
         dt = arg_dt
         
     fh_mode = 'append'
-# Integration parameters
-solver.stop_sim_time = stop_sim_time
+
+
+# File handling
 
 # For movie making magic; use command line argument --snapshots to activate
 if snapshots:
@@ -171,7 +180,8 @@ if snapshots:
     snapshots.add_task("T-(z-1/2)", name = 'temp')
     snapshots.add_task("oy", name='vorticity')
 
-# states saved as checkpoints for restarting. Can adjust iter as necessary.
+# States saved as checkpoints for restarting. Can adjust iter as necessary.
+# Infrequent saves are better when the simulation runs quickly (speed reasons).
 state_file = basepath / 'state'
 state_file.mkdir(exist_ok=True)
 state = solver.evaluator.add_file_handler(state_file, iter=state_iters, max_writes=1000, mode=fh_mode)
@@ -182,7 +192,6 @@ analysis = basepath / 'analysis'
 analysis.mkdir(exist_ok=True)
 analysis = solver.evaluator.add_file_handler(analysis, iter=analysis_iters, max_writes=1000, mode=fh_mode)
 
-# easiest way to save Ra and Pr; takes up minimal space
 analysis.add_task('R/P', name='Pr')
 analysis.add_task('1/(P*R)', name='Ra')
 
@@ -191,7 +200,6 @@ analysis.add_task("kappa_xz * integ_z(integ_x( (w*(T+1/2-z))))", name='avg_wT')
 analysis.add_task("kappa_xz * integ_z( integ_x( (dx(u)**2) + dz(u)**2 + dx(w)**2 + dz(w)**2 ))", name='avg_grad_u_sq')
 analysis.add_task("kappa_xz * integ_z( integ_x( (dx(T+1/2-z))**2 + (dz(T+1/2-z)**2) ))", name='avg_grad_T_sq')
 analysis.add_task("kappa_xz * integ_z( integ_x( (oy**2) ))", name='avg_oy_sq')
-
 
 # For calculating Re and plotting profiles
 analysis.add_task("kappa_xz * integ_z(integ_x( u**2 + w**2 ))", name='avg_K')
@@ -205,11 +213,10 @@ analysis.add_task("kappa_x*integ_x( T**2 )", name='avg_T_sq')
 field_analysis_file = basepath / 'field_analysis'
 field_analysis_file.mkdir(exist_ok=True)
 field_analysis = solver.evaluator.add_file_handler(field_analysis_file, iter=field_analysis_iters, max_writes=1000, mode=fh_mode)
-# easiest way to save Ra and Pr; takes up minimal space
+
 field_analysis.add_task('R/P', name='Pr')
 field_analysis.add_task('1/(P*R)', name='Ra')
 
-# State and other field quantities
 field_analysis.add_task("interp(u, x=0, z=0)", name='u')
 field_analysis.add_task("interp(w, x=0, z=0)", name='w')
 field_analysis.add_task("interp(T, x=0, z=0)", name='T')
@@ -233,7 +240,8 @@ try:
     start_time = time.time()
     message_num_iters = 500
     start_iter = solver.iteration
-    # variable timestepping
+
+    # Variable timestepping:
     if cfl:
         CFL = flow_tools.CFL(
             solver,
@@ -272,6 +280,7 @@ try:
                 dts.append(new_dt)
                 dt = new_dt
 
+    # Constant timesteps:
     else:
         while solver.proceed:
             solver.step(dt)
@@ -281,13 +290,16 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
+    # Total time and iterations
     end_time = time.time()
     end_iter = solver.iteration
-
     total_iter = end_iter-start_iter
     total_time = end_time-start_time
+
+    # Degrees of freedom for speed calculation
     dof = nx * nz * len(problem.variables)
 
+    # Write info to job_sim.out file
     logger.info('Iterations: %i' %solver.iteration)
     logger.info('Sim end time: %f' %solver.sim_time)
     logger.info('Run time: %.2f sec' %(total_time))

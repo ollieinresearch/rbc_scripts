@@ -9,11 +9,12 @@ how often snapshots get saved. # TODO: add this as a command line option.
 
 
 Usage:
-    plot_slices.py <files>... [--output=<dir>] [--max_vort=<max_vort>]
+    plot_slices.py <files>... [--output=<dir>] [--max_vort=<max_vort>] [--plot_freq=<plot_freq>]
 
 Options:
-    --output=<dir>         Output directory [default: ./frames]
-    --max_vort=<max_vort>  Maximum achieved vorticity [default: 10000]
+    --output=<dir>           Output directory [default: ./frames]
+    --max_vort=<max_vort>    Maximum achieved vorticity [default: 10000]
+    --plot_freq=<plot_freq>  How often to plot a snapshot [default: 1]
 
 """
 
@@ -32,7 +33,9 @@ from dedalus.extras import plot_tools
 
 
 def sym(xmesh, ymesh, data):
+    """Function to transform scalar values for colorbar"""
     """
+
     asinh = AsinhTransform(linear_width=1.5)
     og_shape = data.shape
     new_dset = data.ravel()
@@ -41,7 +44,7 @@ def sym(xmesh, ymesh, data):
     """
     return xmesh, ymesh, data
 
-def main(filename, start, count, output, max_vort):
+def main(filename, start, count, output, max_vort, plot_freq):
     """Save plot of specified tasks for given range of analysis writes."""
     # fields to plot. Change as needed.
     tasks = ['temp', 'vorticity']
@@ -71,7 +74,7 @@ def main(filename, start, count, output, max_vort):
         for index in range(start, start+count):
             # dummy check; if you have too many writes to plot, change the modulus
             # to only plot certain writes; happens at low Pr
-            if file['scales/write_number'][index]%1==0:
+            if file['scales/write_number'][index]%plot_freq==0:
                 for n, task in enumerate(tasks):
                     # Build subfigure axes
                     i, j = divmod(n, ncols)
@@ -106,10 +109,11 @@ if __name__ == "__main__":
 
     output_path = Path(args['--output']).absolute()
     max_vort = np.float64(args['--max_vort'])
+    plot_freq = int(args['--plot_freq'])
 
     # Create output directory if needed
     with Sync() as sync:
         if sync.comm.rank == 0:
             if not output_path.exists():
                 output_path.mkdir()
-    post.visit_writes(args['<files>'], main, output=output_path, max_vort=max_vort)
+    post.visit_writes(args['<files>'], main, output=output_path, max_vort=max_vort, plot_freq=plot_freq)
