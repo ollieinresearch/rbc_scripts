@@ -178,6 +178,8 @@ if snapshots:
 
     snapshots = solver.evaluator.add_file_handler(snapshots_file, iter=200, max_writes=50, mode=fh_mode)
     snapshots.add_task("T-(z-1/2)", name = 'temp')
+    snapshots.add_task("w", name = 'w')
+    
 
 # states saved as checkpoints for restarting. Can adjust iter as necessary.
 state_file = basepath / 'state'

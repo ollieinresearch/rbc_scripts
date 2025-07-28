@@ -1,0 +1,17 @@
+coverage==7.6.4+computecanada
+dedalus==2.2207.3+computecanada
+docopt==0.6.2+computecanada
+iniconfig==2.1.0+computecanada
+pluggy==1.6.0+computecanada
+pooch==1.8.2+computecanada
+py==1.11.0+computecanada
+py_cpuinfo==9.0.0+computecanada
+pytest==8.4.1+computecanada
+pytest_benchmark==4.0.0+computecanada
+pytest_cov==6.2.1+computecanada
+pytest_parallel==0.1.1+computecanada
+pyvista==0.44.2+computecanada
+scooby==0.10.0+computecanada
+tblib==3.0.0+computecanada
+tomli==2.2.1+computecanada
+vtk==9.2.5+computecanada

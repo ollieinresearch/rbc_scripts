@@ -1,0 +1,5 @@
+imageio==2.37.0+computecanada
+imageio-ffmpeg==0.4.2+computecanada
+pooch==1.8.2+computecanada
+pyvista==0.44.2+computecanada
+scooby==0.10.0+computecanada

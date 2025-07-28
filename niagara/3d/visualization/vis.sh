@@ -14,7 +14,7 @@ module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.10.6 scipy-stac
 
 # For our virtual environment
 env=$SLURM_TMPDIR/env
-PATH_TO_SCRIPTS="$BBUFFER/scripts/3d/visualization"
+PATH_TO_SCRIPTS="$BBUFFER/rbc_scripts/3d/visualization"
 CACHE_DIR=$BBUFFER/.cache
 
 # Dedalus performance tip!
@@ -28,7 +28,7 @@ virtualenv --no-download $env
 source $env/bin/activate
 
 pip install --no-index --upgrade --cache-dir=$CACHE_DIR pip
-pip install --no-index --cache-dir=$CACHE_DIR -r $PATH_TO_SCRIPTS/requirements_vis.txt
+pip install --no-index --cache-dir=$CACHE_DIR -r $PATH_TO_SCRIPTS/requirements_vis2.txt
 
 
 # merge snapshot processes into set files - don't need one big file here since plotting slices
