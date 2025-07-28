@@ -1,9 +1,6 @@
 '''
-Script to perform preliminary analysis tasks on data obtained from running a convection
-simulation. Writes total simulation time and Rayleigh and Prandtl numbers to a text file,
-and plots the instantaneous Nusselt number and the kinetic energy to help determine when
-time averaging should begin. Both a plot over the entire integration time and a zoomed
-plot are made.
+Finds the maximum vorticity in a simulation to correctly set the movie colour 
+scale.
 
 Usage:
     prelim.py <files>...
@@ -14,12 +11,15 @@ import numpy as np
 from pathlib import Path
 
 def main(filenames):
-    n = len(filenames)
+    
     if n == 0:
         return
     output = Path(filenames[0]).parent / "max_vort.txt"
 
-    maxes = np.ones(n)
+    # To store maximums
+    maxes = np.ones(len(filenames))
+
+    # Check the maximum of each file; the max of this will be used for the limit
     for i, fp in enumerate(filenames):
         with h5py.File(fp, mode='r') as file:
             
@@ -28,9 +28,10 @@ def main(filenames):
 
     mega_max = np.max(maxes)
 
-    info = open(output, 'w')
-    info.write(f"{mega_max}")
-    info.close()
+    # Write the max to a text file
+    txt = open(output, 'w')
+    txt.write(f"{mega_max}")
+    txt.close()
 
 
 
