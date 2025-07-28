@@ -81,6 +81,24 @@ problem = de.IVP(domain, variables=['p','T','u','w','Tz','oy'])
 
 # Boundary conditions
 problem.meta['p','T','u','w']['z']['dirichlet'] = True
+
+# Parameters
+problem.parameters['P'] = (Ra * Pr)**(-1/2)
+problem.parameters['R'] = (Ra / Pr)**(-1/2)
+problem.parameters['F'] = F = 1
+problem.parameters['kappa_xz'] = 1/(Lx*Lz)
+problem.parameters['kappa_x'] = 1/Lx
+
+
+# Equations describing the PDE, and first order reductions
+problem.add_equation("dx(u) + dz(w) = 0")
+problem.add_equation("dt(T) - P*(d(T,x=2) + dz(Tz)) - F*w  = -(u*dx(T) + w*Tz)")
+problem.add_equation("dt(u) - R*dz(oy) + dx(p)             = -oy*w")
+problem.add_equation("dt(w) + R*dx(oy) + dz(p) - T         = oy*u")
+problem.add_equation("Tz - dz(T) = 0")
+problem.add_equation("oy + dx(w) - dz(u) = 0")
+
+
 problem.add_bc("left(T) = 0")
 problem.add_bc("right(T) = 0")
 
@@ -95,21 +113,6 @@ if flow_bc == "stress-free":
 problem.add_bc("left(w) = 0")
 problem.add_bc("right(w) = 0", condition="(nx != 0)")
 problem.add_bc("right(p) = 0", condition="(nx == 0)")
-
-# Parameters
-problem.parameters['P'] = (Ra * Pr)**(-1/2)
-problem.parameters['R'] = (Ra / Pr)**(-1/2)
-problem.parameters['F'] = F = 1
-problem.parameters['kappa_xz'] = 1/(Lx*Lz)
-problem.parameters['kappa_x'] = 1/Lx
-
-# Equations describing the PDE, and first order reductions
-problem.add_equation("dx(u) + dz(w) = 0")
-problem.add_equation("dt(T) - P*(d(T,x=2) + dz(Tz)) - F*w  = -(u*dx(T) + w*Tz)")
-problem.add_equation("dt(u) - R*dz(oy) + dx(p)             = -oy*w")
-problem.add_equation("dt(w) + R*dx(oy) + dz(p) - T         = oy*u")
-problem.add_equation("Tz - dz(T) = 0")
-problem.add_equation("oy + dx(w) - dz(u) = 0")
 
 
 # Build solver; timestepper is passed as a CLA
