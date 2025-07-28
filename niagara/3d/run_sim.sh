@@ -13,7 +13,7 @@
 
 # Path to all python scripts for simulations; change as needed
 PATH_TO_SCRIPTS="$BBUFFER/rbc_scripts"
-SCRIPTS_3D="$BBUFFER/rbc_scripts"
+SCRIPTS_3D="$BBUFFER/rbc_scripts/3d"
 CACHE_DIR=$BBUFFER/.cache
 
 ################################################################################

@@ -358,6 +358,9 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             ]
             dsets = [np.array(f["tasks"][avg][start_ind:, 0, 0, :]) for avg in avgs]
 
+            # Kinetic energy is just the sum of the squared avg velocities
+            dsets = np.append(dsets, dsets[1]+dsets[2]+dsets[3])
+
             horz_tex = r"$\sqrt{\overline{u^2+v^2}}$"
             kin_tex = r"$\overline{u^2+v^2+w^2}$"
 
@@ -368,12 +371,14 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 "avg_u_sq",
             ]
             dsets = [np.array(f["tasks"][avg][start_ind:, 0, :]) for avg in avgs]
-            
+
+            # Kinetic energy is just the sum of the squared avg velocities
+            dsets = np.append(dsets, dsets[1]+dsets[2])
+
+
             horz_tex = r"$\sqrt{\overline{u^2}}$"
             kin_tex = r"$\overline{u^2+w^2}$"
 
-        # Kinetic energy is just the sum of the squared avg velocities
-        dset = np.append(dset, np.sum(dsets[1:]))
 
         cumu_dsets = [simpson(dset, time, axis=0) / total_time for dset in dsets]
         profs = [cumu_dsets[0], cumu_dsets[1], np.sum(cumu_dsets[2:], axis=0), np.sum(dsets[1:], axis=0)]
