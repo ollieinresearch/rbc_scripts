@@ -27,6 +27,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
     pv.global_theme.allow_empty_mesh = True
     with h5py.File(h5_file, 'r') as f:
         T = f['tasks']['temp']
+        w = f['tasks']['w']
         nt, nx, ny, nz = T.shape
         
         domain_sizes = (2.0, 2.0, 1.0)
@@ -38,7 +39,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         xmid = domain_sizes[0] / 2.0
         ymid = domain_sizes[1] / 2.0
         zmid = domain_sizes[2] / 2.0
-        # Rotating view radius in XY plane
+        # Rotating view radius
         rot_radius = 4.5
 
         # Ensure output directory exists
@@ -47,7 +48,10 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         # Loop through each time step
         for t in range(start, start+count):
             temp = T[t]  # (nx, ny, nz)
-            flat = temp.flatten(order='F')
+            vert_velocity = w[t]
+
+            flat_temp = temp.flatten(order='F')
+            flat_velocity = vert_velocity.flatten(order='F')
 
             # Create uniform grid
             grid = pv.ImageData(
@@ -56,13 +60,17 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
                 origin=origin
             )
 
-            grid.point_data['temp'] = flat
+            grid.point_data['temp'] = flat_temp
+            grid.point_data['w'] = flat_velocity
             
             opacity = np.linspace(0, 1, 255)
-            opacity_tf = 1.0-np.exp(-2000000.0*(opacity-0.5)**12)
+            opacity_tf = 1.0-np.exp(-100000000.0*(opacity-0.5)**12)
 
-            inv_opacity = np.linspace(0, 1, 255)
-            inv_opacity_tf = np.exp(-100000.0*(opacity-0.5)**4)    
+            velocity_opacity = np.linspace(0, 1, 255)
+            velocity_opacity_tf = 1.0-np.exp(-10000000.0*(opacity-0.5)**6)
+
+            #inv_opacity = np.linspace(0, 1, 255)
+            #inv_opacity_tf = np.exp(-100000.0*(opacity-0.5)**4)    
                     
 
             #grid.point_data['opacity'] = opacity
@@ -101,7 +109,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Bottom-left: diagonal view
             plotter.subplot(1, 0)
             actor3 = plotter.add_volume(
-                grid, scalars='temp', opacity=inv_opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                grid, scalars='w', cmap='jet', opacity=opacity_tf, clim=[-0.6,0.6],shade=False
             )
             actor3.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
@@ -110,7 +118,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Bottom-right: rotating diagonal view
             plotter.subplot(1, 1)
             actor4 = plotter.add_volume(
-                grid, scalars='temp', opacity=inv_opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                grid, scalars='w', cmap='jet', opacity=opacity_tf, clim=[-0.6,0.6],shade=True
             )
             actor4.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
