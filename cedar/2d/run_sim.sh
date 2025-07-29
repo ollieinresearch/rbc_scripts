@@ -6,6 +6,7 @@
 #SBATCH --ntasks=48
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
+#SBATCH --job-name=r1e7_pr1e-4
 
 
 # Load the required modules
