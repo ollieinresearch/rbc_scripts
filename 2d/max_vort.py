@@ -12,8 +12,6 @@ from pathlib import Path
 
 def main(filenames):
     
-    if n == 0:
-        return
     output = Path(filenames[0]).parent / "max_vort.txt"
 
     # To store maximums

@@ -16,8 +16,8 @@ module load fftw-mpi mpi4py hdf5-mpi python ffmpeg
 env=$SLURM_TMPDIR/env
 
 #path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="/project/def-goluskin/ollie/scripts/2d"
-PATH_TO_GEN_SCRIPTS="/project/def-goluskin/ollie/scripts"
+PATH_TO_SCRIPTS="/home/ollie/scratch/rbc_scripts/2d"
+PATH_TO_GEN_SCRIPTS="/home/ollie/scratch/rbc_scripts"
 
 # Create the virtual environment on each node: 
 srun --ntasks $SLURM_NNODES --tasks-per-node=1 bash << EOF
