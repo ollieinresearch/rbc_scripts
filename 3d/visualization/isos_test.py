@@ -29,16 +29,22 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         T = f['tasks']['temp']
         w = f['tasks']['w']
         nt, nx, ny, nz = T.shape
-        
+        _, nwx, nwy, nwz = w.shape
+
         domain_sizes = (2.0, 2.0, 1.0)
         dx = domain_sizes[0] / (nx - 1)
         dy = domain_sizes[1] / (ny - 1)
         dz = domain_sizes[2] / (nz - 1)
+
+        wdx = domain_sizes[0] / (nwx - 1)
+        wdy = domain_sizes[1] / (nwy - 1)
+        wdz = domain_sizes[2] / (nwz - 1)
         origin = (0.0, 0.0, 0.0)
         # Center of domain
         xmid = domain_sizes[0] / 2.0
         ymid = domain_sizes[1] / 2.0
         zmid = domain_sizes[2] / 2.0
+
         # Rotating view radius
         rot_radius = 4.5
 
@@ -54,20 +60,26 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             flat_velocity = vert_velocity.flatten(order='F')
 
             # Create uniform grid
-            grid = pv.ImageData(
+            tgrid = pv.ImageData(
                 dimensions=(nx, ny, nz),
                 spacing=(dx, dy, dz),
                 origin=origin
             )
 
-            grid.point_data['temp'] = flat_temp
-            grid.point_data['w'] = flat_velocity
-            
-            opacity = np.linspace(0, 1, 255)
-            opacity_tf = 1.0-np.exp(-100000000.0*(opacity-0.5)**12)
+            wgrid = pv.ImageData(
+                dimensions=(nwx, nwy, nwz),
+                spacing=(wdx, wdy, wdz),
+                origin=origin
+            )
 
-            velocity_opacity = np.linspace(0, 1, 255)
-            velocity_opacity_tf = 1.0-np.exp(-10000000.0*(opacity-0.5)**6)
+            tgrid.point_data['temp'] = flat_temp
+            wgrid.point_data['w'] = flat_velocity
+            
+            t_opacity = np.linspace(0, 1, 255)
+            t_opacity_tf = 1.0-np.exp(-100000000.0*(t_opacity-0.5)**12)
+
+            w_opacity = np.linspace(-1/2, 1/2, 255)
+            w_opacity_tf = 1.0-np.exp(-10000.0*(w_opacity)**6)
 
             #inv_opacity = np.linspace(0, 1, 255)
             #inv_opacity_tf = np.exp(-100000.0*(opacity-0.5)**4)    
@@ -86,7 +98,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Top-left: diagonal view
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
-                grid, scalars='temp', opacity=opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
@@ -98,7 +110,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             cam_y = ymid + rot_radius * np.sin(angle)
             plotter.subplot(0, 1)
             actor2 = plotter.add_volume(
-                grid, scalars='temp', opacity=opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
             )
             actor2.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
@@ -109,7 +121,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Bottom-left: diagonal view
             plotter.subplot(1, 0)
             actor3 = plotter.add_volume(
-                grid, scalars='w', cmap='jet', opacity=opacity_tf, clim=[-0.6,0.6],shade=False
+                wgrid, scalars='w', cmap='jet', opacity=w_opacity_tf, clim=[-0.6,0.6],shade=False
             )
             actor3.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
@@ -118,7 +130,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Bottom-right: rotating diagonal view
             plotter.subplot(1, 1)
             actor4 = plotter.add_volume(
-                grid, scalars='w', cmap='jet', opacity=opacity_tf, clim=[-0.6,0.6],shade=True
+                wgrid, scalars='w', cmap='jet', opacity=w_opacity_tf, clim=[-0.6,0.6],shade=False
             )
             actor4.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]

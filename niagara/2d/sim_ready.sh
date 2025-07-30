@@ -1,2 +1,2 @@
-cp -f /home/ollie/scratch/scripts/2d/*.sh .
-cp -f /home/ollie/scratch/scripts/*.sh .
+cp -f /bb/g/goluskin/ollie/rbc_scripts/niagara/2d/*.sh .
+cp -f /bb/g/goluskin/ollie/rbc_scripts/niagara/*.sh .
