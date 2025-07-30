@@ -40,9 +40,10 @@ srun python3 -m dedalus merge_procs snapshots --cleanup
 srun python3 $SCRIPTS_2D/max_vort.py snapshots/*.h5
 
 mv="$(cat snapshots/max_vort.txt)"
+mkdir frames
 
-srun python3 $PATH_TO_SCRIPTS/plot_slices.py snapshots/*.h5 --output=frames --max_vort=$mv
+srun python3 $SCRIPTS_2D/plot_slices.py snapshots/*.h5 --output=frames --max_vort=$mv
 
 # Piece frames together!
 rm frames/movie.mp4
-ffmpeg -r 20 -i frames/write_%06d.png -threads 48 -pix_fmt yuv420p frames/movie.mp4
+ffmpeg -y -r 20 -pattern_type glob -i 'frames/*.png' -threads 40 -pix_fmt yuv420p frames/movie.mp4
