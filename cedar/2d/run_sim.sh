@@ -9,6 +9,29 @@
 #SBATCH --job-name=r1e7_pr1e-4
 
 
+################################################################################
+# User specified parameters
+
+# Rayleigh number
+RA=1e7
+# Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0, and Pr=0.1 -> PR_EXP=-1)
+PR_EXP=-4
+# Vertical resolution
+RES=288
+# Timestep- if using fixed timestep this matters. Otherwise just leave
+# sufficiently small that the simulation won't blow up in 25 iterations
+DT=0.000003
+# Dimensionless time to run the simulation for
+SIM_TIME=55
+# Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
+STEPPER=RK443
+# Aspect ratio
+GAM=2
+# Use an initial condition from a previous run? 1=yes, 0=no
+IC=1
+################################################################################
+
+
 # Load the required modules
 module purge
 module load StdEnv/2020
@@ -16,8 +39,8 @@ module load python/3.10.2 mpi4py fftw-mpi hdf5-mpi
 
 # For our virtual environment
 env=$SLURM_TMPDIR/env
-PATH_TO_SCRIPTS="/home/ollie/scratch/scripts/2d"
-PATH_TO_GEN_SCRIPTS="/home/ollie/scratch/scripts"
+PATH_TO_SCRIPTS="/home/ollie/scratch/rbc_scripts"
+SCRIPTS_2D="$PATH_TO_SCRIPTS/2d"
 
 # Create the virtual environment on each node: 
 srun --ntasks $SLURM_NNODES --tasks-per-node=1 bash << EOF
@@ -25,7 +48,7 @@ virtualenv --no-download $env
 source $env/bin/activate
 
 pip install --no-index --upgrade pip
-pip install --no-index -r $PATH_TO_GEN_SCRIPTS/requirements.txt
+pip install --no-index -r $PATH_TO_SCRIPTS/requirements.txt
 EOF
 
 # Dedalus performance tip!
@@ -40,31 +63,11 @@ source $env/bin/activate;
 # Merge files for analysis.
 # Run analysis script to produce info and plots.
 
-################################################################################
-# User specified parameters
 
-# Rayleigh number
-RA=1e7
-# Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0, and Pr=0.1 -> PR_EXP=-1)
-PR_EXP=-4
-# Vertical resolution
-RES=200
-# Timestep- if using fixed timestep this matters. Otherwise just leave
-# sufficiently small that the simulation won't blow up in 25 iterations
-DT=0.0002
-# Dimensionless time to run the simulation for
-SIM_TIME=200
-# Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
-STEPPER=RK222
-# Aspect ratio
-GAM=2
-# Use an initial condition from a previous run? 1=yes, 0=no
-IC=1
-################################################################################
 
 # specify desired time for initial condition
 if [ $IC -eq 1 ]; then
-  IC_ARRAY=($(python3 $PATH_TO_GEN_SCRIPTS/initial_condition.py 0 --file=$PWD/restart/restart.h5))
+  IC_ARRAY=($(python3 $PATH_TO_SCRIPTS/initial_condition.py 0 --file=$PWD/restart/restart.h5))
   TOTAL_TIME=$(echo "$SIM_TIME+${IC_ARRAY[1]}" | bc)
   IND=${IC_ARRAY[0]}
 
@@ -76,7 +79,7 @@ else
   IND=-1
 fi
 
-srun python3 $PATH_TO_SCRIPTS/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --stepper=$STEPPER --Gamma=$GAM --index=$IND --basepath=$PWD --cfl
+srun python3 $SCRIPTS_2D/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --stepper=$STEPPER --Gamma=$GAM --index=$IND --basepath=$PWD --cfl --snapshots
 
 # Post processing
 if [ -f "analysis/analysis.h5" ]; then
@@ -115,7 +118,7 @@ rm -rf restart/restart.h5
 
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_GEN_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
+srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
 
-srun python3 $PATH_TO_GEN_SCRIPTS/power.py $PWD/state/*.h5
+srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5
 ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 48 -pix_fmt yuv420p res_check/movie.mp4
