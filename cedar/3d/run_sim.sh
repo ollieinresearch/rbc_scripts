@@ -90,7 +90,7 @@ else
   IND=-1
 fi
 
-srun python3 $PATH_TO_SCRIPTS/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
+srun python3 $PATH_TO_SCRIPTS/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --index=$IND --sim_time=$TOTAL_TIME --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
 
 # Post processing
 if [ -f "field_analysis/field_analysis.h5" ]; then
