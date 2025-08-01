@@ -1,45 +1,16 @@
 #!/bin/bash
 
 #SBATCH --output=job_sim.out
-#SBATCH --time=11:59:00
+#SBATCH --time=02:59:00
 #SBATCH --nodes=6
 #SBATCH --ntasks-per-node=96
 #SBATCH --mem=0
-#SBATCH --job-name=r1e7_pr3e-2
+#SBATCH --job-name=r1e7_pr1e-3
+
 #SBATCH --account=def-goluskin
+
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=ollietheengineer@uvic.ca
-
-
-################################################################################
-# User specified parameters
-
-# Rayleigh number
-RA=1e7
-# Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0)
-PR_EXP=0
-# Vertical resolution
-RES=96
-# Timestep- if using fixed timestep this matters. Otherwise just leave
-# sufficiently small that the simulation won't blow up in 25 iterations
-DT=0.0001
-# Dimensionless time to run the simulation for
-SIM_TIME=2000
-# Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
-STEPPER=RK222
-# Aspect ratio in x and y resp.
-LX=2
-LY=2
-# Provide the size of the square 2D process mesh; note that if your resolution is given by R,
-# you have a grid of size Lx*R x Ly*R x R, and if your mesh is of size [n,m], then on each core you compute
-# (Lx*R/n)x(Ly*R/m) pencils of length R.
-MESHX=24
-MESHY=24
-
-# Use initial condition? (1=yes, 0=no)
-IC=1
-################################################################################
-
 
 # Load the required modules
 module purge
@@ -75,7 +46,34 @@ source $env/bin/activate;
 # Merge files for analysis.
 # Run analysis script to produce info and plots.
 
+################################################################################
+# User specified parameters
 
+# Rayleigh number
+RA=1e7
+# Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0)
+PR_EXP=-3
+# Vertical resolution
+RES=288
+# Timestep- if using fixed timestep this matters. Otherwise just leave
+# sufficiently small that the simulation won't blow up in 25 iterations
+DT=0.00001
+# Dimensionless time to run the simulation for
+SIM_TIME=10
+# Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
+STEPPER=RK443
+# Aspect ratio in x and y resp.
+LX=2
+LY=2
+# Provide the size of the square 2D process mesh; note that if your resolution is given by R,
+# you have a grid of size Lx*R x Ly*R x R, and if your mesh is of size [n,m], then on each core you compute
+# (Lx*R/n)x(Ly*R/m) pencils of length R.
+MESHX=24
+MESHY=24
+
+# Use initial condition? (1=yes, 0=no)
+IC=1
+################################################################################
 
 
 # Specify desired time for initial condition - 0 implies most recent
@@ -91,7 +89,7 @@ else
   IND=-1
 fi
 
-srun python3 $SCRIPTS_3D/rayleigh_benard_script3d.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
+srun python3 $SCRIPTS_3D/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --index=$IND --sim_time=$TOTAL_TIME --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
 
 # Post processing
 if [ -f "field_analysis/field_analysis.h5" ]; then
@@ -130,5 +128,5 @@ mkdir res_check_3d
 
 srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5
 srun python3 $SCRIPTS_3D/power.py $PWD/state/*.h5
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 40 -pix_fmt yuv420p res_check/movie.mp4
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 40 -pix_fmt yuv420p res_check_3d/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 96 -pix_fmt yuv420p res_check_3d/movie.mp4
