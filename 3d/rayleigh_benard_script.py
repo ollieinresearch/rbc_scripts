@@ -40,6 +40,8 @@ from dedalus.extras import flow_tools
 import logging
 logger = logging.getLogger(__name__)
 
+from dedalus.tools.config import config
+config['logging']['stdout_level'] = 'debug'
 
 args = docopt(__doc__)
 
