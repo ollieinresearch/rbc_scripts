@@ -46,4 +46,4 @@ srun python3 $PATH_TO_SCRIPTS/plot_slices.py snapshots/*.h5 --output=frames --ma
 
 # Piece frames together!
 rm frames/movie.mp4
-ffmpeg -r 20 -i frames/write_%06d.png -threads 48 -pix_fmt yuv420p frames/movie.mp4
+ffmpeg -y -r 20 -pattern_type glob -i 'frames/*.png' -threads 48 -pix_fmt yuv420p frames/movie.mp4

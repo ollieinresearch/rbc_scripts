@@ -61,5 +61,10 @@ ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
 srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
 
+mkdir res_check
+mkdir res_check_3d
+
 srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5
+srun python3 $PATH_TO_SCRIPTS/3d/power.py $PWD/state/*.h5
 ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 48 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 48 -pix_fmt yuv420p res_check_3d/movie.mp4

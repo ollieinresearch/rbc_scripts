@@ -61,8 +61,8 @@ export NUMEXPR_MAX_THREADS=1
 env=$SLURM_TMPDIR/env
 
 # path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="/home/ollie/scratch/rbc_scripts/3d"
-PATH_TO_GEN_SCRIPTS="/home/ollie/scratch/rbc_scripts"
+SCRIPTS_3D="/home/ollie/scratch/rbc_scripts/3d"
+PATH_TO_SCRIPTS="/home/ollie/scratch/rbc_scripts"
 
 # Create the virtual environment on each node: 
 srun --ntasks $SLURM_NNODES --tasks-per-node=1 bash << EOF
@@ -70,7 +70,7 @@ virtualenv --no-download $env
 source $env/bin/activate
 
 pip install --no-index --upgrade pip
-pip install --no-index -r $PATH_TO_GEN_SCRIPTS/requirements.txt
+pip install --no-index -r $PATH_TO_SCRIPTS/requirements.txt
 EOF
 
 
@@ -90,7 +90,7 @@ else
   IND=-1
 fi
 
-srun python3 $PATH_TO_SCRIPTS/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
+srun python3 $SCRIPTS_3D/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --index=$IND --sim_time=$TOTAL_TIME --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
 
 # Post processing
 if [ -f "field_analysis/field_analysis.h5" ]; then
@@ -122,7 +122,7 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_GEN_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
+srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
 
 mkdir res_check
 mkdir res_check_3d

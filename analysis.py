@@ -262,6 +262,10 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             # isn't a fluke.
 
             # Integrate over time axis and save the integral value at each time
+            mask = ~np.isnan(dset)
+            dset = dset[mask]
+            time = time[mask]
+            
             cumu_dset = cumulative_trapezoid(dset, time)
             cumu_nus = nu_func(cumu_dset, time[1:] - t_0)
 
@@ -356,10 +360,9 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 "avg_u_sq",
                 "avg_v_sq",
             ]
-            dsets = np.array([np.array(f["tasks"][avg][start_ind:, 0, 0, :]) for avg in avgs])
-            print(dsets.shape)
+            dsets = [np.array(f["tasks"][avg][start_ind:, 0, 0, :]) for avg in avgs]
             # Kinetic energy is just the sum of the squared avg velocities
-            dsets = np.append([dsets, dsets[1]+dsets[2]+dsets[3]], axis=0)
+            dsets = np.append(dsets, dsets[1]+dsets[2]+dsets[3], axis=0)
 
             horz_tex = r"$\sqrt{\overline{u^2+v^2}}$"
             kin_tex = r"$\overline{u^2+v^2+w^2}$"
@@ -370,11 +373,10 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 "avg_w_sq",
                 "avg_u_sq",
             ]
-            dsets = np.array([np.array(f["tasks"][avg][start_ind:, 0, :]) for avg in avgs])
-            print(dsets.shape)
+            dsets = [np.array(f["tasks"][avg][start_ind:, 0, :]) for avg in avgs]
 
             # Kinetic energy is just the sum of the squared avg velocities
-            dsets = np.append([dsets, dsets[1]+dsets[2]], axis=0)
+            dsets = np.append(dsets, dsets[1]+dsets[2], axis=0)
 
 
             horz_tex = r"$\sqrt{\overline{u^2}}$"
@@ -382,7 +384,6 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
 
         print(f"dsets shape = {dsets.shape}")
         profs = [simpson(dset, time, axis=0) / total_time for dset in dsets]
-        print(f"cumu_shape = {cumu_dsets.shape}")
 
         plot_ops = [
             (
