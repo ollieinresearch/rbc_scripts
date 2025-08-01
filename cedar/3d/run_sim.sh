@@ -79,7 +79,7 @@ source $env/bin/activate;
 
 # Specify desired time for initial condition - 0 implies most recent
 if [ $IC -eq 1 ]; then
-  IC_ARRAY=($(python3 $PATH_TO_GEN_SCRIPTS/initial_condition.py 0 --file=$PWD/restart/restart.h5))
+  IC_ARRAY=($(python3 $PATH_TO_SCRIPTS/initial_condition.py 0 --file=$PWD/restart/restart.h5))
   TOTAL_TIME=$(echo "$SIM_TIME+${IC_ARRAY[1]}" | bc)
   IND=${IC_ARRAY[0]}
 else
