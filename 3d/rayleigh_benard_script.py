@@ -254,11 +254,11 @@ try:
         CFL = flow_tools.CFL(
             solver,
             initial_dt=arg_dt,
-            cadence=25,
-            safety=0.75,
+            cadence=10,
+            safety=0.5,
             max_dt=0.1,
-            max_change=1.5,
-            threshold=0.2
+            max_change=1.1,
+            threshold=0.1
         )
         CFL.add_velocities(('u', 'v', 'w'))
         dt = CFL.compute_dt()
