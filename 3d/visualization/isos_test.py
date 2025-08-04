@@ -20,6 +20,10 @@ import numpy as np
 import pyvista as pv
 import os
 from pathlib import Path
+from matplotlib.scale import AsinhTransform
+
+# For vorticity scaling
+asinh = AsinhTransform(linear_width=1.5)
 
 def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
     # Load temp data and grid
@@ -28,8 +32,13 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
     with h5py.File(h5_file, 'r') as f:
         T = f['tasks']['temp']
         w = f['tasks']['w']
+        x_vort = f['tasks']['x_vort']
+        y_vort = f['tasks']['y_vort']
+
         nt, nx, ny, nz = T.shape
         _, nwx, nwy, nwz = w.shape
+        _, nxvx, nxvy, nxvz = x_vort.shape
+        _, nyvx, nyvy, nyvz = y_vort.shape
 
         domain_sizes = (2.0, 2.0, 1.0)
         dx = domain_sizes[0] / (nx - 1)
@@ -39,6 +48,15 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         wdx = domain_sizes[0] / (nwx - 1)
         wdy = domain_sizes[1] / (nwy - 1)
         wdz = domain_sizes[2] / (nwz - 1)
+
+        xvdx = domain_sizes[0] / (nxvx - 1)
+        xvdy = domain_sizes[1] / (nxvy - 1)
+        xvdz = domain_sizes[2] / (nxvz - 1)
+
+        yvdx = domain_sizes[0] / (nyvx - 1)
+        yvdy = domain_sizes[1] / (nyvy - 1)
+        yvdz = domain_sizes[2] / (nyvz - 1)
+
         origin = (0.0, 0.0, 0.0)
         # Center of domain
         xmid = domain_sizes[0] / 2.0
@@ -55,9 +73,13 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         for t in range(start, start+count):
             temp = T[t]  # (nx, ny, nz)
             vert_velocity = w[t]
+            xv = x_vort[t]
+            yv = y_vort[t]
 
             flat_temp = temp.flatten(order='F')
             flat_velocity = vert_velocity.flatten(order='F')
+            flat_xv = xv.flatten(order='F')
+            flat_yv = yv.flatten(order='F')
 
             # Create uniform grid
             tgrid = pv.ImageData(
@@ -72,8 +94,23 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
                 origin=origin
             )
 
+            xv_grid = pv.ImageData(
+                dimensions=(nxvy, nxvz),
+                spacing=(xvdy, xvdz),
+                origin=(0.0,0.0)
+            )
+
+            yv_grid = pv.ImageData(
+                dimensions=(nyvy, nyvz),
+                spacing=(yvdy, yvdz),
+                origin=(0.0,0.0)
+            )
+
             tgrid.point_data['temp'] = flat_temp
             wgrid.point_data['w'] = flat_velocity
+
+            xv_grid.point_data['xv'] = asinh.transform(flat_xv)
+            yv_grid.point_data['yv'] = asinh.transform(flat_yv)
             
             t_opacity = np.linspace(0, 1, 255)
             t_opacity_tf = 1.0-np.exp(-100000000.0*(t_opacity-0.5)**12)
@@ -81,6 +118,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             w_opacity = np.linspace(-1/2, 1/2, 255)
             w_opacity_tf = 1.0-np.exp(-10000.0*(w_opacity)**6)
 
+            
             #inv_opacity = np.linspace(0, 1, 255)
             #inv_opacity_tf = np.exp(-100000.0*(opacity-0.5)**4)    
                     
@@ -95,12 +133,11 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Set up a 2x2 subplot
             plotter = pv.Plotter(shape=(2, 2), off_screen=True, border=False)
 
-            # Top-left: diagonal view
+            # Top-left: diagonal view - CHANGED REMOVE INTERPOLATE TO BE IN ADD_MESH
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
-                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False, interpolate_before_map=False
             )
-            actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
             plotter.add_text(time_text, position='upper_left', font_size=14, color='black')
 
@@ -110,7 +147,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             cam_y = ymid + rot_radius * np.sin(angle)
             plotter.subplot(0, 1)
             actor2 = plotter.add_volume(
-                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                wgrid, scalars='w', opacity=w_opacity_tf, cmap='jet', shade=False
             )
             actor2.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
@@ -118,10 +155,10 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
 
 
 
-            # Bottom-left: diagonal view
+            # Bottom-left: xvort
             plotter.subplot(1, 0)
             actor3 = plotter.add_volume(
-                wgrid, scalars='w', cmap='jet', opacity=w_opacity_tf, clim=[-0.6,0.6],shade=False
+                xv_grid, scalars='w', cmap='RdBu_r', clim=[-0.6,0.6],shade=False
             )
             actor3.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
