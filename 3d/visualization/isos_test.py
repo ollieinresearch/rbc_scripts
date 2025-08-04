@@ -13,7 +13,7 @@ Usage:
 Options:
     --basepath=<dir>  Path to parent folder for output [default: ./analysis]
 """
-
+#TODO: choose consistent scales and then reduce number of grids.
 
 import h5py
 import numpy as np
@@ -95,15 +95,15 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             )
 
             xv_grid = pv.ImageData(
-                dimensions=(nxvy, nxvz),
-                spacing=(xvdy, xvdz),
-                origin=(0.0,0.0)
+                dimensions=(nxvx, nxvy, nxvz),
+                spacing=(xvdx, xvdy, xvdz),
+                origin=origin
             )
 
             yv_grid = pv.ImageData(
-                dimensions=(nyvy, nyvz),
-                spacing=(yvdy, yvdz),
-                origin=(0.0,0.0)
+                dimensions=(nyvx, nyvy, nyvz),
+                spacing=(yvdx, yvdy, yvdz),
+                origin=origin
             )
 
             tgrid.point_data['temp'] = flat_temp
@@ -158,16 +158,16 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Bottom-left: xvort
             plotter.subplot(1, 0)
             actor3 = plotter.add_volume(
-                xv_grid, scalars='w', cmap='RdBu_r', clim=[-0.6,0.6],shade=False
+                xv_grid, scalars='xv', cmap='RdBu_r', opacity=w_opacity_tf, shade=False
             )
             actor3.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
 
 
-            # Bottom-right: rotating diagonal view
+            # Bottom-right: yvort
             plotter.subplot(1, 1)
             actor4 = plotter.add_volume(
-                wgrid, scalars='w', cmap='jet', opacity=w_opacity_tf, clim=[-0.6,0.6],shade=False
+                yc_grid, scalars='yv', cmap='RdBu_r', opacity=w_opacity_tf,shade=False
             )
             actor4.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
