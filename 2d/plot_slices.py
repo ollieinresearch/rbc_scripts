@@ -32,11 +32,12 @@ from dedalus.extras import plot_tools
 
 
 
+asinh = AsinhTransform(linear_width=1.5)
+
+
 def sym(xmesh, ymesh, data):
     """Function to transform scalar values for colorbar"""
-    
 
-    asinh = AsinhTransform(linear_width=1.5)
     og_shape = data.shape
     new_dset = data.ravel()
     new_dset = asinh.transform(new_dset)
@@ -82,7 +83,7 @@ def main(filename, start, count, output, max_vort, plot_freq):
                     # Call 3D plotting helper, slicing in time
                     dset = file['tasks'][task]
                     if task == 'vorticity':
-                        _, _, new_mv = sym(1,1,max_vort)
+                        new_mv = asinh.transform(max_vort)
                         plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task, clim=(-new_mv, new_mv), even_scale=True, func=sym)
                     else:
                         plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task)
