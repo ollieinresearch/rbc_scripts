@@ -179,10 +179,10 @@ if snapshots:
     snapshots_file.mkdir(exist_ok=True)
 
     snapshots = solver.evaluator.add_file_handler(snapshots_file, iter=200, max_writes=50, mode=fh_mode)
-    snapshots.add_task("T-(z-1/2)", scales=2, name = 'temp')
-    snapshots.add_task("w", scales=4, name = 'w')
-    snapshots.add_task("dy(w) - dz(v)", scales=4, name = 'x_vort')
-    snapshots.add_task("dx(w)-dz(u)", scales=4, name = 'y_vort')
+    snapshots.add_task("T-(z-1/2)", name = 'temp')
+    snapshots.add_task("w", scales=2, name = 'w')
+    snapshots.add_task("dy(w) - dz(v)", scales=2, name = 'x_vort')
+    snapshots.add_task("dx(w)-dz(u)", scales=2, name = 'y_vort')
     
 
 # states saved as checkpoints for restarting. Can adjust iter as necessary.

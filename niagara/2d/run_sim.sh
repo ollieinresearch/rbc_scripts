@@ -41,7 +41,7 @@ source $env/bin/activate;
 
 ################################################################################
 # User specified parameters
-
+START_TIME=0
 # Rayleigh number
 RA=1e7
 # Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0, and Pr=0.1 -> PR_EXP=-1)
@@ -63,7 +63,7 @@ IC=1
 
 # specify desired time for initial condition
 if [ $IC -eq 1 ]; then
-  IC_ARRAY=($(python3 $PATH_TO_GEN_SCRIPTS/initial_condition.py 0 --file=$PWD/restart/restart.h5))
+  IC_ARRAY=($(python3 $PATH_TO_GEN_SCRIPTS/initial_condition.py $START_TIME --file=$PWD/restart/restart.h5))
   TOTAL_TIME=$(echo "$SIM_TIME+${IC_ARRAY[1]}" | bc)
   IND=${IC_ARRAY[0]}
 

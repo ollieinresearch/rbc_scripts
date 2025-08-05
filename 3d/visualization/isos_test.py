@@ -30,10 +30,10 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
     pv.start_xvfb()
     pv.global_theme.allow_empty_mesh = True
     with h5py.File(h5_file, 'r') as f:
-        T = f['tasks']['temp']
-        w = f['tasks']['w']
-        x_vort = f['tasks']['x_vort']
-        y_vort = f['tasks']['y_vort']
+        T = np.array(f['tasks']['temp'][start:start+count], dtype=np.float32)
+        w = np.array(f['tasks']['w'][start:start+count], dtype=np.float32)
+        x_vort = np.array(f['tasks']['x_vort'][start:start+count], dtype=np.float32)
+        y_vort = np.array(f['tasks']['y_vort'][start:start+count], dtype=np.float32)
 
         nt, nx, ny, nz = T.shape
         _, nwx, nwy, nwz = w.shape
@@ -70,7 +70,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         os.makedirs(output_dir, exist_ok=True)
 
         # Loop through each time step
-        for t in range(start, start+count):
+        for t in range(0, count):
             temp = T[t]  # (nx, ny, nz)
             vert_velocity = w[t]
             xv = x_vort[t]
@@ -127,8 +127,8 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             #grid.point_data['inv_opacity'] = inv_opacity
 
 
-            time_text = f"t = {f['scales/sim_time'][t]:.3f}"
-            write_num = f['scales/write_number'][t]
+            time_text = f"t = {f['scales/sim_time'][start+t]:.3f}"
+            write_num = f['scales/write_number'][start+t]
 
             # Set up a 2x2 subplot
             plotter = pv.Plotter(shape=(2, 2), off_screen=True, border=False)
@@ -136,8 +136,9 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Top-left: diagonal view - CHANGED REMOVE INTERPOLATE TO BE IN ADD_MESH
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
-                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False, interpolate_before_map=False
+                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
             )
+            actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
             plotter.add_text(time_text, position='upper_left', font_size=14, color='black')
 
@@ -167,7 +168,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             # Bottom-right: yvort
             plotter.subplot(1, 1)
             actor4 = plotter.add_volume(
-                yc_grid, scalars='yv', cmap='RdBu_r', opacity=w_opacity_tf,shade=False
+                yv_grid, scalars='yv', cmap='RdBu_r', opacity=w_opacity_tf,shade=False
             )
             actor4.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
