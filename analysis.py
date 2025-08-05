@@ -349,6 +349,8 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         # Profile plots
         ########################################################################
 
+        return
+        
         # Get z-axis points
         z = np.array(f["scales/z/1.0"][:])
 
