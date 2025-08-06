@@ -22,7 +22,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def main(file, start, count, ylims):
+def main(file, start, count, ymin, ymax):
+    
+    ymin=float(ymin)
+    ymax=float(ymax)
     fp = Path(file)
     with h5.File(fp, 'r') as f:
 
@@ -100,7 +103,7 @@ def main(file, start, count, ylims):
             plt.xlabel("k")
             plt.ylabel("E(k)")
             plt.title(f't={time[i]:.4f}')
-            plt.ylim((10**ylims[0], 10**ylims[1]))
+            plt.ylim((10**ymin, 10**ymax))
             plt.tight_layout()
             plt.savefig(f"res_check/write_{writes[i]+c:06}.png")
             plt.close()
@@ -113,10 +116,10 @@ if __name__ == "__main__":
     from dedalus.tools import post
 
     args = docopt(__doc__)
-    ylims = (args["--ymin"], args["--ymax"])
 
     post.visit_writes(
         args["<files>"],
         main,
-        ylims
+        ymin=args["--ymin"],
+        ymax=args["--ymax"]
     )
