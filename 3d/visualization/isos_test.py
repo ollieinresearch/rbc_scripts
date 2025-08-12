@@ -7,11 +7,13 @@ the Nusselt number, various profiles and information about the simulation to a
 text document.
 
 Usage:
-    isos_test.py <files>... [--basepath=<dir>]
+    isos_test.py <files>... [--basepath=<dir>] [--max_vort=<max_vort>] [--max_vert=<max_vert>]
     isos_test.py <files>...
 
 Options:
     --basepath=<dir>  Path to parent folder for output [default: ./analysis]
+    --max_vort=<max_vort>  Maximum Vorticity [default: 100]
+    --max_vert=<max_vert>  Maximum vertical velocity [default: 100]
 """
 #TODO: choose consistent scales and then reduce number of grids.
 
@@ -25,22 +27,29 @@ from matplotlib.scale import AsinhTransform
 # For vorticity scaling
 asinh = AsinhTransform(linear_width=1.5)
 
-def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
+def main(h5_file, start, count, output_dir):
     # Load temp data and grid
     pv.start_xvfb()
     pv.global_theme.allow_empty_mesh = True
     with h5py.File(h5_file, 'r') as f:
-        T = np.array(f['tasks']['temp'][start:start+count], dtype=np.float32)
-        w = np.array(f['tasks']['w'][start:start+count], dtype=np.float32)
-        x_vort = np.array(f['tasks']['x_vort'][start:start+count], dtype=np.float32)
-        y_vort = np.array(f['tasks']['y_vort'][start:start+count], dtype=np.float32)
-
-        nt, nx, ny, nz = T.shape
-        _, nwx, nwy, nwz = w.shape
-        _, nxvx, nxvy, nxvz = x_vort.shape
-        _, nyvx, nyvy, nyvz = y_vort.shape
-
+        nt, nx, ny, nz = f['tasks']['temp'].shape
+        _, nwx, nwy, nwz = f['tasks']['w'].shape
+        _, nxvx, nxvy, nxvz = f['tasks']['x_vort'].shape
         domain_sizes = (2.0, 2.0, 1.0)
+        # Center of domain
+        xmid = domain_sizes[0] / 2.0
+        ymid = domain_sizes[1] / 2.0
+        zmid = domain_sizes[2] / 2.0
+
+        T = np.array(f['tasks']['temp'][start:start+count], dtype=np.float32)
+
+        w_1 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/2)], dtype=np.float32)
+        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/12)], dtype=np.float32)
+
+        x_vort_1 = np.array(f['tasks']['x_vort'][start:start+count, :, :, int(nxvz/2)], dtype=np.float32)
+        x_vort_2 = np.array(f['tasks']['x_vort'][start:start+count, :, :, int(nxvz/50)], dtype=np.float32)
+        
+
         dx = domain_sizes[0] / (nx - 1)
         dy = domain_sizes[1] / (ny - 1)
         dz = domain_sizes[2] / (nz - 1)
@@ -52,16 +61,13 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         xvdx = domain_sizes[0] / (nxvx - 1)
         xvdy = domain_sizes[1] / (nxvy - 1)
         xvdz = domain_sizes[2] / (nxvz - 1)
-
+        """
         yvdx = domain_sizes[0] / (nyvx - 1)
         yvdy = domain_sizes[1] / (nyvy - 1)
         yvdz = domain_sizes[2] / (nyvz - 1)
-
+        """
         origin = (0.0, 0.0, 0.0)
-        # Center of domain
-        xmid = domain_sizes[0] / 2.0
-        ymid = domain_sizes[1] / 2.0
-        zmid = domain_sizes[2] / 2.0
+        
 
         # Rotating view radius
         rot_radius = 4.5
@@ -72,14 +78,16 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
         # Loop through each time step
         for t in range(0, count):
             temp = T[t]  # (nx, ny, nz)
-            vert_velocity = w[t]
-            xv = x_vort[t]
-            yv = y_vort[t]
+            vert_velocity_1 = w_1[t]
+            vert_velocity_2 = w_2[t]
+            xv_1 = x_vort_1[t]
+            xv_2 = x_vort_2[t]
 
             flat_temp = temp.flatten(order='F')
-            flat_velocity = vert_velocity.flatten(order='F')
-            flat_xv = xv.flatten(order='F')
-            flat_yv = yv.flatten(order='F')
+            flat_velocity_1 = vert_velocity_1.flatten(order='F')
+            flat_velocity_2 = vert_velocity_2.flatten(order='F')
+            flat_xv_1 = xv_1.flatten(order='F')
+            flat_xv_2 = xv_2.flatten(order='F')
 
             # Create uniform grid
             tgrid = pv.ImageData(
@@ -88,29 +96,49 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
                 origin=origin
             )
 
-            wgrid = pv.ImageData(
-                dimensions=(nwx, nwy, nwz),
-                spacing=(wdx, wdy, wdz),
-                origin=origin
+            w_grid_1 = pv.Plane(
+                center=origin,
+                direction=(0, 0, 1),
+                i_size=2.0,
+                j_size=2.0,
+                i_resolution=nwx-1,
+                j_resolution=nwy-1
             )
 
-            xv_grid = pv.ImageData(
-                dimensions=(nxvx, nxvy, nxvz),
-                spacing=(xvdx, xvdy, xvdz),
-                origin=origin
+            w_grid_2 = pv.Plane(
+                center=origin,
+                direction=(0, 0, 1),
+                i_size=2.0,
+                j_size=2.0,
+                i_resolution=nwx-1,
+                j_resolution=nwy-1
             )
 
-            yv_grid = pv.ImageData(
-                dimensions=(nyvx, nyvy, nyvz),
-                spacing=(yvdx, yvdy, yvdz),
-                origin=origin
+            xv_grid_1 = pv.Plane(
+                center=origin,
+                direction=(0, 0, 1),
+                i_size=2.0,
+                j_size=2.0,
+                i_resolution=nxvx-1,
+                j_resolution=nxvy-1
             )
+            
+            xv_grid_2 = pv.Plane(
+                center=origin,
+                direction=(0, 0, 1),
+                i_size=2.0,
+                j_size=2.0,
+                i_resolution=nxvx-1,
+                j_resolution=nxvy-1
+            )
+
 
             tgrid.point_data['temp'] = flat_temp
-            wgrid.point_data['w'] = flat_velocity
+            w_grid_1.point_data['w'] = asinh.transform(flat_velocity_1)
+            w_grid_2.point_data['w'] = asinh.transform(flat_velocity_2)
 
-            xv_grid.point_data['xv'] = asinh.transform(flat_xv)
-            yv_grid.point_data['yv'] = asinh.transform(flat_yv)
+            xv_grid_1.point_data['xv'] = asinh.transform(flat_xv_1)
+            xv_grid_2.point_data['xv'] = asinh.transform(flat_xv_2)
             
             t_opacity = np.linspace(0, 1, 255)
             t_opacity_tf = 1.0-np.exp(-100000000.0*(t_opacity-0.5)**12)
@@ -131,7 +159,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             write_num = f['scales/write_number'][start+t]
 
             # Set up a 2x2 subplot
-            plotter = pv.Plotter(shape=(2, 2), off_screen=True, border=False)
+            plotter = pv.Plotter(shape=(3, 2), off_screen=True, border=False)
 
             # Top-left: diagonal view - CHANGED REMOVE INTERPOLATE TO BE IN ADD_MESH
             plotter.subplot(0, 0)
@@ -141,7 +169,7 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
             plotter.add_text(time_text, position='upper_left', font_size=14, color='black')
-
+            """
             # Top-right: rotating diagonal view
             angle = 2 * np.pi * (write_num % 150) / 150.0
             cam_x = xmid + rot_radius * np.cos(angle)
@@ -152,26 +180,51 @@ def main(h5_file, start, count, output_dir, iso_temp=None, slice_axis='z'):
             )
             actor2.mapper.interpolate_before_map = False
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
+            """
+
+            # middle-left: w
+            plotter.subplot(1, 0)
+            actor3 = plotter.add_mesh(
+                w_grid_1, scalars='w', cmap='RdBu_r'
+            )
+            actor3.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
 
 
+            # middle-right: w
+            plotter.subplot(1, 1)
+            actor4 = plotter.add_mesh(
+                xv_grid_2, scalars='xv', cmap='RdBu_r'
+            )
+            actor4.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
 
 
             # Bottom-left: xvort
-            plotter.subplot(1, 0)
-            actor3 = plotter.add_volume(
-                xv_grid, scalars='xv', cmap='RdBu_r', opacity=w_opacity_tf, shade=False
+            plotter.subplot(2, 0)
+            actor5 = plotter.add_mesh(
+                xv_grid_1, scalars='xv', cmap='RdBu_r'
             )
-            actor3.mapper.interpolate_before_map = False
-            plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
+            actor5.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
 
 
-            # Bottom-right: yvort
-            plotter.subplot(1, 1)
-            actor4 = plotter.add_volume(
-                yv_grid, scalars='yv', cmap='RdBu_r', opacity=w_opacity_tf,shade=False
+            # Bottom-right: xvort
+            plotter.subplot(2, 1)
+            actor6 = plotter.add_mesh(
+                xv_grid_2, scalars='xv', cmap='RdBu_r'
             )
-            actor4.mapper.interpolate_before_map = False
-            plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
+            actor6.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+            plotter.reset_camera()
 
             
 
@@ -197,6 +250,8 @@ if __name__ == '__main__':
     post.visit_writes(
         args["<files>"],
         main,
-        output_dir=output_dir
+        output_dir=output_dir,
+        mvort=args["--max_vort"],
+        mvert=args["--max_vert"]
     )
 
