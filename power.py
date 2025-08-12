@@ -6,7 +6,12 @@ written to the (optionally) specified file. Outputs plots of the Nusselt number,
 various profiles and information about the simulation to a text document.
 
 Usage:
+    power.py <files>... [--ymin=<ymin>] [--ymax=<ymax>]
     power.py <files>...
+
+Options:
+    --ymin=<ymin>  Min for y axis, in powers of 10 [default: -12.0]
+    --ymax=<ymax>  Max for y axis, in powers of 10 [default: 0.0]
 """
 
 #TODO: add the y limits as arguments
@@ -17,7 +22,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def main(file, start, count):
+def main(file, start, count, ymin, ymax):
+    
+    ymin=float(ymin)
+    ymax=float(ymax)
     fp = Path(file)
     with h5.File(fp, 'r') as f:
 
@@ -95,7 +103,7 @@ def main(file, start, count):
             plt.xlabel("k")
             plt.ylabel("E(k)")
             plt.title(f't={time[i]:.4f}')
-            plt.ylim((1e-12, 1e0))
+            plt.ylim((10**ymin, 10**ymax))
             plt.tight_layout()
             plt.savefig(f"res_check/write_{writes[i]+c:06}.png")
             plt.close()
@@ -111,5 +119,7 @@ if __name__ == "__main__":
 
     post.visit_writes(
         args["<files>"],
-        main
+        main,
+        ymin=args["--ymin"],
+        ymax=args["--ymax"]
     )
