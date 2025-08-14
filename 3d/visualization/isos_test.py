@@ -46,10 +46,6 @@ def main(h5_file, start, count, output_dir):
         w_1 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/2)], dtype=np.float32)
         w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/12)], dtype=np.float32)
 
-        x_vort_1 = np.array(f['tasks']['x_vort'][start:start+count, :, :, int(nxvz/2)], dtype=np.float32)
-        x_vort_2 = np.array(f['tasks']['x_vort'][start:start+count, :, :, int(nxvz/50)], dtype=np.float32)
-        
-
         dx = domain_sizes[0] / (nx - 1)
         dy = domain_sizes[1] / (ny - 1)
         dz = domain_sizes[2] / (nz - 1)
