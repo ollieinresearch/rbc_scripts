@@ -6,30 +6,14 @@
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
 
-# Load the required modules
-module purge
 module load CCEnv arch/avx512 StdEnv/2020
-module load python/3.10.2 mpi4py fftw-mpi hdf5-mpi 
+module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
 
-# For our virtual environment
-env=$SLURM_TMPDIR/env
-
-#path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="$BBUFFER/rbc_scripts"
-SCRIPTS_3D="$BBUFFER/rbc_scripts/niagara/3d"
+source $PATH_TO_ENV/bin/activate
 
 # Dedalus performance tip!
 export OMP_NUM_THREADS=1
 export NUMEXPR_MAX_THREADS=1
-export PIP_CACHE_DIR=$BBUFFER/.cache
-export MPLCONFIGDIR=$BBUFFER/.cache
-
-# Create the virtual environment on each node: 
-virtualenv --no-download $env
-source $env/bin/activate
-
-pip install --no-index --upgrade  --cache-dir=$BBUFFER/.cache pip
-pip install --no-index --cache-dir=$BBUFFER/.cache -r $PATH_TO_SCRIPTS/requirements.txt
 
 # Post processing
 if [ -f "field_analysis/field_analysis.h5" ]; then
