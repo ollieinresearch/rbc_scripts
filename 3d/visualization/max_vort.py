@@ -12,7 +12,7 @@ from pathlib import Path
 
 def main(filenames):
     
-    output = Path(filenames[0]).parent / "max_vort.txt"
+    output = Path(filenames[0]).parent / "max_temp.txt"
 
     # To store maximums
     maxes = np.ones(len(filenames))
@@ -21,8 +21,10 @@ def main(filenames):
     for i, fp in enumerate(filenames):
         with h5py.File(fp, mode='r') as file:
             
-            dset = np.array(file['tasks']['xv'][:]).ravel()
-            maxes[i] = np.max(np.abs(dset))
+            dset = np.array(file['tasks']['temp'][:]).ravel()
+            max_t = np.max(np.abs(dset))
+            min_t = np.max(np.abs(dset-1))
+            maxes[i] = np.max(max_t, min_t)
 
     mega_max = np.max(maxes)
 
@@ -50,6 +52,10 @@ def main(filenames):
     txt = open(output, 'w')
     txt.write(f"{mega_max}")
     txt.close()
+
+
+    info_txt = output.parents[1] / "outputs/info.txt"
+    with open(info.txt)
 
 
 
