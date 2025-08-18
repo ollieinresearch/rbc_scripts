@@ -44,7 +44,7 @@ def main(h5_file, start, count, output_dir):
         T = np.array(f['tasks']['temp'][start:start+count], dtype=np.float32)
 
         w_1 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/2)], dtype=np.float32)
-        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/12)], dtype=np.float32)
+        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/16)], dtype=np.float32)
 
         dx = domain_sizes[0] / (nx - 1)
         dy = domain_sizes[1] / (ny - 1)
@@ -53,11 +53,11 @@ def main(h5_file, start, count, output_dir):
         wdx = domain_sizes[0] / (nwx - 1)
         wdy = domain_sizes[1] / (nwy - 1)
         wdz = domain_sizes[2] / (nwz - 1)
-
+        """
         xvdx = domain_sizes[0] / (nxvx - 1)
         xvdy = domain_sizes[1] / (nxvy - 1)
         xvdz = domain_sizes[2] / (nxvz - 1)
-        """
+        
         yvdx = domain_sizes[0] / (nyvx - 1)
         yvdy = domain_sizes[1] / (nyvy - 1)
         yvdz = domain_sizes[2] / (nyvz - 1)
@@ -76,14 +76,12 @@ def main(h5_file, start, count, output_dir):
             temp = T[t]  # (nx, ny, nz)
             vert_velocity_1 = w_1[t]
             vert_velocity_2 = w_2[t]
-            xv_1 = x_vort_1[t]
-            xv_2 = x_vort_2[t]
-
+            
             flat_temp = temp.flatten(order='F')
             flat_velocity_1 = vert_velocity_1.flatten(order='F')
             flat_velocity_2 = vert_velocity_2.flatten(order='F')
-            flat_xv_1 = xv_1.flatten(order='F')
-            flat_xv_2 = xv_2.flatten(order='F')
+            flat_temp_grid_1 = temp[:,:,:,int(nz/2)].flatten(order='F')
+            flat_temp_grid_2 = temp[:,:,:,int(nz/16)].flatten(order='F')
 
             # Create uniform grid
             tgrid = pv.ImageData(
@@ -110,22 +108,22 @@ def main(h5_file, start, count, output_dir):
                 j_resolution=nwy-1
             )
 
-            xv_grid_1 = pv.Plane(
+            t_grid_1 = pv.Plane(
                 center=origin,
                 direction=(0, 0, 1),
                 i_size=2.0,
                 j_size=2.0,
-                i_resolution=nxvx-1,
-                j_resolution=nxvy-1
+                i_resolution=nx-1,
+                j_resolution=ny-1
             )
             
-            xv_grid_2 = pv.Plane(
+            t_grid_2 = pv.Plane(
                 center=origin,
                 direction=(0, 0, 1),
                 i_size=2.0,
                 j_size=2.0,
-                i_resolution=nxvx-1,
-                j_resolution=nxvy-1
+                i_resolution=nx-1,
+                j_resolution=ny-1
             )
 
 
@@ -133,8 +131,8 @@ def main(h5_file, start, count, output_dir):
             w_grid_1.point_data['w'] = asinh.transform(flat_velocity_1)
             w_grid_2.point_data['w'] = asinh.transform(flat_velocity_2)
 
-            xv_grid_1.point_data['xv'] = asinh.transform(flat_xv_1)
-            xv_grid_2.point_data['xv'] = asinh.transform(flat_xv_2)
+            t_grid_1.point_data['temp'] = flat_temp_grid_1
+            t_grid_2.point_data['temp'] = flat_temp_grid_2
             
             t_opacity = np.linspace(0, 1, 255)
             t_opacity_tf = 1.0-np.exp(-100000000.0*(t_opacity-0.5)**12)
@@ -157,7 +155,7 @@ def main(h5_file, start, count, output_dir):
             # Set up a 2x2 subplot
             plotter = pv.Plotter(shape=(3, 2), off_screen=True, border=False)
 
-            # Top-left: diagonal view - CHANGED REMOVE INTERPOLATE TO BE IN ADD_MESH
+            # Top-left: diagonal view
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
                 tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
@@ -178,10 +176,10 @@ def main(h5_file, start, count, output_dir):
             plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
             """
 
-            # middle-left: w
+            # middle-left: temp midplane
             plotter.subplot(1, 0)
             actor3 = plotter.add_mesh(
-                w_grid_1, scalars='w', cmap='RdBu_r'
+                temp_grid_1, scalars='temp', cmap='RdBu_r'
             )
             actor3.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -189,10 +187,10 @@ def main(h5_file, start, count, output_dir):
             plotter.view_xy()
 
 
-            # middle-right: w
+            # middle-right: w midplane
             plotter.subplot(1, 1)
             actor4 = plotter.add_mesh(
-                xv_grid_2, scalars='xv', cmap='RdBu_r'
+                w_grid_1, scalars='xv', cmap='RdBu_r'
             )
             actor4.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -200,10 +198,10 @@ def main(h5_file, start, count, output_dir):
             plotter.view_xy()
 
 
-            # Bottom-left: xvort
+            # Bottom-left: temp bl
             plotter.subplot(2, 0)
             actor5 = plotter.add_mesh(
-                xv_grid_1, scalars='xv', cmap='RdBu_r'
+                T_grid_1, scalars='temp', cmap='RdBu_r'
             )
             actor5.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -211,10 +209,10 @@ def main(h5_file, start, count, output_dir):
             plotter.view_xy()
 
 
-            # Bottom-right: xvort
+            # Bottom-right: w bl
             plotter.subplot(2, 1)
             actor6 = plotter.add_mesh(
-                xv_grid_2, scalars='xv', cmap='RdBu_r'
+                w_grid_2, scalars='w', cmap='RdBu_r'
             )
             actor6.mapper.interpolate_before_map = False
             plotter.enable_2d_style()

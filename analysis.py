@@ -349,7 +349,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         # Profile plots
         ########################################################################
 
-        return
+        
         
         # Get z-axis points
         z = np.array(f["scales/z/1.0"][:])
@@ -363,6 +363,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 "avg_v_sq",
             ]
             dsets = [np.array(f["tasks"][avg][start_ind:, 0, 0, :]) for avg in avgs]
+            dsets[0] += 1/2-z
             # Kinetic energy is just the sum of the squared avg velocities
             dsets.append(dsets[1]+dsets[2]+dsets[3])
 
@@ -376,7 +377,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 "avg_u_sq",
             ]
             dsets = [np.array(f["tasks"][avg][start_ind:, 0, :]) for avg in avgs]
-
+            dsets[0] += 1/2-z
             # Kinetic energy is just the sum of the squared avg velocities
             dsets.append(dsets[1]+dsets[2])
 
@@ -388,7 +389,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
 
         plot_ops = [
             (
-                r"$\langle u_3 \cdot T \rangle$",
+                r"T",
                 "Horizontally Averaged Temperature Profile"
             ),
             (
@@ -410,7 +411,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         for ind, (xlabel, title) in enumerate(plot_ops):
             ax = fig.add_subplot(2, 2, ind+1)
             ax.plot(profs[ind], z)
-            if title == "Horizontally Averaged Temperature Profile":
+            if ind==0:
                 plt.xlim([0,1])
             plt.ylim([-0.5, 0.5])
             plt.xlabel(xlabel)
