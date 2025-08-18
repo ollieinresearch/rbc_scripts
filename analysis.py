@@ -349,7 +349,6 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         # Profile plots
         ########################################################################
 
-        return
         
         # Get z-axis points
         z = np.array(f["scales/z/1.0"][:])
@@ -384,8 +383,9 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             horz_tex = r"$\sqrt{\overline{u^2}}$"
             kin_tex = r"$\overline{u^2+w^2}$"
 
-        profs = [simpson(dset, time, axis=0) / total_time for dset in dsets]
 
+        profs = [simpson(dset, time, axis=0) / total_time for dset in dsets]
+        
         plot_ops = [
             (
                 r"$\langle u_3 \cdot T \rangle$",

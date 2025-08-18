@@ -41,12 +41,12 @@ config['logging']['stdout_level'] = 'debug'
 args = docopt(__doc__)
 
 # Fix non-dimensional height of the layer at 1
-Lx, Lz = (int(args['--Gamma']), 1) 
+Lx, Lz = (np.float64(args['--Gamma']), 1) 
 # Rayleigh and Prandtl number
 Pr = 10**np.float64(args['--Pr_exp'])
 Ra = np.float64(args['--Ra'])
 # Resolution for the simulation
-nx, nz = (Lx*int(args['--res']), Lz*int(args['--res']))
+nx, nz = (int(Lx*int(args['--res'])), int(Lz*int(args['--res'])))
 # Problem and solver params
 stepper = str(args['--stepper'])
 flow_bc = "no-slip"
@@ -255,7 +255,7 @@ try:
             safety=0.5,
             max_dt=0.1,
             max_change=1.1,
-            threshold=0.05
+            threshold=0.075
         )
         CFL.add_velocities(('u', 'w'))
         dt = CFL.compute_dt()
