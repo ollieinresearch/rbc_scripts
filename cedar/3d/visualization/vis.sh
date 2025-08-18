@@ -24,6 +24,8 @@ source $env/bin/activate
 pip install --no-index --upgrade pip
 pip install --no-index -r $PATH_TO_SCRIPTS/requirements_vis.txt
 
+mt="$(cat snapshots/max_temp.txt)"
+mv="$(cat snapshots/max_vert.txt)"
 
 srun python3 $PATH_TO_SCRIPTS/isos.py $PWD/snapshots/*.h5 --basepath=$PWD
 ffmpeg -y -r 15 -i $PWD/visualization/write_%06d.png -threads 48 -pix_fmt yuv420p visualization/movie.mp4

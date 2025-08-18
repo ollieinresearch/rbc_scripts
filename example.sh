@@ -36,7 +36,6 @@ PATH_TO_ENV="$BBUFFER/test"
 
 ################################################################################
 
-module --force purge
 module load CCEnv arch/avx512 StdEnv/2020
 module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
 
