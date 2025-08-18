@@ -75,15 +75,6 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         t_f = time[-1]
         total_time = t_f - t_0
 
-        # Preliminary output
-        # write basics to text file
-        savename = pre_output / 'prelim.txt'
-        prelim = open(str(savename), 'w')
-        prelim.write(f'Ra= {Ra:.4e}, Pr= {Pr:.4e}\n')
-        prelim.write(f'End sim time: {t_f:.3f}\n')
-        prelim.write(f'Start sim time: {full_time[0]:.3f}')
-        prelim.close()
-
         # Write the basics to a text file
         savename = output / "info.txt"
         info = open(savename, "w")
@@ -176,23 +167,20 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
 
         # Plotting Nu - all quantities on 1 figure.
         # 2 columns, the first for instantaneous and the second for cumulative.
-        # n rows, where n is the number of quantities we are calculating.
+        # n+1 rows, where n is the number of quantities we are calculating.
+        # n rows are for Nu, 1 is for KE
         if n > 1:
             fig, axes = plt.subplots(
-                nrows=n,
+                nrows=n+1,
                 ncols=2,
-                figsize=(20 * 2, 5 * n),
-                layout="constrained",
-            )
-            pre_fig, pre_axes = plt.subplots(
-                nrows=n+2,
-                figsize=(20, 5 * (n + 1)),
+                figsize=(12 * 2, 3 * (n+1)),
                 layout="constrained",
             )
 
         else:
-            fig, axes = plt.subplots(ncols=2, figsize=(20 * 2, 5), layout="constrained")
-
+            fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(20 * 2, 5 * 2), layout="constrained")
+        
+        ke_ax = axes[0]
         
         inst_ke_ylab = r'$\frac{1}{\Gamma}\int_\Omega u^2+w^2 dxdz$'
         time_avg_ylab = r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+w^2 dxdzd\hat{t}$'
@@ -202,20 +190,20 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             time_avg_ylab = r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+v^2+w^2 dxdydzd\hat{t}$'
 
         inst_K = np.ravel(avg_K)
-        pre_axes[0].plot(full_time, inst_K, linewidth=1)
-        pre_axes[0].hlines(np.mean(inst_K), full_time[0], t_f, color='orange')   
-        pre_axes[0].set_xlim([full_time[0], t_f])
-        pre_axes[0].set_title('Instantaneous KE')
-        pre_axes[0].set_xlabel(r'$t$')
-        pre_axes[0].set_ylabel(inst_ke_ylab)
+        ke_ax[0].plot(full_time, inst_K, linewidth=1)
+        ke_ax[0].hlines(np.mean(inst_K), full_time[0], t_f, color='orange')   
+        ke_ax[0].set_xlim([full_time[0], t_f])
+        ke_ax[0].set_title('Instantaneous KE')
+        ke_ax[0].set_xlabel(r'$t$')
+        ke_ax[0].set_ylabel(inst_ke_ylab)
 
         inst_avg_K = cumulative_trapezoid(inst_K, full_time) / (full_time[1:] - full_time[0])
-        pre_axes[1].plot(full_time[1:], inst_avg_K, linewidth=1)
-        pre_axes[1].hlines(inst_avg_K[-1], full_time[0], t_f, color='orange')   
-        pre_axes[1].set_xlim([full_time[0], t_f])
-        pre_axes[1].set_title('Instantaneous time average of KE')
-        pre_axes[1].set_xlabel(r'$t$')
-        pre_axes[1].set_ylabel(time_avg_ylab)
+        ke_ax[1].plot(full_time[1:], inst_avg_K, linewidth=1)
+        ke_ax[1].hlines(inst_avg_K[-1], full_time[0], t_f, color='orange')   
+        ke_ax[1].set_xlim([full_time[0], t_f])
+        ke_ax[1].set_title('Instantaneous time average of KE')
+        ke_ax[1].set_xlabel(r'$t$')
+        ke_ax[1].set_ylabel(time_avg_ylab)
 
 
         # Indices for splitting into sections for convergence check. Splits the
@@ -245,27 +233,19 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             inst_nu = inst_nu_full[start_ind:]
             inst_ave_Nu = np.mean(inst_nu)
 
-            ####################################################################
-            # Plot full plots of instantaneous Nu
-            pre_axes[ind+2].plot(full_time, inst_nu_full, linewidth=1)
-            pre_axes[ind+2].hlines(inst_ave_Nu_full, full_time[0], t_f, color='orange')
-            pre_axes[ind+2].set_xlim([full_time[0], t_f])
-            #pre_axes[ind+2].set_ylim([np.floor(np.min(inst_nu_full)), np.ceil(np.max(inst_nu_full))])
-            pre_axes[ind+2].set_title(r'Instantaneous Nu($t$) via ' + lab)
-            pre_axes[ind+2].set_xlabel(r'$t$')
-            pre_axes[ind+2].set_ylabel('Nu')
-
             # Cumulative Nusselt number at each point in time and for each
             # section of the sim, taking only the times past start_ave.
             # Currently dividing into thirds (n_secs=3), but could do quarters
             # if you're looking to be even more certain that the convergence
             # isn't a fluke.
 
+            """
             # Integrate over time axis and save the integral value at each time
             mask = ~np.isnan(dset)
             dset = dset[mask]
             time = time[mask]
-            
+            """
+
             cumu_dset = cumulative_trapezoid(dset, time)
             cumu_nus = nu_func(cumu_dset, time[1:] - t_0)
 
@@ -287,12 +267,8 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 )
 
             info.write(
-                f"Maximum percent difference in Nusselt over {n_secs} sections:"
+                f"Maximum percent difference in Nusselt-1 over {n_secs} sections:"
                 f" {max_difference(nus[ind, :-1] - 1):.4f}%\n"
-            )
-            info.write(
-                f"Nu as calculated by average of instantaneous Nu:"
-                f" {inst_ave_Nu:.6f}\n"
             )
             info.write(
                 f"Nu as calculated by cumulative average:"
@@ -301,11 +277,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             info.write("-" * 80)
             info.write("\n")
 
-            # Check which index should be used (one QoI vs many)
-            if n > 1:
-                axes_ind = axes[ind]
-            else:
-                axes_ind = axes
+            axes_ind = axes[ind+1]
 
             # Plot the instantaneous Nusselt number
             max_points = 40000
@@ -334,12 +306,11 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             axes_ind[1].set_ylabel("Nu")
 
         # Save the cumu/inst Nu plot, and full time plot
-        fig.savefig(output / "Nu.png", dpi=400)
-        pre_fig.savefig(pre_output / 'prelim_time_averages.png', dpi=400)
+        fig.savefig(output / "info.png", dpi=200)
 
         # Save the info file
         info.write(
-            f"Maximum percent difference in Nusselt over all QoI:"
+            f"Maximum percent difference in Nusselt-1 over all QoI:"
             f" {max_difference(nus[:, -1]-1):.4f}%\n"
         )
         info.close()
