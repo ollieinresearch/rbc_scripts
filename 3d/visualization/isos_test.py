@@ -27,7 +27,8 @@ from matplotlib.scale import AsinhTransform
 # For vorticity scaling
 asinh = AsinhTransform(linear_width=1.5)
 
-def main(h5_file, start, count, output_dir):
+def main(h5_file, start, count, output_dir, nu):
+    bl = nu/4.0
     # Load temp data and grid
     pv.start_xvfb()
     pv.global_theme.allow_empty_mesh = True
@@ -44,7 +45,7 @@ def main(h5_file, start, count, output_dir):
         T = np.array(f['tasks']['temp'][start:start+count], dtype=np.float32)
 
         w_1 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/2)], dtype=np.float32)
-        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/16)], dtype=np.float32)
+        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/(bl))], dtype=np.float32)
 
         dx = domain_sizes[0] / (nx - 1)
         dy = domain_sizes[1] / (ny - 1)
@@ -81,7 +82,7 @@ def main(h5_file, start, count, output_dir):
             flat_velocity_1 = vert_velocity_1.flatten(order='F')
             flat_velocity_2 = vert_velocity_2.flatten(order='F')
             flat_temp_grid_1 = temp[:,:,:,int(nz/2)].flatten(order='F')
-            flat_temp_grid_2 = temp[:,:,:,int(nz/16)].flatten(order='F')
+            flat_temp_grid_2 = temp[:,:,:,int(nz/bl)].flatten(order='F')
 
             # Create uniform grid
             tgrid = pv.ImageData(
@@ -190,7 +191,7 @@ def main(h5_file, start, count, output_dir):
             # middle-right: w midplane
             plotter.subplot(1, 1)
             actor4 = plotter.add_mesh(
-                w_grid_1, scalars='xv', cmap='RdBu_r'
+                w_grid_1, scalars='w', cmap='RdBu_r'
             )
             actor4.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -201,7 +202,7 @@ def main(h5_file, start, count, output_dir):
             # Bottom-left: temp bl
             plotter.subplot(2, 0)
             actor5 = plotter.add_mesh(
-                T_grid_1, scalars='temp', cmap='RdBu_r'
+                temp_grid_2, scalars='temp', cmap='RdBu_r'
             )
             actor5.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
