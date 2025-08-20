@@ -313,6 +313,10 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             f"Maximum percent difference in Nusselt-1 over all QoI:"
             f" {max_difference(nus[:, -1]-1):.4f}%\n"
         )
+        info.write(
+            f"Final Nusselt number:"
+            f" {nus[0, -1]:.4f}%\n"
+        )
         info.close()
 
 
