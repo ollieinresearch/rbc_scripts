@@ -65,7 +65,7 @@ def main(filename, start, count, start_ave,):
     pr = match.group(3)
     pr = normalize_exponent(pr)
 
-    output = Path("/project/def-goluskin/ollie/ollie_rb_data/redoing_test")
+    output = Path("/home/ollie/links/scratch/redoing_test")
     output.mkdir(parents=True, exist_ok=True)
     output = output / f"ra{ra}/pr{pr}/{res}_Gam2"
     output.mkdir(parents=True, exist_ok=True)
@@ -162,8 +162,8 @@ def main(filename, start, count, start_ave,):
             (
                 "avg_wT",
                 fnu_wT,
-                r"$\langle u_3 \cdot T \rangle$"),
-                fre_wt
+                r"$\langle u_3 \cdot T \rangle$",
+                fre_wt)
         ]
 
 
@@ -220,7 +220,7 @@ def main(filename, start, count, start_ave,):
             # if you're looking to be even more certain that the convergence
             # isn't a fluke.
             cumu_nus = np.append(1, nu_func(dset_nu[1:] - dset_nu[0], time[1:] - t_0))
-            cumu_res = re_func(dset_re[1:] - dset_re[0], time[1:], t_0)
+            cumu_res = re_func(dset_re[1:] - dset_re[0], time[1:] - t_0)
 
             # Final calculation of Nu
             nus[ind, -1] = cumu_nus[-1]
@@ -232,7 +232,7 @@ def main(filename, start, count, start_ave,):
 
             for i, (ind_1, ind_2) in enumerate(z):
 
-                nus[ind, i] = nu_func(dset[ind_2]-dset[ind_1], time[ind_2]-time[ind_1])
+                nus[ind, i] = nu_func(dset_nu[ind_2]-dset_nu[ind_1], time[ind_2]-time[ind_1])
                 info.write(
                     f"Nu calculated using data from section {i+1} of {n_secs}:"
                     f" {nus[ind, i]:.4f}\n"
@@ -245,7 +245,7 @@ def main(filename, start, count, start_ave,):
             info.write(
                 "Nu as calculated by cumulative average: " "{:.6f}\n".format(nus[ind, -1])
             )
-            info.write(f"Re as calculated by cumulative average: {res[ind, -1]}")
+            info.write(f"Re as calculated by cumulative average: {res[ind, -1]}\n")
             info.write("-" * 80)
             info.write("\n")
 
@@ -259,7 +259,7 @@ def main(filename, start, count, start_ave,):
                 axes_ind[0].plot(time[1::10], inst_nu[::10])
             else:
                 axes_ind[0].plot(time[1:], inst_nu, linewidth=1)
-            axes_ind[0].plot([t_0, t_f], inst_ave_Nu * np.ones(2))
+            axes_ind[0].hlines(cumu_nus[-1], t_0, t_f, color='orange')
             axes_ind[0].set_xlim([t_0, t_f])
             axes_ind[0].set_title(r"Instantaneous Nu$(t)$ calculated via " + lab)
             axes_ind[0].set_xlabel("t")
@@ -358,7 +358,7 @@ if __name__ == "__main__":
     from dedalus.tools.parallel import Sync
     import re
 
-    base_fp = Path("/project/def-goluskin/RB_data/2D/")
+    base_fp = Path("/home/ollie/links/scratch/2D")
 
 
     fp = list(base_fp.rglob("*/*_pr[13]*/*_analysis/analysis.h5"))
@@ -369,8 +369,12 @@ if __name__ == "__main__":
         with open(info_fp, 'r') as file:
             for line in file:
                 match1 = re.search(r'Time averaging.*?begins at:\s*([+-]?\d+(\.\d+)?)', line)
-                if match1:
-                    start_times[str(p)] = np.float64(match1.group(1))
+                match2 = re.search(r'Time averaging to begins at:\s*([+-]?\d+(\.\d+)?)', line)
+                if match1 or match2:
+                    if match1:
+                        start_times[str(p)] = np.float64(match1.group(1))
+                    if match2:
+                        start_times[str(p)] = np.float64(match2.group(1))
                     break
 
 

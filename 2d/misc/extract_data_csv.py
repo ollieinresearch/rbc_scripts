@@ -4,16 +4,15 @@ import csv
 from pathlib import Path
 
 # Root directory
-root = Path('/project/def-goluskin/ollie/ollie_rb_data/redoing_test')
+root = Path('/home/ollie/links/scratch/redoing_test')
 
 # Regex patterns to extract data
 re_ra_pr = re.compile(r"Ra = ([\d.eE+-]+), Pr = ([\d.eE+-]+)")
 re_time = re.compile(r"Simulation end time: ([\d.eE+-]+)")
 re_avg_start = re.compile(r"Time averaging begins at: ([\d.eE+-]+)")
 re_max_diff_sec = re.compile(r"Maximum percent difference in Nusselt over (\d) sections: ([\d.eE+-]+)%")
-re_nu_inst = re.compile(r"Nu as calculated by average of instantaneous Nu: ([\d.eE+-]+)")
 re_nu_cum = re.compile(r"Nu as calculated by cumulative average: ([\d.eE+-]+)")
-
+re_re_cum = re.compile(r"Re as calculated by cumulative average: ([\d.eE+-]+)")
 
 # Walk through RA folders
 for ra_dir in root.glob('ra1e*'):
@@ -35,8 +34,8 @@ for ra_dir in root.glob('ra1e*'):
             time_match = re_time.search(content)
             avg_start_match = re_avg_start.search(content)
             max_diff = re_max_diff_sec.search(content)
-            nu_inst_match = re_nu_inst.search(content)
             nu_cum_match = re_nu_cum.search(content)
+            re_cum_match = re_re_cum.search(content)
 
             row = {
                 'Pr': float(ra_pr_match.group(2)) if ra_pr_match else None,
@@ -44,8 +43,9 @@ for ra_dir in root.glob('ra1e*'):
                 'Time avg start': float(avg_start_match.group(1)) if avg_start_match else None,
                 'Num Sections': float(max_diff.group(1)),
                 'Max %diff': float(max_diff.group(2)),
-                'Nu inst avg': float(nu_inst_match.group(1)) if nu_inst_match else None,
                 'Nu cum avg': float(nu_cum_match.group(1)) if nu_cum_match else None,
+                'Re cum avg': float(re_cum_match.group(1)) if re_cum_match else None,
+                
             }
 
             data_rows.append(row)
