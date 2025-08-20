@@ -139,6 +139,22 @@ def main(filename, start, count, start_ave,):
 
             return 1 + dset / time_array
 
+
+        def fre_wt(dset: np.ndarray, time_array) -> np.ndarray:
+            """Calculate Re using the <w*T> formula.
+
+            Args:
+                dset (np.ndarray): The w*T quantity from analysis file.
+                time_array (np.ndarray): The time array for calculating time
+                averages.
+
+            Returns:
+                np.ndarray: The Reynolds number throughout time.
+            """
+
+            return np.sqrt( (Ra*dset) / (time_array * Pr))
+
+
         # Makes the for loop easier. First entry is the quantity, second is the
         # function to calculate Nu with, third is the LaTeX command for
         # displaying it in the plot.
@@ -147,6 +163,7 @@ def main(filename, start, count, start_ave,):
                 "avg_wT",
                 fnu_wT,
                 r"$\langle u_3 \cdot T \rangle$"),
+                fre_wt
         ]
 
 
@@ -182,27 +199,32 @@ def main(filename, start, count, start_ave,):
 
         # Array to hold the different Nu values (varies over section and qoi)
         nus = np.ones((n, n_secs+1))
+        res = np.ones((n, n_secs+1))
 
         # Get time and volume integrals of quantities of interest (QoI) for the
         # correct time range
-        for ind, (qoi, nu_func, lab) in enumerate(qoi_func):
+        for ind, (qoi, nu_func, lab, re_func) in enumerate(qoi_func):
             # The raw analysis file values to obtain <wT>, <|∇u|^2>, etc
-            dset = np.array(file["tasks"][qoi][:])[start_ind:, 0, 0]
+            dset_nu = np.array(file["tasks"][qoi][:])[start_ind:, 0, 0]
+            dset_re = np.array(file["tasks"]['avg_K'][:])[start_ind:, 0, 0]
 
             # Instantaneous Nusselt number at each time
-            inst_dset = np.diff(dset)
-            inst_nu = nu_func(inst_dset, dt_array)
-            inst_ave_Nu = np.mean(inst_nu)
+            inst_dset_nu = np.diff(dset_nu)
+            inst_dset_re = np.diff(dset_re)
+            inst_nu = nu_func(inst_dset_nu, dt_array)
+            inst_re = re_func(inst_dset_re, dt_array)
 
             # Cumulative Nusselt number at each point in time and for each
             # section of the sim, taking only the times past start_ave.
             # Currently dividing into thirds (n_secs=3), but could do quarters
             # if you're looking to be even more certain that the convergence
             # isn't a fluke.
-            cumu_nus = np.append(1, nu_func(dset[1:] - dset[0], time[1:] - t_0))
+            cumu_nus = np.append(1, nu_func(dset_nu[1:] - dset_nu[0], time[1:] - t_0))
+            cumu_res = re_func(dset_re[1:] - dset_re[0], time[1:], t_0)
 
             # Final calculation of Nu
             nus[ind, -1] = cumu_nus[-1]
+            res[ind, -1] = cumu_res[-1]
 
             # Write the data to the info file
             info.write(f"The following data are for the QoI {qoi}:\n")
@@ -221,12 +243,9 @@ def main(filename, start, count, start_ave,):
                 f" {max_difference(nus[ind, :-1]):.4f}%\n"
             )
             info.write(
-                "Nu as calculated by average of instantaneous Nu: "
-                "{:.6f}\n".format(inst_ave_Nu)
-            )
-            info.write(
                 "Nu as calculated by cumulative average: " "{:.6f}\n".format(nus[ind, -1])
             )
+            info.write(f"Re as calculated by cumulative average: {res[ind, -1]}")
             info.write("-" * 80)
             info.write("\n")
 
