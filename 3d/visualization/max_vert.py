@@ -1,18 +1,18 @@
 '''
-Finds the maximum vorticity in a simulation to correctly set the movie colour 
+Finds the maximum vertical velocity in a simulation to correctly set the movie colour 
 scale.
 
 Usage:
-    prelim.py <files>...
+    max_vert.py <files>...
 '''
 
 import h5py # pyright: ignore
 import numpy as np
 from pathlib import Path
 
-def main(filenames):
+def main(filenames, start, count):
     
-    output = Path(filenames[0]).parent / "max_temp.txt"
+    output = Path(filenames[0]).parent / "visualization/max_temp.txt"
 
     # To store maximums
     maxes = np.ones(len(filenames))
@@ -34,7 +34,7 @@ def main(filenames):
     txt.close()
 
 
-    output = Path(filenames[0]).parent / "max_vert.txt"
+    output = Path(filenames[0]).parent / "visualization/max_vert.txt"
 
     # To store maximums
     maxes = np.ones(len(filenames))
@@ -52,10 +52,6 @@ def main(filenames):
     txt = open(output, 'w')
     txt.write(f"{mega_max}")
     txt.close()
-
-
-    info_txt = output.parents[1] / "outputs/info.txt"
-    with open(info.txt)
 
 
 

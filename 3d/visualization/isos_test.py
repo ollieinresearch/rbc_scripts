@@ -7,14 +7,15 @@ the Nusselt number, various profiles and information about the simulation to a
 text document.
 
 Usage:
-    isos_test.py <files>... [--basepath=<dir>] [--max_vort=<max_vort>] [--max_vert=<max_vert>]
+    isos_test.py <files>... [--basepath=<dir>] [--max_vert=<max_vert>] [--nu=<nu>]
     isos_test.py <files>...
 
 Options:
     --basepath=<dir>  Path to parent folder for output [default: ./analysis]
-    --max_vort=<max_vort>  Maximum Vorticity [default: 100]
     --max_vert=<max_vert>  Maximum vertical velocity [default: 100]
+    --nu=<nu> Nusselt from this sim for boundary layer [default: 5]
 """
+
 #TODO: choose consistent scales and then reduce number of grids.
 
 import h5py
@@ -27,8 +28,9 @@ from matplotlib.scale import AsinhTransform
 # For vorticity scaling
 asinh = AsinhTransform(linear_width=1.5)
 
-def main(h5_file, start, count, output_dir, nu):
-    bl = nu/4.0
+def main(h5_file, start, count, output_dir, max_vert, nu):
+    mvert = asinh.transform(max_vert)
+    bl = (4.0*nu)
     # Load temp data and grid
     pv.start_xvfb()
     pv.global_theme.allow_empty_mesh = True
@@ -81,8 +83,8 @@ def main(h5_file, start, count, output_dir, nu):
             flat_temp = temp.flatten(order='F')
             flat_velocity_1 = vert_velocity_1.flatten(order='F')
             flat_velocity_2 = vert_velocity_2.flatten(order='F')
-            flat_temp_grid_1 = temp[:,:,:,int(nz/2)].flatten(order='F')
-            flat_temp_grid_2 = temp[:,:,:,int(nz/bl)].flatten(order='F')
+            flat_temp_grid_1 = temp[:,:,int(nz/2)].flatten(order='F')
+            flat_temp_grid_2 = temp[:,:,int(nz/bl)].flatten(order='F')
 
             # Create uniform grid
             tgrid = pv.ImageData(
@@ -130,7 +132,7 @@ def main(h5_file, start, count, output_dir, nu):
 
             tgrid.point_data['temp'] = flat_temp
             w_grid_1.point_data['w'] = asinh.transform(flat_velocity_1)
-            w_grid_2.point_data['w'] = asinh.transform(flat_velocity_2)
+            w_grid_2.point_data['w'] = flat_velocity_2#asinh.transform(flat_velocity_2)
 
             t_grid_1.point_data['temp'] = flat_temp_grid_1
             t_grid_2.point_data['temp'] = flat_temp_grid_2
@@ -159,7 +161,7 @@ def main(h5_file, start, count, output_dir, nu):
             # Top-left: diagonal view
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
-                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1], shade=False
+                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet'#, clim=[0, 1], shade=False
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
@@ -180,7 +182,7 @@ def main(h5_file, start, count, output_dir, nu):
             # middle-left: temp midplane
             plotter.subplot(1, 0)
             actor3 = plotter.add_mesh(
-                temp_grid_1, scalars='temp', cmap='RdBu_r'
+                t_grid_1, scalars='temp', cmap='RdBu_r'
             )
             actor3.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -188,7 +190,7 @@ def main(h5_file, start, count, output_dir, nu):
             plotter.view_xy()
 
 
-            # middle-right: w midplane
+            # middle-right: w midplane - no clim!
             plotter.subplot(1, 1)
             actor4 = plotter.add_mesh(
                 w_grid_1, scalars='w', cmap='RdBu_r'
@@ -202,7 +204,7 @@ def main(h5_file, start, count, output_dir, nu):
             # Bottom-left: temp bl
             plotter.subplot(2, 0)
             actor5 = plotter.add_mesh(
-                temp_grid_2, scalars='temp', cmap='RdBu_r'
+                t_grid_2, scalars='temp', cmap='RdBu_r'
             )
             actor5.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -210,7 +212,7 @@ def main(h5_file, start, count, output_dir, nu):
             plotter.view_xy()
 
 
-            # Bottom-right: w bl
+            # Bottom-right: w bl - no clim!
             plotter.subplot(2, 1)
             actor6 = plotter.add_mesh(
                 w_grid_2, scalars='w', cmap='RdBu_r'
@@ -242,11 +244,14 @@ if __name__ == '__main__':
     output_dir = basepath / "visualization"
     output_dir.mkdir(exist_ok=True)
 
+    mvert = float(args["--max_vert"])
+    nu = float(args["--nu"])
+
     post.visit_writes(
         args["<files>"],
         main,
         output_dir=output_dir,
-        mvort=args["--max_vort"],
-        mvert=args["--max_vert"]
+        max_vert=mvert,
+        nu=nu
     )
 
