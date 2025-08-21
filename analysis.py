@@ -133,6 +133,21 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
 
 
 
+        def fre_K(dset: np.ndarray, time_array) -> np.ndarray:
+            """Calculate Re using the kinetic energy formula.
+
+            Args:
+                dset (np.ndarray): The w*T quantity from analysis file.
+                time_array (np.ndarray): The time array for calculating time
+                averages.
+
+            Returns:
+                np.ndarray: The Reynolds number throughout time.
+            """
+
+            return np.sqrt( (Ra*dset) / (time_array * Pr))
+
+
         # Makes the for loop easier. First entry is the quantity, second is the
         # function to calculate Nu with, third is the LaTeX command for
         # displaying it in the plot.
@@ -168,7 +183,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         # Plotting Nu - all quantities on 1 figure.
         # 2 columns, the first for instantaneous and the second for cumulative.
         # n+1 rows, where n is the number of quantities we are calculating.
-        # n rows are for Nu, 1 is for KE
+        # n rows are for Nu, 1 is for KE/Re
         if n > 1:
             fig, axes = plt.subplots(
                 nrows=n+1,
@@ -183,13 +198,20 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         ke_ax = axes[0]
         
         inst_ke_ylab = r'$\frac{1}{\Gamma}\int_\Omega u^2+w^2 dxdz$'
-        time_avg_ylab = r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+w^2 dxdzd\hat{t}$'
+        re_ylab = r'$\sqrt{\frac{Ra}{Pr}}\frac{1}{\Gamma}{\int_t^{t+100dt}\int_\Omega u^2+w^2 dxdzd\hat{t}}^{1/2}$'
 
         if dim == 3:
             inst_ke_ylab = r'$\frac{1}{\Gamma}\int_\Omega u^2+v^2+w^2 dxdydz$'
-            time_avg_ylab = r'$\frac{1}{100dt}\frac{1}{\Gamma}\int_t^{t+100dt}\int_\Omega u^2+v^2+w^2 dxdydzd\hat{t}$'
-
+            re_ylab = r'$\sqrt{\frac{Ra}{Pr}}\frac{1}{\Gamma}{\int_t^{t+100dt}\int_\Omega u^2+v^2+w^2 dxdydzd\hat{t}}^{1/2}$'
+        
         inst_K = np.ravel(avg_K)
+        dset_re = inst_K[start_ind:]
+
+        cumu_dset_re = cumulative_trapezoid(dset_re, time)
+        cumu_re = fre_K(cumu_dset_re, time[1:] - t_0)
+        final_re = fre_K(simpson(dset_re, time), total_time)
+
+        # instantaneous KE
         ke_ax[0].plot(full_time, inst_K, linewidth=1)
         ke_ax[0].hlines(np.mean(inst_K), full_time[0], t_f, color='orange')   
         ke_ax[0].set_xlim([full_time[0], t_f])
@@ -197,13 +219,13 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         ke_ax[0].set_xlabel(r'$t$')
         ke_ax[0].set_ylabel(inst_ke_ylab)
 
-        inst_avg_K = cumulative_trapezoid(inst_K, full_time) / (full_time[1:] - full_time[0])
-        ke_ax[1].plot(full_time[1:], inst_avg_K, linewidth=1)
-        ke_ax[1].hlines(inst_avg_K[-1], full_time[0], t_f, color='orange')   
-        ke_ax[1].set_xlim([full_time[0], t_f])
-        ke_ax[1].set_title('Instantaneous time average of KE')
+        # Cumulative Reynolds
+        ke_ax[1].plot(time[1:], cumu_re, linewidth=1)
+        ke_ax[1].hlines(final_re, full_time[0], t_f, color='orange')   
+        ke_ax[1].set_xlim([t_0, t_f])
+        ke_ax[1].set_title('Re')
         ke_ax[1].set_xlabel(r'$t$')
-        ke_ax[1].set_ylabel(time_avg_ylab)
+        ke_ax[1].set_ylabel(re_ylab)
 
 
         # Indices for splitting into sections for convergence check. Splits the
@@ -229,9 +251,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
 
             # Instantaneous Nusselt number at each time
             inst_nu_full = nu_func(dset_full, 1.0)
-            inst_ave_Nu_full = np.mean(inst_nu_full)
             inst_nu = inst_nu_full[start_ind:]
-            inst_ave_Nu = np.mean(inst_nu)
 
             # Cumulative Nusselt number at each point in time and for each
             # section of the sim, taking only the times past start_ave.
@@ -286,8 +306,8 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
                 axes_ind[0].plot(time[::skip], inst_nu[::skip])
             else:
                 axes_ind[0].plot(time, inst_nu, linewidth=1)
-            # Line to show average instantaneous Nu
-            axes_ind[0].hlines(inst_ave_Nu, t_0, t_f, color='orange')
+            # Line to show final average
+            axes_ind[0].hlines(nus[ind,-1], t_0, t_f, color='orange')
             axes_ind[0].set_xlim([t_0, t_f])
             axes_ind[0].set_title(r"Instantaneous Nu$(t)$ calculated via " + lab)
             axes_ind[0].set_xlabel(r"$t$")
@@ -316,6 +336,10 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         info.write(
             f"Final Nusselt number:"
             f" {nus[0, -1]:.4f}%\n"
+        )
+        info.write(
+            f"Final Reynolds number:"
+            f" {final_re:.4f}\n"
         )
         info.close()
 
