@@ -2,7 +2,7 @@
 
 #SBATCH --output=job_sim.out
 #SBATCH --time=00:10:00
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --job-name=example
@@ -31,11 +31,11 @@ LY=2
 # Provide the size of the square 2D process mesh; note that if your resolution is given by R,
 # you have a grid of size Lx*R x Ly*R x R, and if your mesh is of size [n,m], then on each core you compute
 # (Lx*R/n)x(Ly*R/m) pencils of length R.
-MESHX=12
+MESHX=24
 MESHY=16
 
 # Use initial condition? (1=yes, 0=no)
-IC=0
+IC=1
 
 ################################################################################
 
@@ -48,7 +48,6 @@ PATH_TO_ENV="/home/ollie/links/scratch/dedalus"
 
 ################################################################################
 
-module --force purge
 module load StdEnv/2020
 module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
 

@@ -1,32 +1,28 @@
 #!/bin/bash
 #SBATCH --output=job_post.out
-#SBATCH --time=01:30:00
+#SBATCH --time=02:30:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
 
-# Load the required modules
-module purge
+AVG_TIME=0
+
+# Path to all python scripts for simulations; change as needed
+PATH_TO_SCRIPTS="$SCRATCH/rbc_scripts"
+SCRIPTS_3D="$SCRATCH/rbc_scripts/3d"
+PATH_TO_ENV="$SCRATCH/dedalus"
+
+################################################################################
+
 module load StdEnv/2020
-module load python/3.10.2 mpi4py fftw-mpi hdf5-mpi
+module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
 
-# For our virtual environment
-env=$SLURM_TMPDIR/env
-
-#path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="/project/def-goluskin/ollie/scripts"
+source $PATH_TO_ENV/bin/activate
 
 # Dedalus performance tip!
 export OMP_NUM_THREADS=1
 export NUMEXPR_MAX_THREADS=1
-
-# Create the virtual environment on each node: 
-virtualenv --no-download $env
-source $env/bin/activate
-
-pip install --no-index --upgrade pip
-pip install --no-index -r $PATH_TO_SCRIPTS/requirements.txt
 
 # Post processing
 if [ -f "field_analysis/field_analysis.h5" ]; then
@@ -58,12 +54,12 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
+srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
 
 mkdir res_check
 mkdir res_check_3d
 
 srun python3 $PATH_TO_GEN_SCRIPTS/power.py $PWD/state/*.h5
 srun python3 $PATH_TO_SCRIPTS/3d/power.py $PWD/state/*.h5
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 192 -pix_fmt yuv420p res_check/movie.mp4
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 192 -pix_fmt yuv420p res_check_3d/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 96 -pix_fmt yuv420p res_check_3d/movie.mp4
