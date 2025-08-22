@@ -22,7 +22,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def main(file, start, count, ymin, ymax):
+def main(file, start, count, ymin=-12.0, ymax=0.0):
     
     ymin=float(ymin)
     ymax=float(ymax)
@@ -116,10 +116,12 @@ if __name__ == "__main__":
     from dedalus.tools import post
 
     args = docopt(__doc__)
-
+    ymin=float(args["--ymin"])
+    ymax=float(args["--ymax"])
     post.visit_writes(
         args["<files>"],
         main,
-        ymin=args["--ymin"],
-        ymax=args["--ymax"]
+        ymin=ymin,
+        ymax=ymax
+        
     )

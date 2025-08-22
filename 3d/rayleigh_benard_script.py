@@ -225,7 +225,7 @@ field_analysis.add_task("interp(dz(Tz), x=0, y=0, z=0)", name='T_zz')
 # For calculating Nu and Re - data saved at 1 point in space FREQUENTLY
 analysis_file = basepath / 'analysis'
 analysis_file.mkdir(exist_ok=True)
-analysis = solver.evaluator.add_file_handler(analysis_file, iter=50, max_writes=1000, mode=fh_mode)
+analysis = solver.evaluator.add_file_handler(analysis_file, iter=25, max_writes=1000, mode=fh_mode)
 analysis.add_task('R/P', name='Pr')
 analysis.add_task('1/(P*R)', name='Ra')
 
