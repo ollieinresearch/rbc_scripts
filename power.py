@@ -26,6 +26,7 @@ def main(file, start, count, ymin=-12.0, ymax=0.0):
     
     ymin=float(ymin)
     ymax=float(ymax)
+    print(f"inside {ymin}, {ymax}")
     fp = Path(file)
     with h5.File(fp, 'r') as f:
 
@@ -118,6 +119,7 @@ if __name__ == "__main__":
     args = docopt(__doc__)
     ymin=float(args["--ymin"])
     ymax=float(args["--ymax"])
+    print(ymin, ymax)
     post.visit_writes(
         args["<files>"],
         main,

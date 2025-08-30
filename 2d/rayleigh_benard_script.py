@@ -59,7 +59,7 @@ snapshots = args['--snapshots']
 restart_index = int(args['--index'])
 
 # Iterations between saves
-state_iters = 2500
+state_iters = 5000
 analysis_iters = 50
 field_analysis_iters = 200
 snapshots_iters = 200
@@ -251,11 +251,11 @@ try:
         CFL = flow_tools.CFL(
             solver,
             initial_dt=dt,
-            cadence=5,
-            safety=0.5,
+            cadence=2,
+            safety=0.25,
             max_dt=0.1,
-            max_change=1.1,
-            threshold=0.075
+            max_change=1.01,
+            threshold=0.005
         )
         CFL.add_velocities(('u', 'w'))
         dt = CFL.compute_dt()
