@@ -1,0 +1,44 @@
+
+scontrol show job 34741
+JobId=34741 JobName=debugjob-1-ollie
+   UserId=ollie(3147340) GroupId=ollie(3147340) MCS_label=N/A
+   Priority=10160900 Nice=0 Account=def-goluskin QOS=normal
+   JobState=COMPLETING Reason=NonZeroExitCode Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=0 Reboot=0 ExitCode=137:0
+   RunTime=00:30:41 TimeLimit=01:00:00 TimeMin=N/A
+   SubmitTime=2025-08-22T15:09:04 EligibleTime=2025-08-22T15:09:04
+   AccrueTime=Unknown
+   StartTime=2025-08-22T15:09:04 EndTime=2025-08-22T15:39:45 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2025-08-22T15:09:04 Scheduler=Main
+   Partition=debug AllocNode:Sid=tri-login05:3907107
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=tri0988
+   BatchHost=tri0988
+   NumNodes=1 NumCPUs=192 NumTasks=192 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=192,mem=767000M,node=1,billing=192
+   AllocTRES=cpu=192,mem=767000M,node=1,billing=192
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryNode=0 MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=NO Contiguous=0 Licenses=(null) Network=(null)
+   Command=/bin/sh
+   WorkDir=/scratch/ollie/rbc_scripts/test
+   Comment=/opt/slurm/bin/salloc --time=1:0:0 --job-name=debugjob-1-ollie --nodes=1 --ntasks=192 -p debug --exclusive 
+   
+
+sacct -j 34741
+JobID           JobName    Account    Elapsed  MaxVMSize     MaxRSS  SystemCPU    UserCPU ExitCode 
+------------ ---------- ---------- ---------- ---------- ---------- ---------- ---------- -------- 
+34741        debugjob-+ def-golus+   00:30:41                        51:39.072   03:54:35      0:0 
+34741.inter+ interacti+ def-golus+   00:30:41                         00:00:00   00:00:00      0:0 
+34741.extern     extern def-golus+   00:30:41                         00:00:00   00:00:00      0:0 
+34741.0         python3 def-golus+   00:00:12          0    140620K  10:38.089  02:44.267      1:0 
+34741.1         python3 def-golus+   00:00:08          0    138388K  05:38.627  02:12.016      1:0 
+34741.2         python3 def-golus+   00:00:53          0    173900K  05:24.924   02:18:45      0:9 
+34741.3         python3 def-golus+   00:00:11          0    169024K  05:40.486  12:47.511      1:0 
+34741.4         python3 def-golus+   00:00:11          0    168996K  06:22.768  12:20.719      1:0 
+34741.5         python3 def-golus+   00:00:10          0    168740K  05:41.368  11:40.717      0:0 
+34741.6         python3 def-golus+   00:00:10          0    169028K  05:55.322  12:08.095      0:0 
+34741.7         python3 def-golus+   00:00:02          0      4048K  00:35.727  00:02.062      1:0 
+34741.8         python3 def-golus+   00:00:21          0     92568K  05:41.756  41:55.207      0:9 
+

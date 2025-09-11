@@ -1,0 +1,35 @@
+
+scontrol show job 34740
+JobId=34740 JobName=debugjob-1-ollie
+   UserId=ollie(3147340) GroupId=ollie(3147340) MCS_label=N/A
+   Priority=10160900 Nice=0 Account=def-goluskin QOS=normal
+   JobState=COMPLETING Reason=NonZeroExitCode Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=0 Reboot=0 ExitCode=130:0
+   RunTime=00:00:28 TimeLimit=01:00:00 TimeMin=N/A
+   SubmitTime=2025-08-22T15:08:07 EligibleTime=2025-08-22T15:08:07
+   AccrueTime=Unknown
+   StartTime=2025-08-22T15:08:07 EndTime=2025-08-22T15:08:35 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2025-08-22T15:08:07 Scheduler=Main
+   Partition=debug AllocNode:Sid=tri-login05:3907107
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=tri0988
+   BatchHost=tri0988
+   NumNodes=1 NumCPUs=192 NumTasks=192 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=192,mem=767000M,node=1,billing=192
+   AllocTRES=cpu=192,mem=767000M,node=1,billing=192
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryNode=767000M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=NO Contiguous=0 Licenses=(null) Network=(null)
+   Command=/bin/sh
+   WorkDir=/scratch/ollie/rbc_scripts/test
+   Comment=/opt/slurm/bin/salloc --time=1:0:0 --job-name=debugjob-1-ollie --nodes=1 --ntasks=192 -p debug --exclusive 
+   
+
+sacct -j 34740
+JobID           JobName    Account    Elapsed  MaxVMSize     MaxRSS  SystemCPU    UserCPU ExitCode 
+------------ ---------- ---------- ---------- ---------- ---------- ---------- ---------- -------- 
+34740        debugjob-+ def-golus+   00:00:28                        00:00.058  00:00.096      2:0 
+34740.inter+ interacti+ def-golus+   00:00:28          0      4120K  00:00.058  00:00.095      2:0 
+34740.extern     extern def-golus+   00:00:28          0          0   00:00:00   00:00:00      0:0 
+

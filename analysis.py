@@ -335,11 +335,11 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         )
         info.write(
             f"Final Nusselt number:"
-            f" {nus[0, -1]:.4f}%\n"
+            f" {nus[0, -1]:.6f}\n"
         )
         info.write(
             f"Final Reynolds number:"
-            f" {final_re:.4f}\n"
+            f" {final_re:.6f}\n"
         )
         info.close()
 

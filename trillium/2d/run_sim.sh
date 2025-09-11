@@ -31,6 +31,13 @@ GAM=2
 IC=1
 
 
+# When to start averaging - post process
+AVG_TIME=0
+# Exponent of 10 for minimum y axis on power spectra 
+POWER_YMIN=-12
+# Exponent of 10 for maximum y axis on power spectra 
+POWER_YMIN=0
+
 ################################################################################
 
 
@@ -44,7 +51,6 @@ PATH_TO_ENV="$SCRATCH/dedalus"
 
 
 # Load the required modules
-module --force purge
 module load StdEnv/2020
 module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
 
@@ -110,5 +116,5 @@ ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
 srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
 
-srun python3 $PATH_TO_SCRIPTS/power.py --file=$PWD/state/$RECENT
+srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
 ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
