@@ -41,9 +41,10 @@ IC=1
 
 
 # Path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="/home/ollie/links/scratch/rbc_scripts"
-SCRIPTS_3D="/home/ollie/links/scratch/rbc_scripts/3d"
-PATH_TO_ENV="/home/ollie/links/scratch/dedalus"
+PATH_TO_SCRIPTS="$SCRATCH/rbc_scripts"
+SCRIPTS_3D="$SCRATCH/rbc_scripts/3d"
+PATH_TO_ENV="$SCRATCH/dedalus"
+
 
 
 ################################################################################
