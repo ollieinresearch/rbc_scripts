@@ -7,12 +7,13 @@ the Nusselt number, various profiles and information about the simulation to a
 text document.
 
 Usage:
-    analysis.py <files>... [--time=<time>] [--basepath=<dir>]
+    analysis.py <files>... [--time=<time>] [--basepath=<dir>] [--end_time=<end_time>]
     analysis.py <files>...
 
 Options:
-    --time=<time>   Time at which to begin time averaging [default: 200]
+    --time=<time>   Time at which to begin time averaging [default: 0]
     --basepath=<dir>  Path to parent folder for output [default: ./analysis]
+    --end_time=<end_time>   Time at which to end time averaging [default: 0]
 """
 
 import h5py  # pyright: ignore
@@ -44,7 +45,7 @@ def max_difference(arr: np.ndarray) -> float:
 
 
 
-def main(file: Path, basepath: Path, start_ave: np.float64):
+def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64):
     """Computes helpful quantities and creates plots for a (hopefully)
     converged flow.
 
@@ -69,7 +70,8 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         # Get time from file, then take data only from those times beyond where
         # averaging begins
         full_time = np.array(f["scales/sim_time"])
-        start_ind = np.searchsorted(full_time, start_ave)
+        start_ind = np.searchsorted(full_time, start_1
+        ave)
         time = full_time[start_ind:]
         t_0 = time[0]
         t_f = time[-1]
@@ -232,9 +234,9 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
         # time array into n_secs portions, with each portion covering the same
         # amount of time. These sections don't need to be the same size, if
         # timesteps were variable.
-        
+        sec_times = [t_0 + i * total_time / n_secs for i in range(n_secs)]
         inds = np.searchsorted(
-            time, [t_0 + i * total_time / n_secs for i in range(n_secs)]
+            time, sec_times
         )
         # We also want the endpoint as an index
         inds = np.append(inds, [-1])
@@ -307,6 +309,9 @@ def main(file: Path, basepath: Path, start_ave: np.float64):
             else:
                 axes_ind[0].plot(time, inst_nu, linewidth=1)
             # Line to show final average
+            for i, (ind_1, ind_2) in enumerate(zip(sec_times[:-1], sec_times[1:])):
+                # Display the Nu for the specific section
+                axes_ind[0].hlines(nus[ind, i], ind_1, ind_2)
             axes_ind[0].hlines(nus[ind,-1], t_0, t_f, color='orange')
             axes_ind[0].set_xlim([t_0, t_f])
             axes_ind[0].set_title(r"Instantaneous Nu$(t)$ calculated via " + lab)
@@ -434,5 +439,6 @@ if __name__ == "__main__":
     file = Path(args["<files>"][0])
     basepath = Path(args["--basepath"])
     time = float(args["--time"])
+    end_time = float(args["--end_time"])
 
-    main(file, basepath, time)
+    main(file, basepath, time, end_time)

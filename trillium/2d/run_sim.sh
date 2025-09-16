@@ -13,16 +13,16 @@
 # User specified parameters
 START_TIME=0
 # Rayleigh number
-RA=1e7
+RA=1e6
 # Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0, and Pr=0.1 -> PR_EXP=-1)
-PR_EXP=-4
+PR_EXP=-2
 # Vertical resolution
-RES=200
+RES=450
 # Timestep- if using fixed timestep this matters. Otherwise just leave
 # sufficiently small that the simulation won't blow up in 25 iterations
 DT=0.0002
 # Dimensionless time to run the simulation for
-SIM_TIME=200
+SIM_TIME=30
 # Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
 STEPPER=RK222
 # Aspect ratio
@@ -34,7 +34,7 @@ IC=1
 # When to start averaging - post process
 AVG_TIME=0
 # Exponent of 10 for minimum y axis on power spectra 
-POWER_YMIN=-12
+POWER_YMIN=-16
 # Exponent of 10 for maximum y axis on power spectra 
 POWER_YMIN=0
 
@@ -114,7 +114,7 @@ rm -rf restart/restart.h5
 
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
+srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
 
 srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 192 -pix_fmt yuv420p res_check/movie.mp4

@@ -60,7 +60,7 @@ restart_index = int(args['--index'])
 
 # Iterations between saves
 state_iters = 5000
-analysis_iters = 50
+analysis_iters = 25
 field_analysis_iters = 200
 snapshots_iters = 200
 message_num_iters = 500
@@ -252,7 +252,7 @@ try:
             solver,
             initial_dt=dt,
             cadence=2,
-            safety=0.25,
+            safety=0.15,
             max_dt=0.1,
             max_change=1.01,
             threshold=0.005

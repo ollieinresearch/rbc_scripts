@@ -36,6 +36,7 @@ import logging
 
 import dedalus.public as d3
 
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -76,6 +77,8 @@ ybasis = d3.RealFourier(coords['y'], size=Ny, bounds=(0, Ly), dealias=dealias)
 zbasis = d3.ChebyshevT(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias)
 
 x, y, z = dist.local_grids(xbasis, ybasis, zbasis)
+zf = dist.Field(name='z_coord', bases=(xbasis, ybasis, zbasis))
+zf['g'] = z
 ex, ey, ez = coords.unit_vector_fields(dist)
 
 # Fields and tau fields (first-order reduction)
@@ -144,7 +147,7 @@ stepper = {
     'SBDF2': d3.SBDF2,
     'RK443': d3.RK443,
 }.get(stepper_name, d3.RK443)
-print(stepper)
+
 solver = problem.build_solver(stepper)
 logger.info(f"Solver {stepper_name} built.")
 solver.stop_sim_time = stop_sim_time
@@ -164,11 +167,14 @@ else:
     logger.info(f"Loaded restart write={write}, dt={last_dt}")
     fh_mode = 'append'
 
+    logger.info(f"Solver {stepper_name} built.")
+
 # ---------------------
 # Analysis handlers (snapshots, state, analysis)
 # ---------------------
 basepath.mkdir(parents=True, exist_ok=True)
-"""
+
+
 # Snapshots for visualization
 if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
@@ -183,13 +189,14 @@ if snapshots_flag:
     snap.add_task(curl_u@ex, name='vort_x')
     snap.add_task(curl_u@ey, name='vort_y')
     snap.add_task(curl_u@ez, name='vort_z')
+    logger.info(f"Snapshats tasks added.")
+
 
 # State (checkpoint) for restart
 (basepath / 'state').mkdir(exist_ok=True)
 state = solver.evaluator.add_file_handler(str(basepath / 'state'), iter=1000, max_writes=25, mode=fh_mode)
-print(type(solver.state))
-
 state.add_tasks(solver.state)
+logger.info(f"State tasks added.")
 
 # Frequent analysis (domain averages for Nu, Re, energies)
 (basepath / 'analysis').mkdir(exist_ok=True)
@@ -198,10 +205,17 @@ an = solver.evaluator.add_file_handler(str(basepath / 'analysis'), iter=50, max_
 # Helpers for integrals
 kappa_xyz = 1/(Lx*Ly*Lz)
 kappa_xy = 1/(Lx*Ly)
-T_anom = b - (1/2 - z)
 
-an.add_task(nu/kappa, name='Pr')
-an.add_task(1/(kappa*nu), name='Ra')
+T_anom = b - 0.5 - zf
+
+Pr_field = dist.Field(name='Pr_const')
+Pr_field['g'] = nu / kappa
+
+Ra_field = dist.Field(name='Ra_const')
+Ra_field['g'] = 1.0 / (kappa * nu)
+
+an.add_task(Pr_field, name='Pr')
+an.add_task(Ra_field, name='Ra')
 
 # Kinetic energy and temps
 an.add_task(kappa_xyz*d3.integ(u_vec@u_vec), name='avg_K')
@@ -213,6 +227,8 @@ an.add_task(kappa_xy*d3.integ(d3.integ(T_anom**2, 'x'), 'y'), name='avg_T_sq')
 
 # Nusselt proxies
 an.add_task(kappa_xyz*d3.integ(u_vec@ez * (T_anom)), name='avg_wT')
+
+
 # Gradients squared
 grad_u_sq = 0
 for a in (ex, ey, ez):
@@ -221,7 +237,9 @@ for a in (ex, ey, ez):
 
 an.add_task(kappa_xyz*d3.integ(grad_u_sq), name='avg_grad_u_sq')
 an.add_task(kappa_xyz*d3.integ(d3.grad(T_anom)@d3.grad(T_anom)), name='avg_grad_T_sq')
-"""
+
+logger.info(f"Analysis tasks added.")
+
 # ---------------------
 # CFL & flow properties
 # ---------------------
@@ -230,9 +248,11 @@ if use_cfl:
     CFL = d3.CFL(solver, initial_dt=arg_dt, cadence=10, safety=0.5, threshold=0.1,
                  max_change=1.1, min_change=0.5, max_dt=arg_dt)
     CFL.add_velocity(u_vec)
+    logger.info(f"CFL velocities added.")
 
 flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property((u_vec@u_vec)/(nu**2), name='Re_sq')
+logger.info(f"Flow property (reynolds squared) added.")
 
 # ---------------------
 # Main loop
@@ -279,7 +299,7 @@ finally:
     end_time = time.time()
     total_iter = solver.iteration - start_iter
     total_time = end_time - start_time
-    dof = Nx * Ny * Nz * len(problem.variables)  # rough dof count (p, b, u_x,u_y,u_z)
+    dof = Nx * Ny * Nz * len(problem.variables)  # dof count (p, b, u_x,u_y,u_z)
     size = dist.comm_cart.size
 
     logger.info(f'Total iterations: {total_iter}')

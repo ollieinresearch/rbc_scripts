@@ -1,0 +1,8 @@
+\babel@toc {english}{}\relax 
+\contentsline {chapter}{\numberline {1}Introduction}{1}{chapter.1}%
+\contentsline {chapter}{\numberline {2}Nusselt Number and Scaling Laws}{3}{chapter.2}%
+\contentsline {chapter}{\numberline {3}Implementation}{5}{chapter.3}%
+\contentsline {section}{\numberline {3.1}The HPCs}{5}{section.3.1}%
+\contentsline {section}{\numberline {3.2}Folder Structure}{5}{section.3.2}%
+\contentsline {chapter}{\numberline {4}Python}{8}{chapter.4}%
+\contentsline {chapter}{\numberline {5}Workflow}{19}{chapter.5}%

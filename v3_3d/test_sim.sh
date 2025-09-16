@@ -7,8 +7,7 @@
 #SBATCH --mem=0
 #SBATCH --job-name=example
 #SBATCH --account=def-goluskin
-#SBATCH --mail-type=FAIL
-#SBATCH --mail-user=ollietheengineer@uvic.ca
+
 
 
 # Path to all python scripts for simulations; change as needed

@@ -1,0 +1,253 @@
+Not running with a prior simulation's initial conditions; starting fresh!
+2025-09-11 15:53:15,851 subsystems 0/10 INFO :: Building subproblem matrices 1/10 (~10%) Elapsed: 0s, Remaining: 1s, Rate: 1.5e+01/s
+2025-09-11 15:53:15,872 subsystems 0/10 INFO :: Building subproblem matrices 2/10 (~20%) Elapsed: 0s, Remaining: 0s, Rate: 2.3e+01/s
+2025-09-11 15:53:15,893 subsystems 0/10 INFO :: Building subproblem matrices 3/10 (~30%) Elapsed: 0s, Remaining: 0s, Rate: 2.8e+01/s
+2025-09-11 15:53:15,913 subsystems 0/10 INFO :: Building subproblem matrices 4/10 (~40%) Elapsed: 0s, Remaining: 0s, Rate: 3.2e+01/s
+2025-09-11 15:53:15,934 subsystems 0/10 INFO :: Building subproblem matrices 5/10 (~50%) Elapsed: 0s, Remaining: 0s, Rate: 3.4e+01/s
+2025-09-11 15:53:15,954 subsystems 0/10 INFO :: Building subproblem matrices 6/10 (~60%) Elapsed: 0s, Remaining: 0s, Rate: 3.6e+01/s
+2025-09-11 15:53:15,974 subsystems 0/10 INFO :: Building subproblem matrices 7/10 (~70%) Elapsed: 0s, Remaining: 0s, Rate: 3.7e+01/s
+2025-09-11 15:53:15,995 subsystems 0/10 INFO :: Building subproblem matrices 8/10 (~80%) Elapsed: 0s, Remaining: 0s, Rate: 3.8e+01/s
+2025-09-11 15:53:16,017 subsystems 0/10 INFO :: Building subproblem matrices 9/10 (~90%) Elapsed: 0s, Remaining: 0s, Rate: 3.9e+01/s
+2025-09-11 15:53:16,038 subsystems 0/10 INFO :: Building subproblem matrices 10/10 (~100%) Elapsed: 0s, Remaining: 0s, Rate: 4.0e+01/s
+2025-09-11 15:53:16,039 __main__ 0/10 INFO :: Solver RK222 built.
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+Traceback (most recent call last):
+  File "/home/ollie/links/scratch/rbc_scripts/v3_3d/v3_test.py", line 183, in <module>
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+                  ~~^~~~~~~~~~
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+                  ~~^~~~~~~~~~
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+    snap.add_task(b - (Lz - z), name='temp_anomaly')
+                  ~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 98, in __sub__
+    return (self + (-other))
+    return (self + (-other))
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return (self + (-other))
+            ~~~~~^~~~~~~~~~
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/field.py", line 89, in __add__
+    return Add(self, other)
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    return Add(self, other)
+           ^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/tools/dispatch.py", line 17, in __call__
+    args, kw = cls._preprocess_args(*args, **kw)
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args, kw = cls._preprocess_args(*args, **kw)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in _preprocess_args
+    args = [arg for arg in args if arg != 0]
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/ollie/ded3test/lib/python3.11/site-packages/dedalus/core/arithmetic.py", line 58, in <listcomp>
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+    args = [arg for arg in args if arg != 0]
+                                   ^^^^^^^^
+ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+srun: error: tri0856: tasks 0-9: Exited with exit code 1
+srun: Terminating StepId=85357.0
+
+scontrol show job 85357
+JobId=85357 JobName=example
+   UserId=ollie(3147340) GroupId=ollie(3147340) MCS_label=N/A
+   Priority=161820 Nice=0 Account=def-goluskin QOS=normal
+   JobState=COMPLETING Reason=NonZeroExitCode Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=1:0
+   RunTime=00:00:07 TimeLimit=00:20:00 TimeMin=N/A
+   SubmitTime=2025-09-11T15:50:00 EligibleTime=2025-09-11T15:50:00
+   AccrueTime=2025-09-11T15:50:00
+   StartTime=2025-09-11T15:53:09 EndTime=2025-09-11T15:53:16 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2025-09-11T15:53:09 Scheduler=Backfill
+   Partition=compute AllocNode:Sid=tri-login02:985589
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=tri0856
+   BatchHost=tri0856
+   NumNodes=1 NumCPUs=192 NumTasks=10 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=10,mem=767000M,node=1,billing=10
+   AllocTRES=cpu=192,mem=767000M,node=1,billing=192
+   Socks/Node=* NtasksPerN:B:S:C=10:0:*:* CoreSpec=*
+   MinCPUsNode=10 MinMemoryNode=767000M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=NO Contiguous=0 Licenses=(null) Network=(null)
+   Command=/scratch/ollie/rbc_scripts/v3_3d/run_sim.sh
+   WorkDir=/scratch/ollie/rbc_scripts/v3_3d
+   Comment=/opt/slurm/bin/sbatch --export=NONE --get-user-env=L run_sim.sh 
+   StdErr=/scratch/ollie/rbc_scripts/v3_3d/test_v3.out
+   StdIn=/dev/null
+   StdOut=/scratch/ollie/rbc_scripts/v3_3d/test_v3.out
+   
+
+sacct -j 85357
+JobID           JobName    Account    Elapsed  MaxVMSize     MaxRSS  SystemCPU    UserCPU ExitCode 
+------------ ---------- ---------- ---------- ---------- ---------- ---------- ---------- -------- 
+85357           example def-golus+   00:00:07                         00:00:00   00:00:00      0:0 
+85357.batch       batch def-golus+   00:00:07                         00:00:00   00:00:00      0:0 
+85357.extern     extern def-golus+   00:00:07                         00:00:00   00:00:00      0:0 
+85357.0         python3 def-golus+   00:00:05                         00:00:00   00:00:00      0:0 
+
