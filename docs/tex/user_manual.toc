@@ -6,3 +6,4 @@
 \contentsline {section}{\numberline {3.2}Folder Structure}{5}{section.3.2}%
 \contentsline {chapter}{\numberline {4}Python}{8}{chapter.4}%
 \contentsline {chapter}{\numberline {5}Workflow}{19}{chapter.5}%
+\contentsline {chapter}{\numberline {6}Conclusion}{25}{chapter.6}%

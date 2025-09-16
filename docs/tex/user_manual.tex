@@ -775,6 +775,7 @@ export NUMEXPR_MAX_THREADS=1
 if [ $IC -eq 1 ]; then
   IC_ARRAY=($(python3 $PATH_TO_SCRIPTS/initial_condition.py \\
    $START_TIME --file=$PWD/restart/restart.h5))
+
   TOTAL_TIME=$(echo "$SIM_TIME+${IC_ARRAY[1]}" | bc)
   IND=${IC_ARRAY[0]}
 
@@ -816,9 +817,69 @@ srun python3 $SCRIPTS_2D/rayleigh_benard_script.py \\
 
 	Next up is determining where to start the simulation from. The first option in that if/else check deals with starting from a checkpoint, and the else deals with starting fresh. The script \textit{initial\_condition.py} looks at the restart file, determines which write in the file is closest to the \textit{START\_TIME} variable, and then gives back the time and the index of the write. This all works very well and should not be changed.
 
-	Now that we have determined all the parameters for the simulation, we run it with the \textit{srun python3 rayleigh\_benard\_script.py} command.
+	Now that we have determined all the parameters for the simulation, we run it with the \textit{srun python3 rayleigh\_benard\_script.py} command. Congrats, we are now running a fluid dynamics simulation on one of the world's largest supercomputers; isn't that awesome? Moving on to the post-processing portion of the scripts:
 
-	Inside each simulation folder (that is, the final level of the Rayleigh/Prandtl/resolution\_AR organization), there only need to be a few shell scripts to begin running a simulation. All the shell scripts are contained inside the github repo, and there is a handy script sim\_ready.sh which will copy all the required scripts into wherever sim\_ready.sh is ran. So, for example, to run a simulation at from the example directory tree, we would move into  ra
+	\bashstyle
+	\begin{lstlisting}
+# Post processing
+if [ -f "analysis/analysis.h5" ]; then
+    rm analysis/analysis.h5
+    echo "removing existing analysis file"
+fi
+
+if [ -f "field_analysis/field_analysis.h5" ]; then
+    rm field_analysis/field_analysis.h5
+    echo "removing existing field_analysis file"
+fi
+
+# merge analysis data into one file to plot time series data
+srun python3 -m dedalus merge_procs analysis --cleanup
+srun python3 -m dedalus merge_procs field_analysis --cleanup
+srun python3 -m dedalus merge_sets \\
+ analysis/analysis.h5 analysis/*.h5
+
+srun python3 -m dedalus merge_sets \\
+ field_analysis/field_analysis.h5 field_analysis/*.h5
+
+
+# merge snapshot processes into set files - don't need one big file here since plotting slices
+srun python3 -m dedalus merge_procs snapshots --cleanup
+
+# merge state processes into sets
+srun python3 -m dedalus merge_procs state --cleanup
+	\end{lstlisting}
+
+	As discussed in the HDF5 section, the files need to be merged when we use more than one CPU for a simulation; that's what the \textit{srun python3 -m dedalus merge\_procs} and \textit{merge\_sets} commands do. The \textit{merge\_procs} command aggregates all of the processor's data into one set, and there may be many sets (if the \textit{max\_writes} variable is passed) in one folder. Sometimes we need to merge those many sets into one big file, such as with the analysis data. Since we are processing timeseries data that may span many simulations, it is necessary to put all of that data into one big file, otherwise only portions of the entire simulation can be read at once. This is why we create the \textit{analysis.h5} file. Now that we have prepped all the data for processing, let's process it:
+
+	\bashstyle
+	\begin{lstlisting}
+RECENT=$(find state/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
+
+
+if [ ! -d "restart" ]; then
+  mkdir restart
+  echo "creating directory for restart"
+fi
+
+rm -rf restart/restart.h5
+
+ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
+
+srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
+
+srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
+	\end{lstlisting}
+
+	The \textit{srun python3 \$PATH\_TO\_SCRIPTS/analysis.py} command runs the data analysis script on the timeseries that we have gathered. This script creates plots showing the timeseries of the kinetic energy and the Nusselt number over time, as well as outputs all the exact data to a text file, and it also gives plots of the horizontally averaged temperature/kinetic energy profiles.
+
+	The \textit{srun python3 \$PATH\_TO\_SCRIPTS/power.py} command calculates the power spectra of the simulation at each of the checkpoints, and writes that data to plots which are then pieced together into an animation with the next line. These spectra movies give us rough guidance on the resolution - whether it is under, over, or properly resolved can be well determined by the shape of the spectra.
+
+
+\chapter{Conclusion}
+	That is all for now! You should now be well acquainted with the goal of the project, the DRAC supercomputers, Dedalus, the Python scripts powering the simulation, the inputs and the outputs of the simulations, and you should be able to run new simulations yourself. Additional tips and tricks will be coming soon; again, please reach out to Oliver Brown if you have unanswered questions.
+
+	Thanks for reading!
 
 
 
