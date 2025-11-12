@@ -59,7 +59,7 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
+python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
 
 mkdir res_check
 mkdir res_check_3d

@@ -1,31 +1,42 @@
 """
-3D Rayleigh–Bénard convection using Dedalus 3 (d3).
-- Periodic in x & y (Real Fourier), no‑slip in z (Chebyshev T).
-- Non‑dimensionalized with box height and free‑fall time:
+3D Rayleigh-Bénard convection using Dedalus 3 (d3).
+- Periodic in x & y (Real Fourier), no-slip in z (Chebyshev T).
+- Non-dimensionalized with box height and free-fall time:
     kappa = (Ra * Pr)**(-1/2)
     nu    = (Ra / Pr)**(-1/2)
-- Uses first‑order (lifted) tau formulation recommended in d3 examples.
-- Supports fixed or CFL‑limited timestepping, snapshots, analysis, and restarts.
+- Uses first-order (lifted) tau formulation recommended in d3 examples.
+- Supports fixed or CFL-limited timestepping, snapshots, analysis, and restarts.
 
 Usage:
     rayleigh_benard_script3d_dedalus3.py [options]
 
 Options:
-    --Ra=<Ra>                Rayleigh number
-    --Pr_exp=<Pr>            Exponent on the Prandtl number (base 10)
-    --res=<res>              Resolution in modes/unit space
-    --dt=<dt>                Timestep (initial/max for CFL)
-    --sim_time=<time>        Simulation time
-    --basepath=<path>        Base path for output files
-    --stepper=<stepper>      Timestepper [default: RK443]
-    --Lx=<Lx>                Length in x [default: 2]
-    --Ly=<Ly>                Length in y [default: 2]
-    --meshx=<size>           2D process mesh size in x [default: 16]
-    --meshy=<size>           2D process mesh size in y [default: 12]
-    --index=<index>          Restart write index [default: -1]
-    --snapshots              Enable snapshots for visualization
-    --cfl                    Enable CFL timestepping
-    --flow_bc=<bc>           Flow BC in z: no-slip | free-slip [default: no-slip]
+    --Ra=<Ra>                         Rayleigh number
+    --Pr_exp=<Pr>                     Exponent on the Prandtl number (base 10)
+    --res=<res>                       Resolution in modes/unit space
+    --dt=<dt>                         Timestep (initial/max for CFL) [default: 0.0001]
+    --cfl_safety=<cfl_safety>         Safety factor of CFL (see dedalus docs) [default: 0.5]
+    --cfl_threshold=<cfl_threshold>   Threshold to compute new dt (see ded docs) [default: 0.01]
+    --cfl_cadence=<cfl_cadence>       Timesteps before checking dt (see ded docs) [default: 5]
+    --sim_time=<time>                 Simulation time
+    --basepath=<path>                 Base path for output files
+    --flow_bc=<bc>                    Flow BC in z: no-slip | free-slip [default: no-slip]
+    --stepper=<stepper>               Timestepper [default: RK443]
+    --Lx=<Lx>                         Length in x [default: 2]
+    --Ly=<Ly>                         Length in y [default: 2]
+    --meshx=<size>                    2D process mesh size in x
+    --meshy=<size>                    2D process mesh size in y
+    --index=<index>                   Restart write index [default: -1]
+    --snapshots                       Enable snapshots for visualization
+    --cfl                             Enable CFL timestepping
+"""
+
+
+"""
+QUESTIONS:
+
+gauge? why integ(pressure) = 0 and also div free? didn't used to do gauge
+
 """
 
 from docopt import docopt
@@ -33,6 +44,7 @@ import numpy as np
 from pathlib import Path
 import time
 import logging
+from mpi4py import MPI
 
 import dedalus.public as d3
 
@@ -45,20 +57,33 @@ args = docopt(__doc__)
 # ---------------------
 # Parameters
 # ---------------------
-Lx, Ly, Lz = (int(args['--Lx']), int(args['--Ly']), 1)
-Pr = 10 ** np.float64(args['--Pr_exp'])
-Ra = np.float64(args['--Ra'])
-res = int(args['--res'])
-Nx, Ny, Nz = (Lx * res, Ly * res, Lz * res)
-stepper_name = str(args['--stepper'])
-flow_bc = str(args['--flow_bc'])
-meshx, meshy = int(args['--meshx']), int(args['--meshy'])
 basepath = Path(str(args['--basepath']))
-arg_dt = np.float64(args['--dt'])
 stop_sim_time = np.float64(args['--sim_time'])
 snapshots_flag = args['--snapshots']
-use_cfl = args['--cfl']
 restart_index = int(args['--index'])
+
+Pr = 10 ** np.float64(args['--Pr_exp'])
+Ra = np.float64(args['--Ra'])
+
+Lx, Ly, Lz = (int(args['--Lx']), int(args['--Ly']), 1)
+res = int(args['--res'])
+Nx, Ny, Nz = (Lx * res, Ly * res, Lz * res)
+flow_bc = str(args['--flow_bc'])
+meshx, meshy = int(args['--meshx']), int(args['--meshy'])
+
+stepper_name = str(args['--stepper'])
+
+use_cfl = args['--cfl']
+arg_dt = np.float64(args['--dt'])
+cfl_safety = np.float64(args['--cfl_safety'])
+cfl_threshold = np.float64(args['--cfl_threshold'])
+cfl_cadence = int(args['--cfl_cadence'])
+
+
+# Iteration parameters
+state_iters = 2500
+snap_iters = 200
+analysis_iters = 50
 
 dtype = np.float64
 
@@ -77,8 +102,13 @@ ybasis = d3.RealFourier(coords['y'], size=Ny, bounds=(0, Ly), dealias=dealias)
 zbasis = d3.ChebyshevT(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias)
 
 x, y, z = dist.local_grids(xbasis, ybasis, zbasis)
-zf = dist.Field(name='z_coord', bases=(xbasis, ybasis, zbasis))
-zf['g'] = z
+z_coord = dist.Field(name='z_coord', bases=(xbasis, ybasis, zbasis))
+z_coord['g'] = z
+
+# For analysis only
+z_an = dist.Field(name='z_an', bases=(zbasis))
+z_an['g'] = z
+
 ex, ey, ez = coords.unit_vector_fields(dist)
 
 # Fields and tau fields (first-order reduction)
@@ -136,6 +166,13 @@ else:
 # Pressure gauge (removes null space)
 problem.add_equation("integ(p) = 0")
 
+# Helpers for integrals
+kappa_xyz = 1/(Lx*Ly*Lz)
+kappa_xy = 1/(Lx*Ly)
+
+T = b - 1/2
+temp = b-(1-z_coord)
+
 # ---------------------
 # Solver & timestepping
 # ---------------------
@@ -178,35 +215,27 @@ basepath.mkdir(parents=True, exist_ok=True)
 # Snapshots for visualization
 if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
-    snap = solver.evaluator.add_file_handler(str(basepath / 'snapshots'), iter=200, max_writes=50, mode=fh_mode)
-    # Temperature anomaly T = b - (Lz - z)
-    snap.add_task(b - (Lz - z), name='temp_anomaly')
+    snap = solver.evaluator.add_file_handler(str(basepath / 'snapshots'), iter=snap_iters, max_writes=50, mode=fh_mode, parallel='mpio')
+    snap.add_task(b, name='temperature')
     # Velocity components & vorticity
     curl_u = d3.curl(u_vec)
-    snap.add_task(u_vec@ex, name='u')
-    snap.add_task(u_vec@ey, name='v')
     snap.add_task(u_vec@ez, name='w')
-    snap.add_task(curl_u@ex, name='vort_x')
-    snap.add_task(curl_u@ey, name='vort_y')
-    snap.add_task(curl_u@ez, name='vort_z')
-    logger.info(f"Snapshats tasks added.")
+    snap.add_task(curl_u@ex, name='x_vort')
+    snap.add_task(curl_u@ey, name='y_vort')
+    logger.info(f"Snapshots tasks added.")
 
 
 # State (checkpoint) for restart
 (basepath / 'state').mkdir(exist_ok=True)
-state = solver.evaluator.add_file_handler(str(basepath / 'state'), iter=1000, max_writes=25, mode=fh_mode)
+state = solver.evaluator.add_file_handler(str(basepath / 'state'), iter=state_iters, max_writes=25, mode=fh_mode, parallel='mpio')
 state.add_tasks(solver.state)
 logger.info(f"State tasks added.")
 
 # Frequent analysis (domain averages for Nu, Re, energies)
 (basepath / 'analysis').mkdir(exist_ok=True)
-an = solver.evaluator.add_file_handler(str(basepath / 'analysis'), iter=50, max_writes=1000, mode=fh_mode)
+an = solver.evaluator.add_file_handler(str(basepath / 'analysis'), iter=analysis_iters, max_writes=1000, mode=fh_mode, parallel='mpio')
 
-# Helpers for integrals
-kappa_xyz = 1/(Lx*Ly*Lz)
-kappa_xy = 1/(Lx*Ly)
 
-T_anom = b - 0.5 - zf
 
 Pr_field = dist.Field(name='Pr_const')
 Pr_field['g'] = nu / kappa
@@ -217,26 +246,29 @@ Ra_field['g'] = 1.0 / (kappa * nu)
 an.add_task(Pr_field, name='Pr')
 an.add_task(Ra_field, name='Ra')
 
+an.add_task(z_an, name='z_an')
+
 # Kinetic energy and temps
 an.add_task(kappa_xyz*d3.integ(u_vec@u_vec), name='avg_K')
-an.add_task(kappa_xy*d3.integ(d3.integ(T_anom, 'x'), 'y'), name='avg_T')
+an.add_task(kappa_xy*d3.integ(d3.integ(b, 'x'), 'y'), name='avg_T')
 an.add_task(kappa_xy*d3.integ(d3.integ((u_vec@ex)**2, 'x'), 'y'), name='avg_u_sq')
 an.add_task(kappa_xy*d3.integ(d3.integ((u_vec@ey)**2, 'x'), 'y'), name='avg_v_sq')
 an.add_task(kappa_xy*d3.integ(d3.integ((u_vec@ez)**2, 'x'), 'y'), name='avg_w_sq')
-an.add_task(kappa_xy*d3.integ(d3.integ(T_anom**2, 'x'), 'y'), name='avg_T_sq')
+an.add_task(kappa_xy*d3.integ(d3.integ(b**2, 'x'), 'y'), name='avg_T_sq')
 
 # Nusselt proxies
-an.add_task(kappa_xyz*d3.integ(u_vec@ez * (T_anom)), name='avg_wT')
+an.add_task(kappa_xyz*d3.integ(u_vec@ez * (T)), name='avg_wT')
 
 
-# Gradients squared
 grad_u_sq = 0
-for a in (ex, ey, ez):
-    comp = d3.grad(u_vec)@a
-    grad_u_sq = grad_u_sq + (comp@comp)
+for dir_vec in (ex, ey, ez):
+    deriv_comp = d3.grad(u_vec) @ dir_vec   # gives vector of ∂u/∂dir_vec
+    # deriv_comp is a vector field; its components are the directional derivatives of each velocity component
+    grad_u_sq += deriv_comp @ deriv_comp  # dot them to get sum of squares of components
 
-an.add_task(kappa_xyz*d3.integ(grad_u_sq), name='avg_grad_u_sq')
-an.add_task(kappa_xyz*d3.integ(d3.grad(T_anom)@d3.grad(T_anom)), name='avg_grad_T_sq')
+
+an.add_task(kappa_xyz*d3.integ((grad_u_sq)), name='avg_grad_u_sq')
+an.add_task(kappa_xyz*d3.integ(d3.grad(b)@d3.grad(b)), name='avg_grad_T_sq')
 
 logger.info(f"Analysis tasks added.")
 
@@ -245,14 +277,9 @@ logger.info(f"Analysis tasks added.")
 # ---------------------
 CFL = None
 if use_cfl:
-    CFL = d3.CFL(solver, initial_dt=arg_dt, cadence=10, safety=0.5, threshold=0.1,
-                 max_change=1.1, min_change=0.5, max_dt=arg_dt)
+    CFL = d3.CFL(solver, initial_dt=arg_dt, cadence=cfl_cadence, safety=cfl_safety, threshold=cfl_threshold)
     CFL.add_velocity(u_vec)
     logger.info(f"CFL velocities added.")
-
-flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property((u_vec@u_vec)/(nu**2), name='Re_sq')
-logger.info(f"Flow property (reynolds squared) added.")
 
 # ---------------------
 # Main loop
@@ -272,10 +299,12 @@ try:
             if (solver.iteration - 1) % message_num_iters == 0:
                 l_dts = len(dts)
                 if l_dts > 0:
+                    logger.info('-' * 80)
                     logger.info(f"The timestep changed {l_dts} time(s) over the last {message_num_iters} iters.")
                     logger.info(f"Average dt={np.mean(dts):.4e}, min={np.min(dts):.4e}, max={np.max(dts):.4e}")
-                logger.info('Iteration: %i, Time: %e, dt: %e, max(Re_sq)=%f' % (
-                    solver.iteration, solver.sim_time, dt, flow.max('Re_sq')))
+                    logger.info('-' * 80)
+                logger.info('Iteration: %i, Time: %e, dt: %e' % (
+                    solver.iteration, solver.sim_time, dt))
                 logger.info('-' * 80)
                 dts = []
             new_dt = CFL.compute_timestep()
@@ -287,8 +316,8 @@ try:
         while solver.proceed:
             solver.step(dt)
             if (solver.iteration - 1) % message_num_iters == 0:
-                logger.info('Iteration: %i, Time: %e, dt: %e, max(Re_sq)=%f' % (
-                    solver.iteration, solver.sim_time, dt, flow.max('Re_sq')))
+                logger.info('Iteration: %i, Time: %e, dt: %e' % (
+                    solver.iteration, solver.sim_time, dt))
                 logger.info('-' * 80)
 
 except Exception:

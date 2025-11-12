@@ -3,7 +3,7 @@
 #SBATCH --output=job_vis.out
 #SBATCH --time=00:59:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=96
+#SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
 
@@ -29,6 +29,7 @@ export NUMEXPR_MAX_THREADS=1
 srun python3 -m dedalus merge_procs snapshots --cleanup
 
 srun python3 $PATH_TO_SCRIPTS/max_vort.py snapshots/*.h5
+python3 $PATH_TO_SCRIPTS/max_vort_2.py $PWD/snapshots
 
 mv="$(cat snapshots/max_vort.txt)"
 
@@ -36,4 +37,4 @@ srun python3 $PATH_TO_SCRIPTS/plot_slices.py snapshots/*.h5 --output=frames --ma
 
 # Piece frames together!
 rm frames/movie.mp4
-ffmpeg -y -r 20 -pattern_type glob -i 'frames/*.png' -threads 96 -pix_fmt yuv420p frames/movie.mp4
+ffmpeg -y -r 24 -pattern_type glob -i 'frames/*.png' -threads 192 -pix_fmt yuv420p frames/movie.mp4

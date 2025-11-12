@@ -33,4 +33,4 @@ pip install --no-index -r $PATH_TO_SCRIPTS/requirements_vis2.txt
 
 mkdir $PWD/visualization
 srun python3 $PATH_TO_SCRIPTS/isos_test.py $PWD/snapshots/*.h5 --basepath=$PWD
-ffmpeg -y -r 15 -pattern_type glob -i 'visualization/*.png' -threads 96 -pix_fmt yuv420p visualization/movie.mp4
+ffmpeg -y -r 24 -pattern_type glob -i 'visualization/*.png' -threads 96 -pix_fmt yuv420p visualization/movie.mp4

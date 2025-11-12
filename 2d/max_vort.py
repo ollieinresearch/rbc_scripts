@@ -3,7 +3,7 @@ Finds the maximum vorticity in a simulation to correctly set the movie colour
 scale.
 
 Usage:
-    prelim.py <files>...
+    max_vort.py <files>...
 '''
 
 import h5py # pyright: ignore

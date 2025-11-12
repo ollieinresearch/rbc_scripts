@@ -1,29 +1,30 @@
 #!/bin/bash
 
-#SBATCH --output=test_v3.out
+#SBATCH --output=job_sim.out
 #SBATCH --time=00:20:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --job-name=example
 #SBATCH --account=def-goluskin
-
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=ollietheengineer@uvic.ca
 
 
 ################################################################################
 # Simulation parameters
 START_TIME=0
 # Rayleigh number
-RA=5
+RA=1e5
 # Exponent of 10 for Prandtl number. (ie if Pr=1, PR_EXP=0)
-PR=0
+PR_EXP=0
 # Vertical resolution
 RES=48
 # Timestep- if using fixed timestep this matters. Otherwise just leave
 # sufficiently small that the simulation won't blow up in 25 iterations
 DT=0.005
 # Dimensionless time to run the simulation for
-SIM_TIME=100
+SIM_TIME=40
 # Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
 STEPPER=RK222
 # Aspect ratio in x and y resp.
@@ -32,39 +33,27 @@ LY=2
 # Provide the size of the square 2D process mesh; note that if your resolution is given by R,
 # you have a grid of size Lx*R x Ly*R x R, and if your mesh is of size [n,m], then on each core you compute
 # (Lx*R/n)x(Ly*R/m) pencils of length R. Most efficient when MESHX=MESHY.
-MESHX=16
-MESHY=24
+MESHX=12
+MESHY=16
 
 # Use initial condition? (1=yes, 0=no) - 0 deletes any data in the folder from a different run!
 IC=1
 
 
-
-# CFL Stuff
-CFL_SAFETY=0.5
-CFL_THRESHOLD=0.05
-CFL_CADENCE=2
-
-
-# When to start averaging - post process
-AVG_TIME=50
-# Exponent of 10 for minimum y axis on power spectra 
-POWER_YMIN=-18
-# Exponent of 10 for maximum y axis on power spectra 
-POWER_YMAX=0
+# For post processing
+AVG_TIME=0
 ################################################################################
 
 
 # Path to all python scripts for simulations; change as needed
 PATH_TO_SCRIPTS="$SCRATCH/rbc_scripts"
 SCRIPTS_3D="$SCRATCH/rbc_scripts/3d"
-PATH_TO_ENV="$SCRATCH/ded3"
+PATH_TO_ENV="$SCRATCH/dedalus"
 
 # Load the required modules
-ml StdEnv/2023
-ml python/3.11.5 mpi4py/3.1.4 fftw-mpi/3.3.10 hdf5-mpi/1.14.2
-
-source /scinet/vast/etc/vastpreload-openmpi.bash
+module --force purge
+module load StdEnv/2020
+module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
 
 source $PATH_TO_ENV/bin/activate;
 
@@ -82,13 +71,31 @@ if [ $IC -eq 1 ]; then
 else
   echo "Not running with a prior simulation's initial conditions; starting fresh!"
   # rm -rf {analysis,state,preliminary_outputs,snapshots,outputs,field_analysis,restart}
-  rm -rf restart
+
   TOTAL_TIME=$SIM_TIME
   IND=-1
 fi
 
-mpirun python3 /home/ollie/links/scratch/rbc_scripts/v3_3d/ded_example.py --Ra=$RA --Pr=$PR --nz=$RES --dt=$DT --sim_time=$TOTAL_TIME --index=$IND --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl_safety=$CFL_SAFETY --cfl_threshold=$CFL_THRESHOLD --cfl_cadence=$CFL_CADENCE --cfl --snapshots
+srun python3 $SCRIPTS_3D/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --index=$IND --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl
 
+# Post processing
+if [ -f "field_analysis/field_analysis.h5" ]; then
+    rm field_analysis/field_analysis.h5
+    echo "removing existing field_analysis file"
+fi
+
+if [ -f "analysis/analysis.h5" ]; then
+    rm analysis/analysis.h5
+    echo "removing existing analysis file"
+fi
+
+# Merge processors into sets
+srun python3 -m dedalus merge_procs field_analysis --cleanup
+srun python3 -m dedalus merge_procs analysis --cleanup
+srun python3 -m dedalus merge_procs snapshots --cleanup
+srun python3 -m dedalus merge_procs state --cleanup
+srun python3 -m dedalus merge_sets field_analysis/field_analysis.h5 field_analysis/*.h5
+srun python3 -m dedalus merge_sets analysis/analysis.h5 analysis/*.h5
 
 # For deciding the restart path
 RECENT=$(find state/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
@@ -101,12 +108,12 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-python3 $PATH_TO_SCRIPTS/analysis_v3.py $PWD --time=$AVG_TIME
+python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
 
 mkdir res_check
 mkdir res_check_3d
 
-mpirun python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5
-mpirun python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5
-ffmpeg -y -r 60 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
-ffmpeg -y -r 60 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p res_check_3d/movie.mp4
+srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5
+srun python3 $SCRIPTS_3D/power.py $PWD/state/*.h5
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check_3d/*.png' -threads 96 -pix_fmt yuv420p res_check_3d/movie.mp4

@@ -32,9 +32,9 @@ def main(file, start, count, ymin=-12.0, ymax=0.0):
         # Collect the state file data (start/count is for parallelization)
         time = np.array(f["scales/sim_time"][start:start+count])
         writes = np.array(f["scales/write_number"][start:start+count])
-        u = np.array(f['tasks']['u'][start:start+count])
-        v = np.array(f['tasks']['v'][start:start+count])
-        w = np.array(f['tasks']['w'][start:start+count])
+        u = np.array(f['tasks']['u'][start:start+count, 0])
+        v = np.array(f['tasks']['u'][start:start+count, 1])
+        w = np.array(f['tasks']['u'][start:start+count, 2])
         nt, nx, ny, nz = u.shape       
         
         # Discard the first timestep

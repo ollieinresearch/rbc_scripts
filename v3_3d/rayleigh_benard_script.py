@@ -178,7 +178,7 @@ if snapshots:
     snapshots_file = basepath / 'snapshots'
     snapshots_file.mkdir(exist_ok=True)
 
-    snapshots = solver.evaluator.add_file_handler(snapshots_file, iter=200, max_writes=50, mode=fh_mode)
+    snapshots = solver.evaluator.add_file_handler(snapshots_file, iter=200, max_writes=50, mode=fh_mode, parallel='mpio')
     snapshots.add_task("T-(z-1/2)", name = 'temp')
     snapshots.add_task("w", scales=2, name = 'w')
     snapshots.add_task("dy(w) - dz(v)", scales=2, name = 'x_vort')
@@ -188,13 +188,13 @@ if snapshots:
 # states saved as checkpoints for restarting. Can adjust iter as necessary.
 state_file = basepath / 'state'
 state_file.mkdir(exist_ok=True)
-state = solver.evaluator.add_file_handler(state_file, iter=1000, max_writes=25, mode=fh_mode)
+state = solver.evaluator.add_file_handler(state_file, iter=1000, max_writes=25, mode=fh_mode, parallel='mpio')
 state.add_system(solver.state)
 
 # For field_analysis - data saved at 1 point in space INFREQUENTLY
 field_analysis_file = basepath / 'field_analysis'
 field_analysis_file.mkdir(exist_ok=True)
-field_analysis = solver.evaluator.add_file_handler(field_analysis_file, iter=100, max_writes=1000, mode=fh_mode)
+field_analysis = solver.evaluator.add_file_handler(field_analysis_file, iter=100, max_writes=1000, mode=fh_mode, parallel='mpio')
 
 field_analysis.add_task('R/P', name='Pr')
 field_analysis.add_task('1/(P*R)', name='Ra')
@@ -225,7 +225,7 @@ field_analysis.add_task("interp(dz(Tz), x=0, y=0, z=0)", name='T_zz')
 # For calculating Nu and Re - data saved at 1 point in space FREQUENTLY
 analysis_file = basepath / 'analysis'
 analysis_file.mkdir(exist_ok=True)
-analysis = solver.evaluator.add_file_handler(analysis_file, iter=50, max_writes=1000, mode=fh_mode)
+analysis = solver.evaluator.add_file_handler(analysis_file, iter=50, max_writes=1000, mode=fh_mode, parallel="mpio")
 analysis.add_task('R/P', name='Pr')
 analysis.add_task('1/(P*R)', name='Ra')
 

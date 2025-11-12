@@ -57,8 +57,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64)
 
     output = basepath / 'outputs'
     output.mkdir(exist_ok='true')
-    pre_output = basepath / "preliminary_outputs"
-    pre_output.mkdir(exist_ok='true')
+
 
     n_secs = 3
 
@@ -69,9 +68,8 @@ def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64)
 
         # Get time from file, then take data only from those times beyond where
         # averaging begins
-        full_time = np.array(f["scales/sim_time"])
-        start_ind = np.searchsorted(full_time, start_1
-        ave)
+        full_time = np.array(f["scales"]["sim_time"])
+        start_ind = np.searchsorted(full_time, start_ave)
         time = full_time[start_ind:]
         t_0 = time[0]
         t_f = time[-1]
@@ -239,6 +237,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64)
             time, sec_times
         )
         # We also want the endpoint as an index
+        sec_times = np.append(sec_times, time[-1])
         inds = np.append(inds, [-1])
 
         # Array to hold the different Nu values (varies by section and quantity)
@@ -268,7 +267,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64)
             time = time[mask]
             """
 
-            cumu_dset = cumulative_trapezoid(dset, time)
+            cumu_dset = cumulative_trapezoid(dset, time, axis=0)
             cumu_nus = nu_func(cumu_dset, time[1:] - t_0)
 
             # Final cumulative Nu is the longest time average (so hopefully 
@@ -282,9 +281,9 @@ def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64)
             z = zip(inds[:-1], inds[1:])
             for i, (ind_1, ind_2) in enumerate(z):
                 # Save the Nu for the specific section
-                nus[ind, i] = nu_func(cumu_dset[ind_2]-cumu_dset[ind_1], time[ind_2]-time[ind_1])
+                nus[ind, i] = nu_func(simpson(dset[ind_1:ind_2], time[ind_1:ind_2], axis=0), time[ind_2]-time[ind_1])
                 info.write(
-                    f"Nu calculated using data from section {i+1} of {n_secs}:"
+                    f"Nu calculated using data from section {i+1} ({time[ind_1]:.1f} to {time[ind_2]:.1f}):"
                     f" {nus[ind, i]:.4f}\n"
                 )
 
@@ -331,7 +330,7 @@ def main(file: Path, basepath: Path, start_ave: np.float64, end_ave: np.float64)
             axes_ind[1].set_ylabel("Nu")
 
         # Save the cumu/inst Nu plot, and full time plot
-        fig.savefig(output / "info.png", dpi=200)
+        fig.savefig(output / "info.pdf", dpi=400)
 
         # Save the info file
         info.write(

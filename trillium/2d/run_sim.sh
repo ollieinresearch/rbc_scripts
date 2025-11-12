@@ -1,42 +1,48 @@
 #!/bin/bash
 
 #SBATCH --output=job_sim.out
-#SBATCH --time=02:59:00
+#SBATCH --time=23:59:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=96
+#SBATCH --ntasks=128
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
-#SBATCH --job-name=r1e6_pr3e-3
+#SBATCH --job-name=r1e7_pr3e-3
 
 
 ################################################################################
 # User specified parameters
 START_TIME=0
 # Rayleigh number
-RA=1e6
+RA=1e7
 # Exponent of 10 for Pr. (ie if Pr=1, PR_EXP=0, and Pr=0.1 -> PR_EXP=-1)
-PR_EXP=-2
+PR_EXP=-2.5
 # Vertical resolution
-RES=450
+RES=768
 # Timestep- if using fixed timestep this matters. Otherwise just leave
 # sufficiently small that the simulation won't blow up in 25 iterations
-DT=0.0002
+DT=0.0001
 # Dimensionless time to run the simulation for
-SIM_TIME=30
+SIM_TIME=150
 # Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
-STEPPER=RK222
+STEPPER=RK443
 # Aspect ratio
 GAM=2
 # Use an initial condition from a previous run? 1=yes, 0=no
 IC=1
 
 
+# CFL Stuff
+CFL_SAFETY=1
+CFL_THRESHOLD=0.01
+CFL_CADENCE=5
+
+
 # When to start averaging - post process
-AVG_TIME=0
+AVG_TIME=17590
 # Exponent of 10 for minimum y axis on power spectra 
-POWER_YMIN=-16
+POWER_YMIN=-18
 # Exponent of 10 for maximum y axis on power spectra 
-POWER_YMIN=0
+POWER_YMAX=0
 
 ################################################################################
 
@@ -75,7 +81,7 @@ else
   IND=-1
 fi
 
-srun python3 $SCRIPTS_2D/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --stepper=$STEPPER --Gamma=$GAM --index=$IND --basepath=$PWD --cfl --snapshots
+srun python3 $SCRIPTS_2D/rayleigh_benard_script.py --Ra=$RA --Pr_exp=$PR_EXP --res=$RES --dt=$DT --sim_time=$TOTAL_TIME --stepper=$STEPPER --Gamma=$GAM --index=$IND --basepath=$PWD --cfl_safety=$CFL_SAFETY --cfl_threshold=$CFL_THRESHOLD --cfl_cadence=$CFL_CADENCE --cfl --snapshots
 
 # Post processing
 if [ -f "analysis/analysis.h5" ]; then
@@ -114,7 +120,8 @@ rm -rf restart/restart.h5
 
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
+python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
 
+mkdir res_check
 srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 192 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 24 -pattern_type glob -i 'res_check/*.png' -threads 192 -pix_fmt yuv420p res_check/movie.mp4

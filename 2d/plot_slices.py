@@ -83,7 +83,7 @@ def main(filename, start, count, output, max_vort, plot_freq):
                     # Call 3D plotting helper, slicing in time
                     dset = file['tasks'][task]
                     if task == 'vorticity':
-                        new_mv = asinh.transform(max_vort)
+                        new_mv = 0.95*asinh.transform(max_vort)
                         plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task, clim=(-new_mv, new_mv), even_scale=True, func=sym)
                     else:
                         plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task)

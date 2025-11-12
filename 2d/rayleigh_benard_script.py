@@ -7,20 +7,24 @@ visualization. Various (many) other quantities are saved for analysis. This
 script supports restarts, and can integrate using a variable timestep (--cfl).
 
 Usage:
-    rayleigh_benard_script2.py [options]
+    rayleigh_benard_script.py [options]
 
 Options:
-    --Ra=<Ra>                Rayleigh number
-    --Pr_exp=<Pr>            Exponent on the Prandtl number (base 10)
-    --res=<res>              Resolution in modes/unit space
-    --dt=<dt>                Timestep [default: 0.02]
-    --sim_time=<time>        Simulation time
-    --basepath=<path>        basepath for output files
-    --stepper=<stepper>      The solver to be used for timestepping [default: RK222]
-    --Gamma=<Gamma>          The aspect ratio of the cell [default: 2]
-    --index=<index>          The index of the restart file to begin simulations from [default: -1]
-    --snapshots              Flag to activate the snapshots filehandler that saves the temperature for visualisations.
-    --cfl                    Flag to activate CFL variable time-stepping.
+    --Ra=<Ra>                          Rayleigh number
+    --Pr_exp=<Pr>                      Exponent on the Prandtl number (base 10)
+    --res=<res>                        Resolution in modes/unit space
+    --dt=<dt>                          Timestep [default: 0.02]
+    --sim_time=<time>                  Simulation time
+    --basepath=<path>                  basepath for output files
+    --stepper=<stepper>                The solver to be used for timestepping [default: RK222]
+    --Gamma=<Gamma>                    The aspect ratio of the cell [default: 2]
+    --index=<index>                    The index of the restart file to begin simulations from [default: -1]
+    --cfl_safety=<cfl_safety>          CFL safety factor [default: 0.5]
+    --cfl_threshold=<cfl_threshold>    CFL threshold for changing dt [default: 0.01]
+    --cfl_cadence=<cfl_cadence>        CFL cadence for checking if dt requires changing [default: 5]
+    --snapshots                        Flag to activate saving snapshots.
+    --cfl                              Flag to activate CFL variable time-stepping.
+
 """
 
 from docopt import docopt
@@ -58,12 +62,17 @@ basepath = Path(str(args['--basepath']))
 snapshots = args['--snapshots']
 restart_index = int(args['--index'])
 
+safety = float(args['--cfl_safety'])
+cadence = int(args['--cfl_cadence'])
+threshold = float(args['--cfl_threshold'])
+
+
 # Iterations between saves
-state_iters = 5000
-analysis_iters = 25
+state_iters = 50000
+analysis_iters = 50
 field_analysis_iters = 200
-snapshots_iters = 200
-message_num_iters = 500
+snapshots_iters = 2000
+message_num_iters = 10000
 
 if Ra/Pr >= 1e10:
     # The timestep goes very low when Ra big and Pr low; saves should be 
@@ -212,6 +221,8 @@ analysis.add_task("kappa_x*integ_x( T )", name='avg_T')
 analysis.add_task("kappa_x*integ_x( u**2 )", name='avg_u_sq')
 analysis.add_task("kappa_x*integ_x( w**2 )", name='avg_w_sq')
 analysis.add_task("kappa_x*integ_x( T**2 )", name='avg_T_sq')
+analysis.add_task("kappa_x * integ_x( (oy**2) )", name='havg_oy_sq')
+
 
 
 # For analysis - data saved at 1 point in space INFREQUENTLY
@@ -251,11 +262,10 @@ try:
         CFL = flow_tools.CFL(
             solver,
             initial_dt=dt,
-            cadence=2,
-            safety=0.15,
-            max_dt=0.1,
-            max_change=1.01,
-            threshold=0.005
+            cadence=cadence,
+            safety=safety,
+            threshold=threshold,
+            max_dt=0.1
         )
         CFL.add_velocities(('u', 'w'))
         dt = CFL.compute_dt()

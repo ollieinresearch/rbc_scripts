@@ -1,10 +1,14 @@
 #!/bin/bash
 #SBATCH --output=job_post.out
-#SBATCH --time=01:30:00
+#SBATCH --time=02:30:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=96
+#SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
+
+AVG_TIME=17000
+POWER_MIN=-14
+POWER_MAX=0
 
 # Path to all python scripts for simulations; change as needed
 PATH_TO_SCRIPTS="$SCRATCH/rbc_scripts"
@@ -55,9 +59,9 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-srun python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=0 --basepath=$PWD
+python3 $PATH_TO_SCRIPTS/analysis.py $PWD/analysis/analysis.h5 --time=$AVG_TIME --basepath=$PWD
 
 mkdir res_check
 
-srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5
-ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 96 -pix_fmt yuv420p res_check/movie.mp4
+srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5 --ymin=$POWER_MIN --ymax=$POWER_MAX
+ffmpeg -y -r 15 -pattern_type glob -i 'res_check/*.png' -threads 192 -pix_fmt yuv420p res_check/movie.mp4

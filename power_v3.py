@@ -31,13 +31,13 @@ def main(file, start, count, ymin=-12.0, ymax=0.0):
 
         time = np.array(f["scales/sim_time"][start:start+count])
         writes = np.array(f["scales/write_number"][start:start+count])
-        u = np.array(f['tasks']['u'][start:start+count])
-        w = np.array(f['tasks']['w'][start:start+count])
+        u = np.array(f['tasks']['u'][start:start+count, 0])
+        w = np.array(f['tasks']['u'][start:start+count, -1])
         shp = u.shape
         dim = len(shp) - 1
         mid_z = 0
         if dim == 3:
-            v = np.array(f['tasks']['v'][start:start+count])
+            v = np.array(f['tasks']['u'][start:start+count, 1])
 
             nt, nx, ny, nz = shp
             horz_res = nx
