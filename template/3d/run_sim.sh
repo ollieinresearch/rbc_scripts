@@ -13,9 +13,9 @@
 ################################################################################
 # Simulation parameters
 START_TIME=0
-# Rayleigh number
+# Exponent for Rayleigh number (ie if Ra=1 -> RA=0, Ra = 0.1 -> Ra=-1)
 RA=5
-# Exponent of 10 for Prandtl number. (ie if Pr=1, PR_EXP=0)
+# Exponent of 10 for Prandtl number
 PR=0
 # Vertical resolution
 RES=48
@@ -25,7 +25,7 @@ DT=0.005
 # Dimensionless time to run the simulation for
 SIM_TIME=100
 # Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
-STEPPER=RK222
+STEPPER=SBDF2
 # Aspect ratio in x and y resp.
 LX=2
 LY=2
@@ -87,7 +87,7 @@ else
   IND=-1
 fi
 
-mpirun python3 /home/ollie/links/scratch/rbc_scripts/v3_3d/ded_example.py --Ra=$RA --Pr=$PR --nz=$RES --dt=$DT --sim_time=$TOTAL_TIME --index=$IND --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl_safety=$CFL_SAFETY --cfl_threshold=$CFL_THRESHOLD --cfl_cadence=$CFL_CADENCE --cfl --snapshots
+srun python3 $SCRIPTS_3D/rayleigh_benard_script.py --Ra=$RA --Pr=$PR --nz=$RES --dt=$DT --sim_time=$TOTAL_TIME --index=$IND --basepath=$PWD --stepper=$STEPPER --Lx=$LX --Ly=$LY --meshx=$MESHX --meshy=$MESHY --cfl_safety=$CFL_SAFETY --cfl_threshold=$CFL_THRESHOLD --cfl_cadence=$CFL_CADENCE --cfl --snapshots
 
 
 # For deciding the restart path
@@ -101,12 +101,12 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-python3 $PATH_TO_SCRIPTS/analysis_v3.py $PWD --time=$AVG_TIME
+python3 $PATH_TO_SCRIPTS/analysis_v3.py $PWD/analysis --time=$AVG_TIME
 
 mkdir res_check
 mkdir res_check_3d
 
-mpirun python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5
-mpirun python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5
+srun python3 $PATH_TO_SCRIPTS/power.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
+srun python3 $SCRIPTS_3D/power.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
 ffmpeg -y -r 60 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
 ffmpeg -y -r 60 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p res_check_3d/movie.mp4
