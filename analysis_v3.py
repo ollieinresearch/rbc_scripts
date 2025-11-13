@@ -56,8 +56,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     analysis = basepath / "analysis"
     output = basepath / 'outputs'
     output.mkdir(exist_ok='true')
-    pre_output = basepath / "preliminary_outputs"
-    pre_output.mkdir(exist_ok='true')
+
 
     n_secs = 3
     fs = analysis.glob('*.h5')

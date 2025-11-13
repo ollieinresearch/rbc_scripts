@@ -2,7 +2,7 @@
 Dedalus script simulating 3D horizontally-periodic Rayleigh-Benard convection. No slip boundary conditions.
 
 Usage:
-    ded_example.py [options]
+    rayleigh_benard_script_v3.py [options]
 
 Options:
     --Ra=<Ra>                         log_{10} of the Rayleigh number
