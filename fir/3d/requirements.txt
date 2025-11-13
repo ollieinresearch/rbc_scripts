@@ -6,13 +6,10 @@ numpy==1.26.4+computecanada
 packaging==25.0+computecanada
 pandas==2.3.3+computecanada
 pluggy==1.6.0+computecanada
-pooch==1.8.2+computecanada
 py==1.11.0+computecanada
 pytest==8.4.2+computecanada
 pytest_benchmark==5.1.0+computecanada
 pytest_cov==7.0.0+computecanada
 pytest_parallel==0.1.1+computecanada
-pyvista==0.44.2+computecanada
-scooby==0.11.0+computecanada
 tblib==3.2.1+computecanada
 xarray==2025.10.1+computecanada

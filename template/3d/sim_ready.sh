@@ -1,3 +1,3 @@
-cp /home/ollie/scratch/rbc_scripts/fir/*.sh .
-cp /home/ollie/scratch/rbc_scripts/fir/3d/*.sh .
-cp /home/ollie/scratch/rbc_scripts/fir/3d/visualization/*.sh .
+cp -f $SCRATCH/rbc_scripts/template/*.sh .
+cp -f $SCRATCH/rbc_scripts/template/3d/*.sh .
+cp -f $SCRATCH/rbc_scripts/template/3d/visualization/*.sh .
