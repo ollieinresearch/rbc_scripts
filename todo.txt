@@ -1,0 +1,6 @@
+-efficiency test
+    -sbdf2 vs rk222
+    - sbdf4 vs rk443 for big (nz>128)
+    -mpio vs normal
+    - openmpi vs normal
+    - 24 tasks 8 cpu for fir

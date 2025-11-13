@@ -45,7 +45,7 @@ fi
 rm -rf restart/restart.h5
 ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
-python3 $PATH_TO_SCRIPTS/analysis_v3.py $PWD/analysis --time=$AVG_TIME
+python3 $PATH_TO_SCRIPTS/analysis_v3.py $PWD --time=$AVG_TIME
 
 mkdir res_check
 mkdir res_check_3d
