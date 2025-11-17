@@ -35,39 +35,39 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
     pv.start_xvfb()
     pv.global_theme.allow_empty_mesh = True
     with h5py.File(h5_file, 'r') as f:
-        nt, nx, ny, nz = f['tasks']['temperature'].shape
+        nt, nTx, nTy, nTz = f['tasks']['temperature'].shape
+        _, nωx, nωy, nωz = f['tasks']['vorticity'].shape
         _, nwx, nwy, nwz = f['tasks']['w'].shape
-        _, nxvx, nxvy, nxvz = f['tasks']['x_vort'].shape
         domain_sizes = (2.0, 2.0, 1.0)
         # Center of domain
         xmid = domain_sizes[0] / 2.0
         ymid = domain_sizes[1] / 2.0
         zmid = domain_sizes[2] / 2.0
 
-        T = np.array(f['tasks']['temperature'][start:start+count], dtype=np.float32)
+        T = np.array(f['tasks']['temperature'][start:start+count], dtype=np.float64)
+        T_1 = np.array(f['tasks']['temperature'][start:start+count, :, :, int(nTz/2)], dtype=np.float64)
+        T_2 = np.array(f['tasks']['temperature'][start:start+count, :, :, int(nTz/(bl))], dtype=np.float64)
 
-        w_1 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/2)], dtype=np.float32)
-        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/(bl))], dtype=np.float32)
+        ω = np.array(f['tasks']['vorticity'][start:start+count], dtype=np.float64)
 
-        dx = domain_sizes[0] / (nx - 1)
-        dy = domain_sizes[1] / (ny - 1)
-        dz = domain_sizes[2] / (nz - 1)
+        w_1 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/2)], dtype=np.float64)
+        w_2 = np.array(f['tasks']['w'][start:start+count, :, :, int(nwz/(bl))], dtype=np.float64)
+
+        Tdx = domain_sizes[0] / (nTx - 1)
+        Tdy = domain_sizes[1] / (nTy - 1)
+        Tdz = domain_sizes[2] / (nTz - 1)
+
+        ωdx = domain_sizes[0] / (nωx - 1)
+        ωdy = domain_sizes[1] / (nωy - 1)
+        ωdz = domain_sizes[2] / (nωz - 1)
 
         wdx = domain_sizes[0] / (nwx - 1)
         wdy = domain_sizes[1] / (nwy - 1)
         wdz = domain_sizes[2] / (nwz - 1)
-        """
-        xvdx = domain_sizes[0] / (nxvx - 1)
-        xvdy = domain_sizes[1] / (nxvy - 1)
-        xvdz = domain_sizes[2] / (nxvz - 1)
         
-        yvdx = domain_sizes[0] / (nyvx - 1)
-        yvdy = domain_sizes[1] / (nyvy - 1)
-        yvdz = domain_sizes[2] / (nyvz - 1)
-        """
+        
         origin = (0.0, 0.0, 0.0)
         
-
         # Rotating view radius
         rot_radius = 4.5
 
@@ -76,39 +76,29 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
 
         # Loop through each time step
         for t in range(0, count):
-            temp = T[t]  # (nx, ny, nz)
-            vert_velocity_1 = w_1[t]
-            vert_velocity_2 = w_2[t]
+            temp = T[t]
+            temp_1 = T_1[t]
+            temp_2 = T_2[t]
+
+            vort = ω[t]
+
+            vert_1 = w_1[t]
+            vert_2 = w_2[t]
             
             flat_temp = temp.flatten(order='F')
-            flat_velocity_1 = vert_velocity_1.flatten(order='F')
-            flat_velocity_2 = vert_velocity_2.flatten(order='F')
-            flat_temp_grid_1 = temp[:,:,int(nz/2)].flatten(order='F')
-            flat_temp_grid_2 = temp[:,:,int(nz/bl)].flatten(order='F')
+            flat_temp_1 = temp[:,:,int(nTz/2)].flatten(order='F')
+            flat_temp_2 = temp[:,:,int(nTz/bl)].flatten(order='F')
+
+            flat_vort = vort.flatten(order='F')
+
+            flat_vert_1 = vert_1.flatten(order='F')
+            flat_vert_2 = vert_2.flatten(order='F')
 
             # Create uniform grid
-            tgrid = pv.ImageData(
-                dimensions=(nx, ny, nz),
-                spacing=(dx, dy, dz),
+            t_grid = pv.ImageData(
+                dimensions=(nTx, nTy, nTz),
+                spacing=(Tdx, Tdy, Tdz),
                 origin=origin
-            )
-
-            w_grid_1 = pv.Plane(
-                center=origin,
-                direction=(0, 0, 1),
-                i_size=2.0,
-                j_size=2.0,
-                i_resolution=nwx-1,
-                j_resolution=nwy-1
-            )
-
-            w_grid_2 = pv.Plane(
-                center=origin,
-                direction=(0, 0, 1),
-                i_size=2.0,
-                j_size=2.0,
-                i_resolution=nwx-1,
-                j_resolution=nwy-1
             )
 
             t_grid_1 = pv.Plane(
@@ -116,8 +106,8 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
                 direction=(0, 0, 1),
                 i_size=2.0,
                 j_size=2.0,
-                i_resolution=nx-1,
-                j_resolution=ny-1
+                i_resolution=nTx-1,
+                j_resolution=nTy-1
             )
             
             t_grid_2 = pv.Plane(
@@ -125,23 +115,51 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
                 direction=(0, 0, 1),
                 i_size=2.0,
                 j_size=2.0,
-                i_resolution=nx-1,
-                j_resolution=ny-1
+                i_resolution=nTx-1,
+                j_resolution=nTy-1
             )
 
+            vort_grid = pv.ImageData(
+                dimensions=(nωx, nωy, nωz),
+                spacing=(ωdx, ωdy, ωdz),
+                origin=origin
+            )
 
-            tgrid.point_data['temp'] = flat_temp
-            w_grid_1.point_data['w'] = asinh.transform(flat_velocity_1)
-            w_grid_2.point_data['w'] = flat_velocity_2#asinh.transform(flat_velocity_2)
+            vert_grid_1 = pv.Plane(
+                center=origin,
+                direction=(0, 0, 1),
+                i_size=2.0,
+                j_size=2.0,
+                i_resolution=nwx-1,
+                j_resolution=nwy-1
+            )
 
-            t_grid_1.point_data['temp'] = flat_temp_grid_1
-            t_grid_2.point_data['temp'] = flat_temp_grid_2
+            vert_grid_2 = pv.Plane(
+                center=origin,
+                direction=(0, 0, 1),
+                i_size=2.0,
+                j_size=2.0,
+                i_resolution=nwx-1,
+                j_resolution=nwy-1
+            )
+
+            t_grid.point_data['temp'] = flat_temp
+            t_grid_1.point_data['temp'] = flat_temp_1
+            t_grid_2.point_data['temp'] = flat_temp_2
+            
+            vort_grid.point_data['vort'] = asinh.transform(flat_vort)
+
+            vert_grid_1.point_data['vert'] = asinh.transform(flat_vert_1)
+            vert_grid_2.point_data['vert'] = asinh.transform(flat_vert_2)
+
             
             t_opacity = np.linspace(0, 1, 255)
+
+            #Plug into desmos to see
             t_opacity_tf = 1.0-np.exp(-100000000.0*(t_opacity-0.5)**12)
 
             w_opacity = np.linspace(-1/2, 1/2, 255)
-            w_opacity_tf = 1.0-np.exp(-10000.0*(w_opacity)**6)
+            w_opacity_tf = 1.0-np.exp(-5000.0*(w_opacity)**8)
 
             
             #inv_opacity = np.linspace(0, 1, 255)
@@ -158,14 +176,22 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
             # Set up a 2x2 subplot
             plotter = pv.Plotter(shape=(3, 2), off_screen=True, border=False)
 
-            # Top-left: diagonal view
+            # Top-left: diagonal view of T
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
-                tgrid, scalars='temp', opacity=t_opacity_tf, cmap='jet'#, clim=[0, 1], shade=False
+                t_grid, scalars='temp', opacity=t_opacity_tf, cmap='jet'#, clim=[0, 1], shade=False
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
-            plotter.add_text(time_text, position='upper_left', font_size=14, color='black')
+            plotter.add_text(time_text, position='upper_right', font_size=14, color='black')
+            
+            # Top-right: diagonal view of ω
+            plotter.subplot(0, 1)
+            actor1 = plotter.add_volume(
+                vort_grid, scalars='vort', opacity=w_opacity_tf, cmap='jet'#, clim=[0, 1], shade=False
+            )
+            actor1.mapper.interpolate_before_map = False
+            plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
             """
             # Top-right: rotating diagonal view
             angle = 2 * np.pi * (write_num % 150) / 150.0
@@ -190,19 +216,8 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
             plotter.view_xy()
 
 
-            # middle-right: w midplane - no clim!
+            # middle-right: temp BL - no clim!
             plotter.subplot(1, 1)
-            actor4 = plotter.add_mesh(
-                w_grid_1, scalars='w', cmap='RdBu_r'
-            )
-            actor4.mapper.interpolate_before_map = False
-            plotter.enable_2d_style()
-            plotter.enable_parallel_projection()
-            plotter.view_xy()
-
-
-            # Bottom-left: temp bl
-            plotter.subplot(2, 0)
             actor5 = plotter.add_mesh(
                 t_grid_2, scalars='temp', cmap='RdBu_r'
             )
@@ -212,10 +227,20 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
             plotter.view_xy()
 
 
+            # Bottom-left: w midplane
+            plotter.subplot(2, 0)
+            actor4 = plotter.add_mesh(
+                vert_grid_1, scalars='vert', cmap='RdBu_r'
+            )
+            actor4.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+
             # Bottom-right: w bl - no clim!
             plotter.subplot(2, 1)
             actor6 = plotter.add_mesh(
-                w_grid_2, scalars='w', cmap='RdBu_r'
+                vert_grid_2, scalars='vert', cmap='RdBu_r'
             )
             actor6.mapper.interpolate_before_map = False
             plotter.enable_2d_style()
@@ -224,11 +249,11 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
             plotter.reset_camera()
 
             
-
             # Save snapshot
             plotter.set_background('white')
             fname = os.path.join(output_dir, f"write_{write_num:06}.png")
-            plotter.show(screenshot=fname)
+            plotter.image_scale = 2
+            plotter.screenshot(fname)
             plotter.close()
 
 # Example usage

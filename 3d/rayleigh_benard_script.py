@@ -67,12 +67,12 @@ timestepper = {
 
 restart_index = int(args['--index'])
 snapshots_flag = args['--snapshots']
-fh_mode = 'append' if (basepath / 'restart/restart.h5').exists() else 'overwrite'
+fh_mode = 'append'
 
 # Iteration parameters
-state_iters = 2500
-snap_iters = 200
-analysis_iters = 50
+state_time = 60*5
+snap_time = 1/20
+analysis_time = 0.01
 message_num_iters = 500
 
 use_cfl = args['--cfl']
@@ -152,6 +152,9 @@ solver.stop_sim_time = stop_sim_time
 # Initial conditions OR restart
 restart_path = basepath / 'restart' / 'restart.h5'
 if not restart_path.exists():
+    for _ in range(60):
+        print("NO RESTART PATH!!!!")
+    exit()
     # Start from conductive profile with noise (parallel-friendly)
     b.fill_random('g', seed=42, distribution='normal', scale=1e-5) # Random noise
     b['g'] *= z * (Lz - z) # Damp noise at walls
@@ -161,7 +164,6 @@ else:
     write, last_dt = solver.load_state(restart_path, index=restart_index)
     dt = last_dt if use_cfl else arg_dt
     logger.info(f"Loaded restart write={write}, dt={last_dt}")
-    fh_mode = 'append'
 
 
 
@@ -181,7 +183,7 @@ basepath.mkdir(parents=True, exist_ok=True)
 
 # State (checkpoint) for restart
 (basepath / 'state').mkdir(exist_ok=True)
-state = solver.evaluator.add_file_handler(str(basepath / 'state'), iter=state_iters, max_writes=25, mode=fh_mode)
+state = solver.evaluator.add_file_handler(str(basepath / 'state'), wall_dt=state_time, max_writes=10, mode=fh_mode)
 state.add_tasks(solver.state)
 logger.info(f"State tasks added.")
 
@@ -190,20 +192,20 @@ logger.info(f"State tasks added.")
 # Snapshots for visualization
 if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
-    snap = solver.evaluator.add_file_handler(str(basepath / 'snapshots'), iter=snap_iters, max_writes=50, mode=fh_mode)
+    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=60, mode=fh_mode)
     snap.add_task(T, name='temperature')
+    snap.add_task(omega@omega, name='vorticity')
     # Velocity components & vorticity
     snap.add_task(u@ez, name='w')
-    snap.add_task(omega@ex, name='x_vort')
-    snap.add_task(omega@ey, name='y_vort')
+
     logger.info(f"Snapshots tasks added.")
 
 
 
 # Frequent analysis (domain averages for Nu, Re, energies)
 (basepath / 'analysis').mkdir(exist_ok=True)
-an = solver.evaluator.add_file_handler(str(basepath / 'analysis'), iter=analysis_iters, max_writes=None, mode=fh_mode, parallel='mpio')
 
+an = solver.evaluator.add_file_handler(basepath / 'analysis', sim_dt=analysis_time, max_writes=None, mode=fh_mode)
 
 
 Pr_f = dist.Field(name='Pr')
@@ -249,6 +251,8 @@ try:
     good_solution = True
     logger.info('Starting loop')
     start_time = time.time()
+    main_start = time.time()
+
     start_iter = solver.iteration
 
     if use_cfl:
@@ -271,7 +275,7 @@ try:
                 else:
                     logger.info(f"The timestep has not changed over the last {message_num_iters} iters.")
                 
-                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2g}'. format(solver.iteration, solver.sim_time, dt, avg_Re))
+                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, dt, avg_Re))
                 logger.info('-' * 80)
 
                 dts = []

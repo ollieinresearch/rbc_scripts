@@ -3,7 +3,7 @@
 #SBATCH --output=job_movie.out
 #SBATCH --time=02:59:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=40
+#SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
 

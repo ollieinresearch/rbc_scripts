@@ -82,7 +82,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
             z_an = f['tasks']['z_an'][0,0,:]
             dim = 2
 
-
     for fi in fs:
         with h5.File(fi, 'r') as f:
             full_time = np.append(full_time, f['scales']['sim_time'][:], axis=0)
@@ -96,6 +95,10 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
             if dim == 3:
                 avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][:], axis=0)
+
+
+    mid = np.searchsorted(full_time, 998)
+    post_mid = np.searchsorted(full_time, 1000)
 
     avg_K = np.ravel(avg_K)
     avg_wT = np.ravel(avg_wT)

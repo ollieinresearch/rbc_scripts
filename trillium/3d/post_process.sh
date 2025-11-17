@@ -20,7 +20,7 @@ PATH_TO_ENV="$SCRATCH/ded3"
 
 # Load the required modules
 ml StdEnv/2023
-ml python/3.11.5 mpi4py/3.1.4 fftw-mpi/3.3.10 hdf5-mpi/1.14.2
+ml python/3.11.5 mpi4py/4.0.3 fftw-mpi/3.3.10 scipy-stack/2023b ffmpeg/7.1.1 hdf5-mpi/1.14.4
 
 source /scinet/vast/etc/vastpreload-openmpi.bash
 
