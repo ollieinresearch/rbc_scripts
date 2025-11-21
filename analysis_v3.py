@@ -1,5 +1,5 @@
 """
-Script to perform analysis tasks on data obtained from running a 3D
+Script to perform analysis tasks on data obtained from running a 3D (ONLY 3D)
 Rayleigh-Benard convection simulation. Accepts an analysis file as a command
 line argument and takes time averages from the specified time. All output is
 written to the folders 'outputs' and 'preliminary_outputs'. Outputs plots of 
@@ -26,6 +26,36 @@ matplotlib.use("Agg")
 plt.rcParams.update({"font.size": 14})
 plt.ioff()
 
+
+def cut_all_jump_windows(t, *arrays):
+
+    n = len(t)
+
+    # Identify all jump-forward points j where t[j] < t[j-1]
+    jump_idxs = np.where(np.diff(t) < 0)[0] + 1
+    if jump_idxs.size == 0:
+        return (t, *arrays)  # nothing to remove
+
+    # Boolean mask of "good" indices (start with all True)
+    keep = np.ones(n, dtype=bool)
+
+    # Process each jump independently
+    for j in jump_idxs:
+        threshold = t[j - 1]
+
+        # Find first index k > j where t[k] > threshold
+        later = np.where(t[j:] > threshold)[0]
+        if later.size > 0:
+            k = j + later[0]
+        else:
+            k = n
+
+        # Mark the whole bad window j ... k-1 as False
+        keep[j:k] = False
+
+    # Apply mask to time and all arrays
+    cleaned = [a[keep] for a in arrays]
+    return (t[keep], *cleaned)
 
 
 def max_difference(arr: np.ndarray) -> float:
@@ -74,6 +104,8 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         avg_T = f['tasks']['avg_T'][:]
         avg_u_sq = f['tasks']['avg_u_sq'][:]
         avg_w_sq = f['tasks']['avg_w_sq'][:]
+
+        # Currently only 3d, so the try is always accepted.
         try:
             avg_v_sq = f['tasks']['avg_v_sq'][:]
             z_an = f['tasks']['z_an'][0,0,0,:]
@@ -93,17 +125,32 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
             avg_u_sq = np.append(avg_u_sq, f['tasks']['avg_u_sq'][:], axis=0)
             avg_w_sq = np.append(avg_w_sq, f['tasks']['avg_w_sq'][:], axis=0)
 
-            if dim == 3:
-                avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][:], axis=0)
+            # Currently only 3d, so no need to check if this will bei n the file or not
+            avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][:], axis=0)
 
-
-    mid = np.searchsorted(full_time, 998)
-    post_mid = np.searchsorted(full_time, 1000)
+    
 
     avg_K = np.ravel(avg_K)
     avg_wT = np.ravel(avg_wT)
     avg_vorticity_sq = np.ravel(avg_vorticity_sq)
     avg_grad_T_sq = np.ravel(avg_grad_T_sq)
+
+
+    increased = full_time[1:] >= full_time[:-1]
+    if not np.all(increased):
+        indxs = np.argsort(full_time)
+
+        full_time = full_time[indxs] 
+        avg_K = avg_K[indxs] 
+        avg_wT = avg_wT[indxs] 
+        avg_vorticity_sq = avg_vorticity_sq[indxs] 
+        avg_grad_T_sq = avg_grad_T_sq[indxs] 
+        avg_T = avg_T[indxs] 
+        avg_u_sq = avg_u_sq[indxs] 
+        avg_w_sq = avg_w_sq[indxs] 
+        avg_v_sq = avg_v_sq[indxs] 
+    
+    
      
     start_ind = np.searchsorted(full_time, start_ave)
     time = full_time[start_ind:]

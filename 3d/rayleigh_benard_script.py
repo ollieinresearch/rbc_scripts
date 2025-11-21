@@ -71,8 +71,8 @@ fh_mode = 'append'
 
 # Iteration parameters
 state_time = 60*5
-snap_time = 1/20
-analysis_time = 0.01
+snap_time = 1/10
+analysis_time = 1/100
 message_num_iters = 500
 
 use_cfl = args['--cfl']
@@ -296,6 +296,7 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
+    solver.evaluate_handlers_now(dt)
     end_time = time.time()
 
     startup_time = main_start - start_time
