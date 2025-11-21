@@ -70,9 +70,9 @@ snapshots_flag = args['--snapshots']
 fh_mode = 'append'
 
 # Iteration parameters
-state_time = 60*5
-snap_time = 1/10
-analysis_time = 1/100
+state_time = 60*15 #save every 15 min
+snap_time = 1/10 # save every 0.1 time units (should increase to 1/60 so that each second of the movie is one second of the sim. also looks nicer)
+analysis_time = 1/100 # 100 analysis file saves per unit of sim time - might want to increase for smaller timestep cases)
 message_num_iters = 500
 
 use_cfl = args['--cfl']
@@ -294,7 +294,7 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    solver.evaluate_handlers_now(dt)
+    solver.evaluate_handlers(dt)
     end_time = time.time()
 
     startup_time = main_start - start_time
