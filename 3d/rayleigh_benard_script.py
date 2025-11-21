@@ -152,9 +152,7 @@ solver.stop_sim_time = stop_sim_time
 # Initial conditions OR restart
 restart_path = basepath / 'restart' / 'restart.h5'
 if not restart_path.exists():
-    for _ in range(60):
-        print("NO RESTART PATH!!!!")
-    exit()
+
     # Start from conductive profile with noise (parallel-friendly)
     b.fill_random('g', seed=42, distribution='normal', scale=1e-5) # Random noise
     b['g'] *= z * (Lz - z) # Damp noise at walls

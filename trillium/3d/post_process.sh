@@ -9,9 +9,13 @@
 # When to start averaging - post process
 AVG_TIME=50
 # Exponent of 10 for minimum y axis on power spectra 
-POWER_YMIN=-18
+YMIN=-18
 # Exponent of 10 for maximum y axis on power spectra 
-POWER_YMAX=0
+YMAX=-3
+# Exponent of 10 for minimum y axis on power spectra 
+YMIN_3D=-12
+# Exponent of 10 for maximum y axis on power spectra 
+YMAX_3D=6
 ################################################################################
 # Path to all python scripts for simulations; change as needed
 PATH_TO_SCRIPTS="$SCRATCH/rbc_scripts"
@@ -46,7 +50,7 @@ python3 $PATH_TO_SCRIPTS/analysis_v3.py $PWD --time=$AVG_TIME
 mkdir res_check
 mkdir res_check_3d
 
-mpirun python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
-mpirun python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --ymin=$POWER_YMIN --ymax=$POWER_YMAX
+mpirun python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
+mpirun python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --ymin=$YMIN_3D --ymax=$YMAX_3D
 ffmpeg -y -r 60 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
 ffmpeg -y -r 60 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p res_check_3d/movie.mp4

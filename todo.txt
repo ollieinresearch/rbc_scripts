@@ -4,3 +4,5 @@
     -mpio vs normal
     - openmpi vs normal
     - 24 tasks 8 cpu for fir
+
+- boundary layer and oy^2 in profiles

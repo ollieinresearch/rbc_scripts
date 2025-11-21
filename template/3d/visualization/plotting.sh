@@ -3,7 +3,7 @@
 #SBATCH --output=job_movie.out
 #SBATCH --time=02:59:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=40
+#SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --account=def-goluskin
 
@@ -14,7 +14,8 @@ PATH_TO_ENV="$SCRATCH/ded3_vis"
 
 # Load the required modules
 ml StdEnv/2023
-ml python/3.11.5 mpi4py/4.0.3 fftw-mpi/3.3.10 hdf5-mpi/1.14.4 scipy-stack/2023b vtk/9.3.0 ffmpeg/7.1.1 
+ml python/3.11.5 mpi4py/4.0.3 fftw-mpi/3.3.10 scipy-stack/2023b vtk/9.3.0 ffmpeg/7.1.1 
+ml hdf5-mpi/1.14.4
 
 source $PATH_TO_ENV/bin/activate;
 

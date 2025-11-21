@@ -25,7 +25,7 @@ DT=0.005
 # Dimensionless time to run the simulation for
 SIM_TIME=100
 # Method for timestepping. Can be RK222, RK443, CNAB2, MCNAB2, SBDF4
-STEPPER=SBDF4
+STEPPER=RK222
 # Aspect ratio in x and y resp.
 LX=2
 LY=2
@@ -41,8 +41,8 @@ IC=1
 
 
 # CFL Stuff
-CFL_SAFETY=0.1
-CFL_THRESHOLD=0.075
+CFL_SAFETY=0.5
+CFL_THRESHOLD=0.1
 CFL_CADENCE=1
 
 
