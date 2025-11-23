@@ -32,5 +32,5 @@ nu=$(grep "Final Nusselt number:" outputs/info.txt | awk -F': ' '{print $2}')
 
 mkdir $PWD/visualization
 
-mpirun python3 $SCRIPTS_3D/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu
+mpirun -n 32 python3 $SCRIPTS_3D/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu
 ffmpeg -y -r 60 -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4

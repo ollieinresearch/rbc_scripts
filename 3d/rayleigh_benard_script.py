@@ -294,7 +294,7 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    solver.evaluate_handlers(dt)
+    solver.evaluate_handlers()
     end_time = time.time()
 
     startup_time = main_start - start_time
