@@ -179,7 +179,7 @@ def main(h5_file, start, count, output_dir, max_vert, nu):
             # Top-left: diagonal view of T
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
-                t_grid, scalars='temp', opacity=t_opacity_tf, cmap='jet'#, clim=[0, 1], shade=False
+                t_grid, scalars='temp', opacity=t_opacity_tf, cmap='jet', clim=[0, 1]#, shade=False
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
