@@ -27,36 +27,6 @@ plt.rcParams.update({"font.size": 14})
 plt.ioff()
 
 
-def cut_all_jump_windows(t, *arrays):
-
-    n = len(t)
-
-    # Identify all jump-forward points j where t[j] < t[j-1]
-    jump_idxs = np.where(np.diff(t) < 0)[0] + 1
-    if jump_idxs.size == 0:
-        return (t, *arrays)  # nothing to remove
-
-    # Boolean mask of "good" indices (start with all True)
-    keep = np.ones(n, dtype=bool)
-
-    # Process each jump independently
-    for j in jump_idxs:
-        threshold = t[j - 1]
-
-        # Find first index k > j where t[k] > threshold
-        later = np.where(t[j:] > threshold)[0]
-        if later.size > 0:
-            k = j + later[0]
-        else:
-            k = n
-
-        # Mark the whole bad window j ... k-1 as False
-        keep[j:k] = False
-
-    # Apply mask to time and all arrays
-    cleaned = [a[keep] for a in arrays]
-    return (t[keep], *cleaned)
-
 
 def max_difference(arr: np.ndarray) -> float:
     """Computes the percentage difference between the maximum and minimum
@@ -116,17 +86,20 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
     for fi in fs:
         with h5.File(fi, 'r') as f:
-            full_time = np.append(full_time, f['scales']['sim_time'][:], axis=0)
-            avg_K = np.append(avg_K, f['tasks']['avg_K'][:], axis=0)
-            avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][:], axis=0)
-            avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][:], axis=0)
-            avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][:], axis=0)
-            avg_T = np.append(avg_T, f['tasks']['avg_T'][:], axis=0)
-            avg_u_sq = np.append(avg_u_sq, f['tasks']['avg_u_sq'][:], axis=0)
-            avg_w_sq = np.append(avg_w_sq, f['tasks']['avg_w_sq'][:], axis=0)
+            start_time = full_time[-1]
+            if f['scales']['sim_time'][-1] > start_time:
+                start_ind = np.searchsorted(f['scales']['sim_time'][:], start_time)
+                full_time = np.append(full_time, f['scales']['sim_time'][start_ind:], axis=0)
+                avg_K = np.append(avg_K, f['tasks']['avg_K'][start_ind:], axis=0)
+                avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][start_ind:], axis=0)
+                avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][start_ind:], axis=0)
+                avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:], axis=0)
+                avg_T = np.append(avg_T, f['tasks']['avg_T'][start_ind:], axis=0)
+                avg_u_sq = np.append(avg_u_sq, f['tasks']['avg_u_sq'][start_ind:], axis=0)
+                avg_w_sq = np.append(avg_w_sq, f['tasks']['avg_w_sq'][start_ind:], axis=0)
 
-            # Currently only 3d, so no need to check if this will bei n the file or not
-            avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][:], axis=0)
+                # Currently only 3d, so no need to check if this will bei n the file or not
+                avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][start_ind:], axis=0)
 
     
 
@@ -138,6 +111,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
     increased = full_time[1:] >= full_time[:-1]
     if not np.all(increased):
+        print("not all increased")
         indxs = np.argsort(full_time)
 
         full_time = full_time[indxs] 

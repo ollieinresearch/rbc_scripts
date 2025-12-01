@@ -11,6 +11,10 @@
 #SBATCH --mail-user=ollietheengineer@uvic.ca
 
 
+# path to all python scripts for simulations; change as needed
+PATH_TO_SCRIPTS="/scratch/ollie/rbc_scripts"
+SCRIPTS_3D="/scratch/ollie/rbc_scripts/3d"
+
 ################################################################################
 # User specified parameters
 
@@ -41,40 +45,21 @@ IC=1
 ################################################################################
 
 
+# Path to all python scripts for simulations; change as needed
+PATH_TO_SCRIPTS="/home/ollie/scratch/rbc_scripts"
+SCRIPTS_3D="/home/ollie/scratch/rbc_scripts/3d"
+PATH_TO_ENV="/home/ollie/scratch/dedalus"
+
 # Load the required modules
-module purge
-module load StdEnv/2020
-module load python/3.10.2 mpi4py fftw-mpi hdf5-mpi 
+module --force purge
+module load CCEnv arch/avx512 StdEnv/2020
+module load python/3.10.2 mpi4py/3.1.3 fftw-mpi/3.3.8 hdf5-mpi/1.12.1 scipy-stack/2023b
+
+source $PATH_TO_ENV/bin/activate;
 
 # Dedalus performance tip!
 export OMP_NUM_THREADS=1
 export NUMEXPR_MAX_THREADS=1
-
-# For our virtual environment
-env=$SLURM_TMPDIR/env
-
-# path to all python scripts for simulations; change as needed
-PATH_TO_SCRIPTS="/scratch/ollie/rbc_scripts"
-SCRIPTS_3D="/scratch/ollie/rbc_scripts/3d"
-
-# Create the virtual environment on each node: 
-srun --ntasks $SLURM_NNODES --tasks-per-node=1 bash << EOF
-virtualenv --no-download $env
-source $env/bin/activate
-
-pip install --no-index --upgrade pip
-pip install --no-index -r $PATH_TO_SCRIPTS/requirements.txt
-EOF
-
-
-# Required for multiple node simulations
-source $env/bin/activate;
-
-# Run Dedalus RB script in 3D with specified parameters.
-# Can either use an initial condition or start fresh.
-# Merge files for analysis.
-# Run analysis script to produce info and plots.
-
 
 
 
