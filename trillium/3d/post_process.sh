@@ -7,15 +7,15 @@
 #SBATCH --account=def-goluskin
 
 # When to start averaging - post process
-AVG_TIME=50
+AVG_TIME=3200
 # Exponent of 10 for minimum y axis on power spectra 
 YMIN=-18
 # Exponent of 10 for maximum y axis on power spectra 
 YMAX=-3
 # Exponent of 10 for minimum y axis on power spectra 
-YMIN_3D=-12
-# Exponent of 10 for maximum y axis on power spectra 
-YMAX_3D=6
+MINS="-18,-18,-18,-18"
+MAXS="10,10,10,10"
+
 ################################################################################
 # Path to all python scripts for simulations; change as needed
 PATH_TO_SCRIPTS="$SCRATCH/rbc_scripts"
@@ -51,6 +51,6 @@ mkdir res_check
 mkdir res_check_3d
 
 mpirun python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
-mpirun python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --ymin=$YMIN_3D --ymax=$YMAX_3D
-ffmpeg -y -r 60 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
-ffmpeg -y -r 60 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p res_check_3d/movie.mp4
+mpirun python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
+ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
+ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p res_check_3d/movie.mp4

@@ -22,6 +22,7 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import os
+import re
 matplotlib.use("Agg")
 plt.rcParams.update({"font.size": 14})
 plt.ioff()
@@ -59,8 +60,11 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
 
     n_secs = 3
-    fs = analysis.glob('*.h5')
-    fp = next(fs)
+    fs = sorted(
+        analysis.glob("analysis_s*.h5"),
+        key=lambda p: int(re.search(r"analysis_s(\d+)\.h5", p.name).group(1))
+    )
+    fp = fs.pop(0)
 
     with h5.File(fp, 'r') as f:
         Ra = float(f['tasks']['Ra'][-1])
@@ -84,11 +88,17 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
             z_an = f['tasks']['z_an'][0,0,:]
             dim = 2
 
+        try:
+            havg_wT = f['tasks']['havg_wT'][:]
+            havg = True
+        except:
+            havg=False
     for fi in fs:
         with h5.File(fi, 'r') as f:
             start_time = full_time[-1]
             if f['scales']['sim_time'][-1] > start_time:
                 start_ind = np.searchsorted(f['scales']['sim_time'][:], start_time)
+
                 full_time = np.append(full_time, f['scales']['sim_time'][start_ind:], axis=0)
                 avg_K = np.append(avg_K, f['tasks']['avg_K'][start_ind:], axis=0)
                 avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][start_ind:], axis=0)
@@ -286,6 +296,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     sec_times = np.append(sec_times, time[-1])
     inds = np.append(inds, [-1])
 
+
     # Array to hold the different Nu values (varies by section and quantity)
     nus = np.ones((n, n_secs+1))
 
@@ -325,6 +336,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         z = zip(inds[:-1], inds[1:])
         for i, (ind_1, ind_2) in enumerate(z):
             # Save the Nu for the specific section
+            print(ind_1, ind_2, dset[ind_1:ind_2].shape, time[ind_1:ind_2].shape)
             nus[ind, i] = nu_func(simpson(dset[ind_1:ind_2], time[ind_1:ind_2], axis=0), time[ind_2]-time[ind_1])
             info.write(
                 f"Nu calculated using data from section {i+1} ({time[ind_1]:.1f} to {time[ind_2]:.1f}):"
@@ -408,7 +420,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
         # Kinetic energy is just the sum of the squared avg velocities
         dsets.append(dsets[1]+dsets[2]+dsets[3])
-        shps = [x.shape for x in dsets]
 
         horz_tex = r"$\sqrt{\overline{u^2+v^2}}$"
         kin_tex = r"$\overline{u^2+v^2+w^2}$"
@@ -431,7 +442,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
     profs = [simpson(dset, time, axis=0) / total_time for dset in dsets]
 
-    shps = [x.shape for x in profs]
     plot_ops = [
         (
             r"T",
@@ -467,6 +477,25 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     savename = output.joinpath("profiles.pdf")
     fig.savefig(str(savename), dpi=400)
     plt.close()
+
+
+    if havg:
+        dset = havg_wT
+        prof = simpson(dset, time, axis=0) / total_time
+
+        # Plot the calculated profiles
+        fig = plt.figure(figsize=(12, 12))
+        ax = fig.add_subplot()
+        ax.plot(prof, z)
+        plt.ylim([-0.5, 0.5])
+        plt.xlabel(r'$\overline{ \langle wT \rangle}$')
+        plt.ylabel(r"$z$")
+        plt.title('Horizontally averaged vertical heat transport')        
+
+        fig.tight_layout(pad=1.0)
+        savename = output.joinpath("havg_wT.pdf")
+        fig.savefig(str(savename), dpi=400)
+        plt.close()
 
 ################################################################################
 

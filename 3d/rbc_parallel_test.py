@@ -2,13 +2,12 @@
 Dedalus script simulating 3D horizontally-periodic Rayleigh-Benard convection. No slip boundary conditions.
 
 Usage:
-    ded_example.py [options]
+    rbc_parallel_test.py [options]
 
 Options:
     --Ra=<Ra>                         log_{10} of the Rayleigh number
     --Pr=<Pr>                         log_{10} of the Prandtl number
     --nz=<nz>                         Resolution in chebyshev direction
-    --gamma=<gamma>                   Factor for resolution in fourier directions [default: 2]
     --dt=<dt>                         Timestep (initial/max for CFL) [default: 0.00001]
     --cfl_safety=<cfl_safety>         Safety factor of CFL (see dedalus docs) [default: 0.5]
     --cfl_threshold=<cfl_threshold>   Threshold to compute new dt (see ded docs) [default: 0.05]
@@ -21,8 +20,8 @@ Options:
     --meshx=<size>                    2D process mesh size in x
     --meshy=<size>                    2D process mesh size in y
     --index=<index>                   Restart write index [default: -1]
-    --tmp=<tmp>                       tmp_touchfile (str)? [default: True]
-    --para=<para>                     type of parallel to use (str) [default: mpio]
+    --parallel=<parallel>             Which handler parallelization to use
+    --tmp_file=<tmp_file>             TOUCH_TMP_FILE, True or False
     --snapshots                       Enable snapshots for visualization
     --cfl                             Enable CFL timestepping
 """
@@ -39,10 +38,10 @@ from docopt import docopt
 args = docopt(__doc__)
 
 from dedalus.tools.config import config
-par = str(args['--para'])
-tmp = str(bool(args['--tmp']))
+par = str(args['--parallel'])
+tmp = str(bool(args['--tmp_file']))
 config['analysis']['FILEHANDLER_TOUCH_TMPFILE'] = tmp
-
+logger.info(f"FILEHANDLER_TOUCH_TMPFILE = {tmp}, parallel mode = {par}")
 
 comm = MPI.COMM_WORLD
 rank = comm.rank
@@ -58,8 +57,7 @@ Pr = 10**float(args['--Pr'])
 
 Lx, Ly, Lz = int(args['--Lx']), int(args['--Ly']), 1
 nz = int(args['--nz'])
-gamma = float(args['--gamma'])
-nx, ny = int(gamma * nz), int(gamma * nz)
+nx, ny = int(Lx * nz), int(Ly * nz)
 
 meshx, meshy = int(args['--meshx']), int(args['--meshy'])
 dealias = 3/2
@@ -77,13 +75,13 @@ timestepper = {
 
 restart_index = int(args['--index'])
 snapshots_flag = args['--snapshots']
-fh_mode = 'append'
+fh_mode = 'overwrite'
 
 # Iteration parameters
 state_time = 855 #save every 855 seconds (50 saves in 11hr 50 min)
-snap_time = 1/30 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
-analysis_time = 1/100 # 100 analysis file saves per unit of sim time 
-message_num_iters = 500
+snap_time = 1/60 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
+analysis_time = 1/100 # 200 analysis file saves per unit of sim time 
+message_num_iters = 100
 
 use_cfl = args['--cfl']
 arg_dt = np.float64(args['--dt'])
@@ -91,6 +89,8 @@ cfl_safety = np.float64(args['--cfl_safety'])
 cfl_threshold = np.float64(args['--cfl_threshold'])
 cfl_cadence = int(args['--cfl_cadence'])
 max_timestep = 1e-1
+
+
 
 
 # Bases
@@ -175,9 +175,9 @@ else:
 
     # Sometimes the last timestep will be 0 because evaluate_handlers is funny.
     # This ensures you don't have all 0 matrices
-    dt = np.max([1e-8, last_dt]) if use_cfl else arg_dt
+    tdt = 0.005
     
-    logger.info(f"Loaded restart write={write}, dt={last_dt}")
+    #logger.info(f"Loaded restart write={write}, dt={last_dt}")
 
 
 
@@ -192,11 +192,12 @@ grad_T = de.grad(T)
 
 basepath.mkdir(parents=True, exist_ok=True)
 
+
 # State (checkpoint) for restart
 (basepath / 'state').mkdir(exist_ok=True)
-state = solver.evaluator.add_file_handler(str(basepath / 'state'), wall_dt=state_time, max_writes=10, mode=fh_mode, parallel=par)
-state.add_tasks(solver.state)
-logger.info(f"State tasks added.")
+#state = solver.evaluator.add_file_handler(str(basepath / 'state'), wall_dt=state_time, max_writes=10, mode=fh_mode, parallel=par)
+#state.add_tasks(solver.state)
+#logger.info(f"State tasks added.")
 
 
 
@@ -210,7 +211,7 @@ if snapshots_flag:
     # Velocity components & vorticity
     snap.add_task(u@ez, name='w')
 
-    logger.info(f"Snapshots tasks added.")
+    #logger.info(f"Snapshots tasks added.")
 
 
 
@@ -228,7 +229,6 @@ Ra_f['g'] = (kappa * nu) ** -1
 
 an.add_task(Pr_f, name='Pr')
 an.add_task(Ra_f, name='Ra')
-
 an.add_task(z_an, name='z_an')
 
 # Kinetic energy and temps
@@ -244,9 +244,6 @@ an.add_task(kappa_xyz*de.integ((u@ez) * T), name='avg_wT')
 an.add_task(kappa_xyz*de.integ(grad_T @ grad_T), name='avg_grad_T_sq')
 an.add_task(kappa_xyz*de.integ(omega @ omega), name='avg_vorticity_sq')
 
-# For res check
-an.add_task(kappa_xy*de.integ(de.integ((u@ez) * T, 'x'), 'y'), name='havg_wT')
-
 logger.info(f"Analysis tasks added.")
 
 
@@ -254,7 +251,7 @@ logger.info(f"Analysis tasks added.")
 flow = de.GlobalFlowProperty(solver, cadence=message_num_iters)
 flow.add_property(np.sqrt(u@u)/nu, name='Re')
 
-startup_iter = 100
+startup_iter = 10
 # Main loop
 try:
     good_solution = True
@@ -266,17 +263,17 @@ try:
 
     if use_cfl:
         # CFL
-        CFL = de.CFL(solver, initial_dt=dt, cadence=cfl_cadence, safety=cfl_safety, threshold=cfl_threshold, max_dt=max_timestep)
+        CFL = de.CFL(solver, initial_dt=tdt, cadence=cfl_cadence, safety=cfl_safety, threshold=cfl_threshold, max_dt=max_timestep)
         CFL.add_velocity(u)
 
-        dt = CFL.compute_timestep()
-        dts = [dt]
+        tdt = CFL.compute_timestep()
+        dts = [tdt]
         while solver.proceed and good_solution:
             if solver.iteration == start_iter + startup_iter:
                 main_start = time.time()
             
 
-            solver.step(dt)
+            solver.step(tdt)
             if (solver.iteration-1) % message_num_iters == 0:
                 l_dts = len(dts)
                 avg_Re = flow.grid_average('Re')
@@ -289,7 +286,7 @@ try:
                 else:
                     logger.info(f"The timestep has not changed over the last {message_num_iters} iters.")
                 
-                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, dt, avg_Re))
+                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, tdt, avg_Re))
                 logger.info('-' * 80)
 
                 dts = []
@@ -298,23 +295,24 @@ try:
             new_dt = CFL.compute_timestep()
             if new_dt != dt:
                 dts.append(new_dt)
-                dt = new_dt
+                tdt = new_dt
                 
     else:
         while solver.proceed and good_solution:
             if solver.iteration == start_iter + startup_iter:
                 main_start = time.time()
 
-            solver.step(dt)
+            solver.step(tdt)
             if (solver.iteration - 1) % message_num_iters == 0:
                 avg_Re = flow.grid_average('Re')
-                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, dt, avg_Re))
+                good_solution = np.isfinite(avg_Re)
+                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, tdt, avg_Re))
                 logger.info('-' * 80)
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    solver.evaluate_handlers(dt=dt)
+    # solver.evaluate_handlers(dt=dt)
     end_time = time.time()
 
     startup_time = main_start - start_time
@@ -338,3 +336,5 @@ finally:
 
     solver.log_stats()
     logger.info("mode-stages/DOF = {}".format(solver.total_modes/DOF))
+    
+
