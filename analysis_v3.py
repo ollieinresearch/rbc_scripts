@@ -110,6 +110,10 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
                 # Currently only 3d, so no need to check if this will bei n the file or not
                 avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][start_ind:], axis=0)
+                
+                if havg:
+                    np.append(havg_wT, f['tasks']['havg_wT'][start_ind:], axis=0)
+
 
     
 
@@ -133,6 +137,9 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         avg_u_sq = avg_u_sq[indxs] 
         avg_w_sq = avg_w_sq[indxs] 
         avg_v_sq = avg_v_sq[indxs] 
+        
+        if havg:
+            havg_wT = havg_wT[indxs]
     
     
      
@@ -480,7 +487,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
 
     if havg:
-        dset = havg_wT
+        dset = havg_wT[start_ind, 0, :]
         prof = simpson(dset, time, axis=0) / total_time
 
         # Plot the calculated profiles
