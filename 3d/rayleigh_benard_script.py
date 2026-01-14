@@ -231,23 +231,41 @@ an.add_task(Ra_f, name='Ra')
 
 an.add_task(z_an, name='z_an')
 
-# Kinetic energy and temps
-an.add_task(kappa_xyz*de.integ(u@u), name='avg_K')
-an.add_task(kappa_xy*de.integ(de.integ(T, 'x'), 'y'), name='avg_T')
-an.add_task(kappa_xy*de.integ(de.integ((u@ex)**2, 'x'), 'y'), name='avg_u_sq')
-an.add_task(kappa_xy*de.integ(de.integ((u@ey)**2, 'x'), 'y'), name='avg_v_sq')
-an.add_task(kappa_xy*de.integ(de.integ((u@ez)**2, 'x'), 'y'), name='avg_w_sq')
-an.add_task(kappa_xy*de.integ(de.integ(T**2, 'x'), 'y'), name='avg_T_sq')
+
 
 # Nusselt proxies
 an.add_task(kappa_xyz*de.integ((u@ez) * T), name='avg_wT')
 an.add_task(kappa_xyz*de.integ(grad_T @ grad_T), name='avg_grad_T_sq')
 an.add_task(kappa_xyz*de.integ(omega @ omega), name='avg_vorticity_sq')
 
-# For res check
-an.add_task(kappa_xy*de.integ(de.integ((u@ez) * T, 'x'), 'y'), name='havg_wT')
 
 logger.info(f"Analysis tasks added.")
+
+
+
+
+
+# Horizontally averaged quantities (profile of energies)
+(basepath / 'analysis').mkdir(exist_ok=True)
+
+an_h = solver.evaluator.add_file_handler(basepath / 'horizontal_analysis', sim_dt=analysis_time, max_writes=None, mode=fh_mode, parallel=par)
+
+an_h.add_task(Pr_f, name='Pr')
+an_h.add_task(Ra_f, name='Ra')
+an_h.add_task(z_an, name='z_an')
+
+
+# Kinetic energy and temps
+an_h.add_task(kappa_xyz*de.integ(u@u), name='avg_K')
+an_h.add_task(kappa_xy*de.integ(de.integ(T, 'x'), 'y'), name='avg_T')
+an_h.add_task(kappa_xy*de.integ(de.integ((u@ex)**2, 'x'), 'y'), name='avg_u_sq')
+an_h.add_task(kappa_xy*de.integ(de.integ((u@ey)**2, 'x'), 'y'), name='avg_v_sq')
+an_h.add_task(kappa_xy*de.integ(de.integ((u@ez)**2, 'x'), 'y'), name='avg_w_sq')
+an_h.add_task(kappa_xy*de.integ(de.integ(T**2, 'x'), 'y'), name='avg_T_sq')
+
+
+logger.info(f"Horizontal analysis tasks added.")
+
 
 
 # Flow properties
@@ -265,7 +283,6 @@ try:
     start_iter = solver.iteration
 
     if use_cfl:
-        # CFL
         CFL = de.CFL(solver, initial_dt=dt, cadence=cfl_cadence, safety=cfl_safety, threshold=cfl_threshold, max_dt=max_timestep)
         CFL.add_velocity(u)
 
@@ -274,7 +291,6 @@ try:
         while solver.proceed and good_solution:
             if solver.iteration == start_iter + startup_iter:
                 main_start = time.time()
-            
 
             solver.step(dt)
             if (solver.iteration-1) % message_num_iters == 0:
@@ -289,7 +305,7 @@ try:
                 else:
                     logger.info(f"The timestep has not changed over the last {message_num_iters} iters.")
                 
-                logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, dt, avg_Re))
+                logger.info(f'Iteration={solver.iteration:d}, Time={solver.sim_time:.5f}, dt={dt:.4e}, Re={avg_Re:.2f}')
                 logger.info('-' * 80)
 
                 dts = []
