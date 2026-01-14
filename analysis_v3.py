@@ -75,24 +75,8 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         avg_wT = f['tasks']['avg_wT'][:]
         avg_vorticity_sq = f['tasks']['avg_vorticity_sq'][:]
         avg_grad_T_sq = f['tasks']['avg_grad_T_sq'][:]
-        avg_T = f['tasks']['avg_T'][:]
-        avg_u_sq = f['tasks']['avg_u_sq'][:]
-        avg_w_sq = f['tasks']['avg_w_sq'][:]
 
-        # Currently only 3d, so the try is always accepted.
-        try:
-            avg_v_sq = f['tasks']['avg_v_sq'][:]
-            z_an = f['tasks']['z_an'][0,0,0,:]
-            dim = 3
-        except:
-            z_an = f['tasks']['z_an'][0,0,:]
-            dim = 2
-
-        try:
-            havg_wT = f['tasks']['havg_wT'][:]
-            havg = True
-        except:
-            havg=False
+        
     for fi in fs:
         with h5.File(fi, 'r') as f:
             start_time = full_time[-1]
@@ -105,17 +89,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
                 avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][start_ind:], axis=0)
                 avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:], axis=0)
                 avg_T = np.append(avg_T, f['tasks']['avg_T'][start_ind:], axis=0)
-                avg_u_sq = np.append(avg_u_sq, f['tasks']['avg_u_sq'][start_ind:], axis=0)
-                avg_w_sq = np.append(avg_w_sq, f['tasks']['avg_w_sq'][start_ind:], axis=0)
-
-                # Currently only 3d, so no need to check if this will bei n the file or not
-                avg_v_sq = np.append(avg_v_sq, f['tasks']['avg_v_sq'][start_ind:], axis=0)
                 
-                if havg:
-                    np.append(havg_wT, f['tasks']['havg_wT'][start_ind:], axis=0)
-
-
-    
 
     avg_K = np.ravel(avg_K)
     avg_wT = np.ravel(avg_wT)
@@ -133,14 +107,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         avg_wT = avg_wT[indxs] 
         avg_vorticity_sq = avg_vorticity_sq[indxs] 
         avg_grad_T_sq = avg_grad_T_sq[indxs] 
-        avg_T = avg_T[indxs] 
-        avg_u_sq = avg_u_sq[indxs] 
-        avg_w_sq = avg_w_sq[indxs] 
-        avg_v_sq = avg_v_sq[indxs] 
-        
-        if havg:
-            havg_wT = havg_wT[indxs]
-    
+ 
     
      
     start_ind = np.searchsorted(full_time, start_ave)
@@ -244,6 +211,8 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
     n = len(qoi_func)
 
+
+
     # Plotting Nu - all quantities on 1 figure.
     # 2 columns, the first for instantaneous and the second for cumulative.
     # n+1 rows, where n is the number of quantities we're calculating.
@@ -322,13 +291,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         # if you're looking to be even more certain that the convergence
         # isn't a fluke.
 
-        """
-        # Integrate over time axis and save the integral value at each time
-        mask = ~np.isnan(dset)
-        dset = dset[mask]
-        time = time[mask]
-        """
-
         cumu_dset = cumulative_trapezoid(dset, time, axis=0)
         cumu_nus = nu_func(cumu_dset, time[1:] - t_0)
 
@@ -364,7 +326,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         axes_ind = axes[ind+1]
 
         # Plot the instantaneous Nusselt number
-        max_points = 40000
+        max_points = 100000
         skip = 10
         if len(inst_nu) > max_points:
             axes_ind[0].plot(time[::skip], inst_nu[::skip])
@@ -410,99 +372,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     )
     info.close()
 
-
-    ########################################################################
-    # Profile plots
-    ########################################################################
-    z = z_an - 1/2
-    # Horizontal temperature profiles, from start_time to end
-    if dim == 3:
-        avgs = [
-            avg_T,
-            avg_w_sq,
-            avg_u_sq,
-            avg_v_sq,
-        ]
-        dsets = [avg[start_ind:, 0, 0, :] for avg in avgs]
-
-        # Kinetic energy is just the sum of the squared avg velocities
-        dsets.append(dsets[1]+dsets[2]+dsets[3])
-
-        horz_tex = r"$\sqrt{\overline{u^2+v^2}}$"
-        kin_tex = r"$\overline{u^2+v^2+w^2}$"
-
-    else:
-        avgs = [
-            avg_T,
-            avg_w_sq,
-            avg_u_sq,
-        ]
-        dsets = [avg[start_ind:, 0, :] for avg in avgs]
-
-        # Kinetic energy is just the sum of the squared avg velocities
-        dsets.append(dsets[1]+dsets[2])
-
-
-        horz_tex = r"$\sqrt{\overline{u^2}}$"
-        kin_tex = r"$\overline{u^2+w^2}$"
-
-
-    profs = [simpson(dset, time, axis=0) / total_time for dset in dsets]
-
-    plot_ops = [
-        (
-            r"T",
-            "Horizontally Averaged Temperature Profile"
-        ),
-        (
-            r"$\sqrt{\overline{w^2}}$",
-            "Horizontally Averaged RMS Vertical Velocity"
-        ),
-        (
-            horz_tex,
-            "Horizontally averaged RMS Horizontal Velocity"
-        ),
-        (
-            kin_tex,
-            "Horizontally Averaged Kinetic Energy Profile"
-        ),
-    ]
-
-    # Plot the calculated profiles
-    fig = plt.figure(figsize=(25, 25))
-    for ind, (xlabel, title) in enumerate(plot_ops):
-        ax = fig.add_subplot(2, 2, ind+1)
-        ax.plot(profs[ind], z)
-        if ind==0:
-            plt.xlim([0,1])
-        plt.ylim([-0.5, 0.5])
-        plt.xlabel(xlabel)
-        plt.ylabel(r"$z$")
-        plt.title(title)        
-
-    fig.tight_layout(pad=1.0)
-    savename = output.joinpath("profiles.pdf")
-    fig.savefig(str(savename), dpi=400)
-    plt.close()
-
-
-    if havg:
-        dset = havg_wT[start_ind, 0, :]
-        prof = simpson(dset, time, axis=0) / total_time
-
-        # Plot the calculated profiles
-        fig = plt.figure(figsize=(12, 12))
-        ax = fig.add_subplot()
-        ax.plot(prof, z)
-        plt.ylim([-0.5, 0.5])
-        plt.xlabel(r'$\overline{ \langle wT \rangle}$')
-        plt.ylabel(r"$z$")
-        plt.title('Horizontally averaged vertical heat transport')        
-
-        fig.tight_layout(pad=1.0)
-        savename = output.joinpath("havg_wT.pdf")
-        fig.savefig(str(savename), dpi=400)
-        plt.close()
 
 ################################################################################
 
