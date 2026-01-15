@@ -24,20 +24,27 @@ print_params() {
 }
 
 
-run_sim() {
+
+determine_ic() {
 
     # Specify desired time for initial condition - 0 implies most recent
     if [ $IC -eq 1 ]; then
-    IC_ARRAY=($(python3 $SCRIPTS_PATH/initial_condition.py $START_TIME --file=$PWD/restart/restart.h5))
-    TOTAL_TIME=$(echo "$SIM_TIME+${IC_ARRAY[1]}" | bc)
-    IND=${IC_ARRAY[0]}
+        IC_ARRAY=($(python3 $SCRIPTS_PATH/initial_condition.py $START_TIME --file=$PWD/restart/restart.h5))
+        TOTAL_TIME=$(echo "$SIM_TIME+${IC_ARRAY[1]}" | bc)
+        IND=${IC_ARRAY[0]}
     else
-    echo "Not running with a prior simulation's initial conditions; starting fresh!"
-    # rm -rf {analysis,state,preliminary_outputs,snapshots,outputs,field_analysis,restart}
-    rm -rf restart
-    TOTAL_TIME=$SIM_TIME
-    IND=-1
+        echo "Not running with a prior simulation's initial conditions; starting fresh!"
+        # rm -rf {analysis,state,preliminary_outputs,snapshots,outputs,field_analysis,restart}
+        rm -rf restart
+        TOTAL_TIME=$SIM_TIME
+        IND=-1
     fi
+
+}
+
+
+
+run_sim() {
 
     mpirun python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
     --Ra="$RA" \
