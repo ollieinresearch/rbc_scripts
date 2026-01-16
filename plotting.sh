@@ -14,7 +14,6 @@ source $SETUP_PATH
 source $WORKFLOW_PATH
 
 print_params
-ENV_PATH="$SCRATCH/ded3_vis"
-load_modules
+load_modules_plotting
 
 plot_snapshots
