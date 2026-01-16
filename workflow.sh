@@ -86,13 +86,32 @@ post_process() {
     ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
 
     python3 $SCRIPTS_PATH/analysis_v3.py $PWD --time=$AVG_TIME
+    python3 $SCRIPTS_PATH/h_analysis.py $PWD --time=$AVG_TIME
+    
+}
 
+res_check() {
     #mkdir res_check
     #srun -c 3 python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
     #ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
 
     mkdir $PWD/res_check_3d
-    srun -c 3 python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
+    export OMP_NUM_THREADS=3
+    export NUMEXPR_MAX_THREADS=3
+    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
     ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
   
+}
+
+
+
+plot_snapshots() {
+
+    nu=$(grep "Final Nusselt number:" outputs/info.txt | awk -F': ' '{print $2}')
+
+    mkdir $PWD/visualization
+
+    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu
+    ffmpeg -y -r 30 -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
+
 }

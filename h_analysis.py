@@ -54,7 +54,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         start_ave (float): The time at which to begin the analysis of the flow.
     """
 
-    analysis = basepath / "analysis"
+    analysis = basepath / "horizontal_analysis"
     output = basepath / 'outputs'
     output.mkdir(exist_ok='true')
 
@@ -62,8 +62,8 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     n_secs = 3
     # Get list of all file names in proper numbering
     fs = sorted(
-        analysis.glob("analysis_s*.h5"),
-        key=lambda p: int(re.search(r"analysis_s(\d+)\.h5", p.name).group(1))
+        analysis.glob("horizontal_analysis_s*.h5"),
+        key=lambda p: int(re.search(r"horizontal_analysis_s(\d+)\.h5", p.name).group(1))
     )
     fp = fs.pop(0)
 
