@@ -75,6 +75,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         avg_wT = f['tasks']['avg_wT'][:]
         avg_vorticity_sq = f['tasks']['avg_vorticity_sq'][:]
         avg_grad_T_sq = f['tasks']['avg_grad_T_sq'][:]
+        dim = 3
 
         
     for fi in fs:
