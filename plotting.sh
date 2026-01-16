@@ -10,11 +10,11 @@
 
 
 source "params.conf"
-ENV_PATH="$SCRATCH/ded3_vis"
 source $SETUP_PATH
 source $WORKFLOW_PATH
 
 print_params
+ENV_PATH="$SCRATCH/ded3_vis"
 load_modules
 
 plot_snapshots

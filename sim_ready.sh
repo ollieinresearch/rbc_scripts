@@ -1,3 +1,6 @@
+#!/bin/bash
+
+
 cp /home/ollie/scratch/rbc_scripts/run_sim.sh .
 cp /home/ollie/scratch/rbc_scripts/post_process.sh .
 cp /home/ollie/scratch/rbc_scripts/plotting.sh .
