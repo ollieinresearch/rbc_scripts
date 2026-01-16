@@ -99,6 +99,27 @@ srun_sim() {
 
 
 test_parallel() {
+    mpirun --timeout 300 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
+                --Ra="$RA" \
+                --Pr="$PR" \
+                --nz="$RES" \
+                --gamma=$GAM \
+                --dt="$DT" \
+                --sim_time="$TOTAL_TIME" \
+                --index="$IND" \
+                --basepath="$PWD" \
+                --stepper="$STEPPER" \
+                --Lx="$LX" \
+                --Ly="$LY" \
+                --meshx="$MESHX" \
+                --meshy="$MESHY" \
+                --cfl_safety="$CFL_SAFETY" \
+                --cfl_threshold="$CFL_THRESHOLD" \
+                --cfl_cadence="$CFL_CADENCE" \
+                ${CFL:+--cfl} \
+                ${SNAPSHOTS:+--snapshots}
+
+            
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
             echo $PARA $TMP
@@ -145,7 +166,10 @@ test_parallel() {
                 --cfl_cadence="$CFL_CADENCE" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
-                
+        done
+    done
+
+
 
 }
 

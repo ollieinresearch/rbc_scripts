@@ -88,7 +88,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
                 avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][start_ind:], axis=0)
                 avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][start_ind:], axis=0)
                 avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:], axis=0)
-                avg_T = np.append(avg_T, f['tasks']['avg_T'][start_ind:], axis=0)
                 
 
     avg_K = np.ravel(avg_K)
