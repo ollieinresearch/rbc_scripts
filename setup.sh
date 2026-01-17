@@ -6,7 +6,7 @@ load_modules() {
     # Load the required modules
     ml StdEnv/2023
     ml python/3.11.5 mpi4py/4.0.3 fftw-mpi/3.3.10 scipy-stack/2023b ffmpeg/7.1.1 hdf5-mpi/1.14.4
-
+    ml
     source /scinet/vast/etc/vastpreload-openmpi.bash
 
     source $ENV_PATH/bin/activate;
@@ -24,6 +24,7 @@ load_modules_plotting() {
     ml StdEnv/2023
     ml python/3.11.5 mpi4py/4.0.3 fftw-mpi/3.3.10 scipy-stack/2023b ffmpeg/7.1.1 vtk/9.3.0
     ml hdf5-mpi/1.14.4
+    ml
 
     source /scinet/vast/etc/vastpreload-openmpi.bash
 
