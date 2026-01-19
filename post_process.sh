@@ -2,7 +2,7 @@
 
 #SBATCH --output=post_process.out
 #SBATCH --time=11:59:00
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
 #SBATCH --job-name=raXeXprXeX_X_post
