@@ -37,3 +37,17 @@ load_modules_plotting() {
     
 }
 
+create_restart() {
+    # For deciding the restart path
+    RECENT=$(find state/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
+
+    if [ ! -d "restart" ]; then
+    mkdir restart
+    echo "creating directory for restart"
+    fi
+
+    # Set the new restart path
+    rm -rf restart/restart.h5
+    ln -sv $PWD/state/$RECENT $PWD/restart/restart.h5
+
+}

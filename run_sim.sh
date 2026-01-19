@@ -15,6 +15,7 @@ source $WORKFLOW_PATH
 
 print_params
 load_modules
+create_restart
 determine_ic
 run_sim
 post_process
