@@ -240,6 +240,10 @@ an.add_task(kappa_xyz*de.integ((u@ez) * T), name='avg_wT')
 an.add_task(kappa_xyz*de.integ(grad_T @ grad_T), name='avg_grad_T_sq')
 an.add_task(kappa_xyz*de.integ(omega @ omega), name='avg_vorticity_sq')
 
+# Reynolds number
+an_h.add_task(kappa_xyz*de.integ(u@u), name='avg_K')
+
+
 
 logger.info(f"Analysis tasks added.")
 
@@ -258,7 +262,6 @@ an_h.add_task(z_an, name='z_an')
 
 
 # Kinetic energy and temps
-an_h.add_task(kappa_xyz*de.integ(u@u), name='avg_K')
 an_h.add_task(kappa_xy*de.integ(de.integ(T, 'x'), 'y'), name='avg_T')
 an_h.add_task(kappa_xy*de.integ(de.integ((u@ex)**2, 'x'), 'y'), name='avg_u_sq')
 an_h.add_task(kappa_xy*de.integ(de.integ((u@ey)**2, 'x'), 'y'), name='avg_v_sq')
