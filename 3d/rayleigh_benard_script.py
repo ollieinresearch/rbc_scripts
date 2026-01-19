@@ -40,11 +40,11 @@ args = docopt(__doc__)
 
 from dedalus.tools.config import config
 par = str(args['--para'])
-tmp = str(bool(args['--tmp']))
+tmp = str(args['--tmp'])
+
 logger.info(f"Parallel mode: {par}")
 logger.info(f"Touch tmp: {tmp}")
 config['analysis']['FILEHANDLER_TOUCH_TMPFILE'] = tmp
-
 
 comm = MPI.COMM_WORLD
 rank = comm.rank

@@ -129,7 +129,7 @@ test_parallel() {
             
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
-            create_restart
+            rm -rf $PWD/state/*.lock
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -154,7 +154,7 @@ test_parallel() {
                 --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
-            create_restart
+            rm -rf $PWD/state/*.lock
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -187,7 +187,7 @@ test_parallel() {
 
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
-            create_restart
+            rm -rf $PWD/state/*.lock
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -215,7 +215,7 @@ test_parallel() {
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
-            create_restart
+            rm -rf $PWD/state/*.lock
             srun --time 20 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
                 --Ra="$RA" \
                 --Pr="$PR" \
