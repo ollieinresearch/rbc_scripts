@@ -63,6 +63,8 @@ run_sim() {
     --cfl_safety="$CFL_SAFETY" \
     --cfl_threshold="$CFL_THRESHOLD" \
     --cfl_cadence="$CFL_CADENCE" \
+    --tmp="$TMP" \
+    --par="$PARA" \
     ${CFL:+--cfl} \
     ${SNAPSHOTS:+--snapshots}
 
@@ -90,6 +92,8 @@ srun_sim() {
     --cfl_safety="$CFL_SAFETY" \
     --cfl_threshold="$CFL_THRESHOLD" \
     --cfl_cadence="$CFL_CADENCE" \
+    --tmp="$TMP" \
+    --par="$PARA" \
     ${CFL:+--cfl} \
     ${SNAPSHOTS:+--snapshots}
 
@@ -116,6 +120,8 @@ test_parallel() {
                 --cfl_safety="$CFL_SAFETY" \
                 --cfl_threshold="$CFL_THRESHOLD" \
                 --cfl_cadence="$CFL_CADENCE" \
+                --tmp="$TMP" \
+                --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
 
@@ -142,6 +148,8 @@ test_parallel() {
                 --cfl_safety="$CFL_SAFETY" \
                 --cfl_threshold="$CFL_THRESHOLD" \
                 --cfl_cadence="$CFL_CADENCE" \
+                --tmp="$TMP" \
+                --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
             echo $PARA $TMP
@@ -164,6 +172,8 @@ test_parallel() {
                 --cfl_safety="$CFL_SAFETY" \
                 --cfl_threshold="$CFL_THRESHOLD" \
                 --cfl_cadence="$CFL_CADENCE" \
+                --tmp="$TMP" \
+                --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
         done
@@ -194,6 +204,8 @@ test_parallel() {
                 --cfl_safety="$CFL_SAFETY" \
                 --cfl_threshold="$CFL_THRESHOLD" \
                 --cfl_cadence="$CFL_CADENCE" \
+                --tmp="$TMP" \
+                --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
             echo $PARA $TMP
@@ -216,6 +228,8 @@ test_parallel() {
                 --cfl_safety="$CFL_SAFETY" \
                 --cfl_threshold="$CFL_THRESHOLD" \
                 --cfl_cadence="$CFL_CADENCE" \
+                --tmp="$TMP" \
+                --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
         done

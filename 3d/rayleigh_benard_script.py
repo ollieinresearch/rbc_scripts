@@ -8,21 +8,21 @@ Options:
     --Ra=<Ra>                         log_{10} of the Rayleigh number
     --Pr=<Pr>                         log_{10} of the Prandtl number
     --nz=<nz>                         Resolution in chebyshev direction
-    --gamma=<gamma>                   Factor for resolution in fourier directions [default: 2]
-    --dt=<dt>                         Timestep (initial/max for CFL) [default: 0.00001]
-    --cfl_safety=<cfl_safety>         Safety factor of CFL (see dedalus docs) [default: 0.5]
-    --cfl_threshold=<cfl_threshold>   Threshold to compute new dt (see ded docs) [default: 0.05]
-    --cfl_cadence=<cfl_cadence>       Timesteps before checking dt (see ded docs) [default: 2]
+    --gamma=<gamma>                   Factor for resolution in fourier directions. Default 2
+    --dt=<dt>                         Timestep (initial/max for CFL). Default 0.00001
+    --cfl_safety=<cfl_safety>         Safety factor of CFL (see dedalus docs). Default 0.5
+    --cfl_threshold=<cfl_threshold>   Threshold to compute new dt (see ded docs). Default 0.05
+    --cfl_cadence=<cfl_cadence>       Timesteps before checking dt (see ded docs). Default 2
     --sim_time=<time>                 Simulation time
     --basepath=<path>                 Base path for output files
-    --stepper=<stepper>               Timestepper [default: RK443]
-    --Lx=<Lx>                         Length in x [default: 2]
-    --Ly=<Ly>                         Length in y [default: 2]
+    --stepper=<stepper>               Timestepper. Default RK443
+    --Lx=<Lx>                         Length in x. Default 2
+    --Ly=<Ly>                         Length in y. Default 2
     --meshx=<size>                    2D process mesh size in x
     --meshy=<size>                    2D process mesh size in y
-    --index=<index>                   Restart write index [default: -1]
-    --tmp=<tmp>                       tmp_touchfile (str)? [default: True]
-    --para=<para>                     type of parallel to use (str) [default: mpio]
+    --index=<index>                   Restart write index. Default -1
+    --tmp=<tmp>                       tmp_touchfile (str)? Default True
+    --para=<para>                     type of parallel to use (str). Default virtual
     --snapshots                       Enable snapshots for visualization
     --cfl                             Enable CFL timestepping
 """
@@ -41,6 +41,8 @@ args = docopt(__doc__)
 from dedalus.tools.config import config
 par = str(args['--para'])
 tmp = str(bool(args['--tmp']))
+logger.info(f"Parallel mode: {par}")
+logger.info(f"Touch tmp: {tmp}")
 config['analysis']['FILEHANDLER_TOUCH_TMPFILE'] = tmp
 
 
