@@ -241,7 +241,7 @@ an.add_task(kappa_xyz*de.integ(grad_T @ grad_T), name='avg_grad_T_sq')
 an.add_task(kappa_xyz*de.integ(omega @ omega), name='avg_vorticity_sq')
 
 # Reynolds number
-an_h.add_task(kappa_xyz*de.integ(u@u), name='avg_K')
+an.add_task(kappa_xyz*de.integ(u@u), name='avg_K')
 
 
 

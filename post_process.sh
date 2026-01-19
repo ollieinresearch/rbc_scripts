@@ -1,11 +1,11 @@
 #!/bin/bash
 
 #SBATCH --output=post_process.out
-#SBATCH --time=11:59:00
+#SBATCH --time=02:59:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
-#SBATCH --job-name=raXeXprXeX_X_post
+#SBATCH --job-name=raXprXeX_X_post
 #SBATCH --account=def-goluskin
 
 
