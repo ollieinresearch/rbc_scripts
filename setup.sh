@@ -38,6 +38,7 @@ load_modules_plotting() {
 }
 
 create_restart() {
+    rm -rf $PWD/state/*.lock
     # For deciding the restart path
     RECENT=$(find state/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
 

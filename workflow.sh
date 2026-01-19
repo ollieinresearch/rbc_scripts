@@ -103,6 +103,7 @@ srun_sim() {
 
 
 test_parallel() {
+    create_restart
     mpirun --timeout 300 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
                 --Ra="$RA" \
                 --Pr="$PR" \
@@ -128,6 +129,7 @@ test_parallel() {
             
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
+            create_restart
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -152,6 +154,7 @@ test_parallel() {
                 --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
+            create_restart
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -184,6 +187,7 @@ test_parallel() {
 
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
+            create_restart
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -211,6 +215,7 @@ test_parallel() {
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
+            create_restart
             srun --time 20 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
                 --Ra="$RA" \
                 --Pr="$PR" \
