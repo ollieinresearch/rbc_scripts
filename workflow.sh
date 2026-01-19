@@ -103,7 +103,7 @@ srun_sim() {
 
 
 test_parallel() {
-    create_restart
+    
     mpirun --timeout 300 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
                 --Ra="$RA" \
                 --Pr="$PR" \
@@ -129,7 +129,7 @@ test_parallel() {
             
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
-            rm -rf $PWD/state/*.lock
+            reset_test
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -154,7 +154,7 @@ test_parallel() {
                 --par="$PARA" \
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
-            rm -rf $PWD/state/*.lock
+            reset_test
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -187,7 +187,7 @@ test_parallel() {
 
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
-            rm -rf $PWD/state/*.lock
+            reset_test
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
@@ -215,7 +215,9 @@ test_parallel() {
             echo $PARA $TMP
             echo $PARA $TMP
             echo $PARA $TMP
-            rm -rf $PWD/state/*.lock
+
+            reset_test
+
             srun --time 20 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
                 --Ra="$RA" \
                 --Pr="$PR" \
@@ -286,5 +288,26 @@ plot_snapshots() {
 
     srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu
     ffmpeg -y -r 30 -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
+
+}
+
+
+
+
+reset_test() {
+
+    rm -rf $PWD/state/*.loc
+    rm -rf $PWD/state/*.lock
+    RECENT=$(find state/. -maxdepth 1 -type d -exec basename {} \; | sort -V | tail -n 1)
+    RESTART=$(readlink $PWD/restart/restart.h5)
+
+    if [[ "$PWD/state/$RECENT.h5" == "$RESTART" ]]; then
+        echo "Most recent state file is already the restart link."
+    else
+        echo "Most recent state file is NOT the restart link. Removing the new one."
+        rm -rf $PWD/state/$RECENT
+        rm -rf $PWD/state/$RECENT.h5
+    fi
+
 
 }
