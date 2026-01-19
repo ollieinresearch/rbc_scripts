@@ -296,6 +296,7 @@ plot_snapshots() {
 
 reset_test() {
 
+    rm -rf $PWD/state/*.loc
     rm -rf $PWD/state/*.lock
     RECENT=$(find state/. -maxdepth 1 -type d -exec basename {} \; | sort -V | tail -n 1)
     RESTART=$(readlink $PWD/restart/restart.h5)
