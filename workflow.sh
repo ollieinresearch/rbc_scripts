@@ -298,7 +298,8 @@ reset_test() {
 
     rm -rf $PWD/state/*.loc
     rm -rf $PWD/state/*.lock
-    RECENT=$(find state/. -maxdepth 1 -type d -exec basename {} \; | sort -V | tail -n 1)
+    RECENT=$(find state/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
+    RECENT=${RECENT%.*}
     RESTART=$(readlink $PWD/restart/restart.h5)
 
     if [[ "$PWD/state/$RECENT.h5" == "$RESTART" ]]; then
