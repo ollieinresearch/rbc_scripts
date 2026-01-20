@@ -126,6 +126,8 @@ test_parallel() {
                 ${CFL:+--cfl} \
                 ${SNAPSHOTS:+--snapshots}
 
+    export HDF5_USE_FILE_LOCKING='False'
+
             
     for PARA in virtual mpio gather; do 
         for TMP in False True; do
