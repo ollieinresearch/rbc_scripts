@@ -82,7 +82,7 @@ snapshots_flag = args['--snapshots']
 fh_mode = 'append'
 
 # Iteration parameters
-state_time = 855 #save every 855 seconds (50 saves in 11hr 50 min)
+state_time = 425 #save every 425 seconds (100 saves in 11hr 50 min)
 snap_time = 1/30 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
 analysis_time = 1/100 # 100 analysis file saves per unit of sim time 
 message_num_iters = 500

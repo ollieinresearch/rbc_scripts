@@ -14,7 +14,6 @@ load_modules() {
     # Dedalus performance tip!
     export OMP_NUM_THREADS=1
     export NUMEXPR_MAX_THREADS=1
-    export HDF5_USE_FILE_LOCKING='False'
     
 }
 
@@ -33,7 +32,6 @@ load_modules_plotting() {
     # Dedalus performance tip!
     export OMP_NUM_THREADS=1
     export NUMEXPR_MAX_THREADS=1
-    export HDF5_USE_FILE_LOCKING='False'
     
 }
 

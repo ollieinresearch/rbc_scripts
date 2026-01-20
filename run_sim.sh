@@ -15,6 +15,9 @@ source $WORKFLOW_PATH
 
 print_params
 load_modules
+#export HDF5_USE_FILE_LOCKING='False'
+#export HDF5_USE_FILE_LOCKING='True'
+
 create_restart
 determine_ic
 run_sim
