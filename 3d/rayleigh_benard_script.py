@@ -331,8 +331,10 @@ try:
                 avg_Re = flow.grid_average('Re')
                 logger.info('Iteration={:d}, Time={:.5f}, dt={:.4e}, Re={:.2f}'. format(solver.iteration, solver.sim_time, dt, avg_Re))
                 logger.info('-' * 80)
-except:
+except Exception as e:
+    logger.info(e)
     logger.error('Exception raised, triggering end of main loop.')
+    logger.error(e)
     raise
 finally:
     solver.evaluate_handlers(dt=dt)

@@ -314,3 +314,26 @@ reset_test() {
 
 
 }
+
+
+move_to_slrmtmp() {
+    for FOL in state restart analysis horizontal_analysis snapshots; do
+        mkdir $SLURM_TMPDIR/$FOL
+
+        rm -rf $PWD/$FOL/*.loc
+        rm -rf $PWD/$FOL/*.lock
+        RECENT=$(find $FOL/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
+        RECENT=${RECENT%.*}
+    
+        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r $PWD/$FOL/$RECENT $SLURM_TMPDIR/$FOL
+        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp "$PWD/$FOL/$RECENT.h5" $SLURM_TMPDIR/$FOL
+    done
+    cd $SLURM_TMPDIR
+}
+
+
+
+move_from_slrmtmp() {
+    cp -r $PWD/* $BASE
+    cd $BASE
+}
