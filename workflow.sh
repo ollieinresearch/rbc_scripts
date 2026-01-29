@@ -284,6 +284,19 @@ res_check() {
 
 
 
+res_check_vort() {
+    #mkdir res_check
+    #srun -c 3 python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
+    #ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
+
+    mkdir $PWD/res_check_vort
+    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/power_vort.py $PWD/snapshots/*.h5 --mins=$MINS --maxs=$MAXS
+    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_vort/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_vort/movie.mp4
+  
+}
+
+
+
 plot_snapshots() {
 
     nu=$(grep "Final Nusselt number:" outputs/info.txt | awk -F': ' '{print $2}')
