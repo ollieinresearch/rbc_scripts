@@ -12,8 +12,8 @@ Usage:
 
 Options:
     --basepath=<dir>  Path to parent folder for output [default: ./analysis]
-    --max_vort=<max_vort>  Maximum vorticity [default: 100]
-    --max_vert=<max_vert>  Maximum vertical velocity [default: 100]
+    --max_vort=<max_vort>  Maximum vorticity [default: 1000]
+    --max_vert=<max_vert>  Maximum vertical velocity [default: 5000]
     --nu=<nu> Nusselt from this sim for boundary layer [default: 5]
 """
 
@@ -30,8 +30,8 @@ from matplotlib.scale import AsinhTransform
 asinh = AsinhTransform(linear_width=1.5)
 
 def main(h5_file, start, count, output_dir, mvort, mvert, nu):
-    #mvort = asinh.transform(mvort)
-    #mvert = asinh.transform(mvert)
+    mvort = asinh.transform(mvort)
+    mvert = asinh.transform(mvert)
     bl = (4.0*nu)
     # Load temp data and grid
     pv.start_xvfb()
@@ -45,6 +45,8 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
         xmid = domain_sizes[0] / 2.0
         ymid = domain_sizes[1] / 2.0
         zmid = domain_sizes[2] / 2.0
+
+        time = np.array(f['scales']['sim_time'][start:start+count])
 
         T = np.array(f['tasks']['temperature'][start:start+count], dtype=np.float64)
         T_1 = np.array(f['tasks']['temperature'][start:start+count, :, :, int(nTz/2)], dtype=np.float64)
@@ -159,9 +161,12 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             
             vort_grid.point_data['vort'] = asinh.transform(flat_vort)
             vert_grid.point_data['vert'] = asinh.transform(flat_vert)
-
             vert_grid_1.point_data['vert'] = asinh.transform(flat_vert_1)
             vert_grid_2.point_data['vert'] = asinh.transform(flat_vert_2)
+
+            if (flat_vort < 0).any():
+                print(f"Negative magnitude of vorticity at time {time[t]:.4f}")
+                
 
             
             t_opacity = np.linspace(0, 1, 255)

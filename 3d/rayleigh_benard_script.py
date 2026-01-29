@@ -34,6 +34,36 @@ from pathlib import Path
 import dedalus.public as de
 import logging
 logger = logging.getLogger(__name__)
+import signal
+
+def signal_handler(signum, frame):
+    """
+    This function is called automatically when a signal arrives.
+    signum: which signal (SIGINT, SIGUSR1, etc.)
+    frame: current execution frame (we don't use it)
+    """
+    global stop_requested
+
+    if signum == signal.SIGUSR1:
+        print("Received SIGUSR1 (walltime warning). Requesting clean shutdown.")
+    elif signum == signal.SIGINT:
+        print("Received SIGINT (Ctrl+C). Requesting clean shutdown.")
+    else:
+        print("Received SIGTERM. Requesting clean shutdown.")
+
+    # DO NOT save files here!
+    # Just request that the main loop stop.
+    stop_requested = True
+
+
+# This flag is checked inside the time-stepping loop
+stop_requested = False
+signal.signal(signal.SIGUSR1, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+signal.siginterrupt(signal.SIGINT, False)
+signal.siginterrupt(signal.SIGUSR1, False)
+
 
 from docopt import docopt
 args = docopt(__doc__)
@@ -82,7 +112,7 @@ snapshots_flag = args['--snapshots']
 fh_mode = 'append'
 
 # Iteration parameters
-state_time = 425 #save every 425 seconds (100 saves in 11hr 50 min)
+state_time = 213 #save every 425 seconds (100 saves in 11hr 50 min)
 snap_time = 1/30 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
 analysis_time = 1/100 # 100 analysis file saves per unit of sim time 
 message_num_iters = 500
@@ -205,7 +235,7 @@ logger.info(f"State tasks added.")
 # Snapshots for visualization
 if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
-    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=60, mode=fh_mode, parallel=par)
+    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=30, mode=fh_mode, parallel=par)
     snap.add_task(T, name='temperature')
     snap.add_task(omega@omega, name='vorticity')
     
@@ -293,7 +323,7 @@ try:
 
         dt = CFL.compute_timestep()
         dts = [dt]
-        while solver.proceed and good_solution:
+        while solver.proceed and good_solution and not stop_requested:
             if solver.iteration == start_iter + startup_iter:
                 main_start = time.time()
 
@@ -322,7 +352,7 @@ try:
                 dt = new_dt
                 
     else:
-        while solver.proceed and good_solution:
+        while solver.proceed and good_solution and not stop_requested:
             if solver.iteration == start_iter + startup_iter:
                 main_start = time.time()
 

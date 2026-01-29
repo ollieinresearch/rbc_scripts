@@ -18,10 +18,11 @@ def main(filename, start, count):
     with h5py.File(filename, mode='r') as file:
         
         dset = np.array(file['tasks']['vorticity'][start:start+count])
-        mv = np.max(np.abs(dset))
+        mv = np.max(np.abs(dset.ravel()))
+        write_num = file['scales/write_number'][start]
 
     # Write the max to a text file
-    with open(basepath / f"max_vort_{start}.txt", 'w') as txt:
+    with open(basepath / f"max_vort_{write_num}.txt", 'w') as txt:
         txt.write(f"{mv}")
 
 

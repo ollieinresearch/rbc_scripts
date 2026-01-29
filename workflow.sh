@@ -66,7 +66,9 @@ run_sim() {
     --tmp="$TMP" \
     --par="$PARA" \
     ${CFL:+--cfl} \
-    ${SNAPSHOTS:+--snapshots}
+    ${SNAPSHOTS:+--snapshots} &
+
+    wait
 
 
 
@@ -75,7 +77,7 @@ run_sim() {
 
 srun_sim() {
 
-    srun python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
+    srun -n $N -c $C python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
     --Ra="$RA" \
     --Pr="$PR" \
     --nz="$RES" \
@@ -95,7 +97,9 @@ srun_sim() {
     --tmp="$TMP" \
     --par="$PARA" \
     ${CFL:+--cfl} \
-    ${SNAPSHOTS:+--snapshots}
+    ${SNAPSHOTS:+--snapshots} &
+
+    wait
 
 
 
@@ -273,8 +277,6 @@ res_check() {
     #ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
 
     mkdir $PWD/res_check_3d
-    export OMP_NUM_THREADS=3
-    export NUMEXPR_MAX_THREADS=3
     srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
     ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
   
@@ -286,9 +288,13 @@ plot_snapshots() {
 
     nu=$(grep "Final Nusselt number:" outputs/info.txt | awk -F': ' '{print $2}')
 
+    srun python3 $SCRIPTS_PATH/max_vort.py $PWD/snapshots/*.h5
+    python3 $SCRIPTS_PATH/max_vort_2.py $PWD/snapshots
+    mv="$(cat snapshots/max_vort.txt)"
+
     mkdir $PWD/visualization
 
-    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu
+    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/visualization/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu --max_vort=$mv
     ffmpeg -y -r 30 -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
 
 }
@@ -317,23 +323,76 @@ reset_test() {
 
 
 move_to_slrmtmp() {
+    
+    mkdir "$SLURM_TMPDIR/{state,restart,analysis,horizontal_analysis,snapshots}"
+    tree {state,restart,analysis,horizontal_analysis,snapshots} -L 1
+
+    echo "Moving to slrm_tmp: $(date)"
+
     for FOL in state restart analysis horizontal_analysis snapshots; do
         mkdir $SLURM_TMPDIR/$FOL
 
         rm -rf $PWD/$FOL/*.loc
         rm -rf $PWD/$FOL/*.lock
-        RECENT=$(find $FOL/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
+        RECENT=$(find $PWD/$FOL/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
         RECENT=${RECENT%.*}
+        echo $RECENT
     
-        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r $PWD/$FOL/$RECENT $SLURM_TMPDIR/$FOL
-        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp "$PWD/$FOL/$RECENT.h5" $SLURM_TMPDIR/$FOL
+        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r "$PWD/$FOL/$RECENT" "$SLURM_TMPDIR/$FOL/"
+        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp "$PWD/$FOL/$RECENT.h5" "$SLURM_TMPDIR/$FOL/"
+        ls $SLURM_TMPDIR
     done
+    tree $SLURM_TMPDIR -L 2
+    echo "MOVED to slrm_tmp: $(date)"
     cd $SLURM_TMPDIR
 }
 
 
 
 move_from_slrmtmp() {
-    cp -r $PWD/* $BASE
+    echo "Moving from slrm_tmp: $(date)"
+    RECENT=$(find state/. -maxdepth 1 -type f -exec basename {} \; | sort -V | tail -n 1)
+    RECENT=${RECENT%.*}
+    srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r "$PWD/state/$RECENT" "$BASE/state/"
+    srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r "$PWD/state/$RECENT.h5" "$BASE/state/"
+    
+    for FOL in analysis state horizontal_analysis snapshots restart; do
+        srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r "$PWD/$FOL/*" "$BASE/$FOL/"
+    done
+
+    srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 cp -r "$PWD/*" "$BASE/"
+
+    echo "MOVED from slrm_tmp: $(date)"
+    
     cd $BASE
+}
+
+
+
+
+## Timeout handle function
+# Function executed 5 or 30min before the end of the time limit
+sig_handler_USR1()
+{
+    
+    wait
+    if [[ "$PWD" == "$BASE" ]]; then
+        echo "5 Minutes left! Saving handlers and post processing."
+
+    else
+        echo "30 minutes left! Evaluating handlers and transferring data back from slurm_tmpdir."
+        tree -L 2
+        move_from_slrmtmp
+    fi
+    
+    post_process
+    res_check
+    
+    exit 2
+}
+
+
+add_sig() {
+    # Associate the function "sig_handler_USR1" with the USR1 signal
+    trap 'sig_handler_USR1' SIGINT
 }
