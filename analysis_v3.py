@@ -60,12 +60,19 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
 
     n_secs = 3
+
+    # We need the analysis files in the right order; sometimes portions of simulations are accidentally ran multiple
+    # times, and in that case we may only consider one of the outputs (otherwise time integration can get a bit wacky).
+    # To only consider one set of outputs, we must ensure the times are nondecreasing, which requires the right
+    # file order.
     fs = sorted(
         analysis.glob("analysis_s*.h5"),
         key=lambda p: int(re.search(r"analysis_s(\d+)\.h5", p.name).group(1))
     )
     fp = fs.pop(0)
 
+    # Save the data from the first file; now we may just check whether or not the times are decreasing with each
+    # file we load.
     with h5.File(fp, 'r') as f:
         Ra = float(f['tasks']['Ra'][-1])
         Pr = float(f['tasks']['Pr'][-1])
@@ -77,7 +84,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         avg_grad_T_sq = f['tasks']['avg_grad_T_sq'][:]
         dim = 3
 
-        
+    # Load all the files, ensuring the time at the end of the new file is more than the last one.
     for fi in fs:
         with h5.File(fi, 'r') as f:
             start_time = full_time[-1]
@@ -91,7 +98,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
                 avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:], axis=0)
                 
 
-    
+    # Flatten to one axis (time), Dedalus automatically recognizes there are volume axes.
     avg_wT = np.ravel(avg_wT)
     avg_vorticity_sq = np.ravel(avg_vorticity_sq)
     avg_grad_T_sq = np.ravel(avg_grad_T_sq)
