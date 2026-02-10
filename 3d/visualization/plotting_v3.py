@@ -176,8 +176,17 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
 
             w_opacity = np.linspace(-1/2, 1/2, 255)
             w_opacity_tf = 1.0-np.exp(-3500.0*(w_opacity)**8)
-            ω_opacity_tf = 1.0-np.exp(-3500.0*(w_opacity)**8)
+            min_vort = np.min(asinh.transform(flat_vort))
+            print(min_vort)
+            max_vort = np.max(asinh.transform(flat_vort))
+            print(max_vort)
+            lin_color = np.linspace(min_vort, max_vort, 256)
+            zero_start = np.searchsorted(lin_color, 0)
 
+            ω_opacity_tf = 1.0-np.exp(-3500.0*(w_opacity)**8)
+            print(ω_opacity_tf)
+            ω_opacity_tf[zero_start:125] = np.zeros(125-zero_start)
+            print(ω_opacity_tf)
             
             #inv_opacity = np.linspace(0, 1, 255)
             #inv_opacity_tf = np.exp(-100000.0*(opacity-0.5)**4)    
@@ -215,7 +224,7 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             # Top-right: diagonal view of w
             plotter.subplot(0, 1)
             actor1 = plotter.add_volume(
-                vert_grid, scalars='vert', opacity=w_opacity_tf, cmap='RdBu_r', clim=[-mvert, mvert]#, shade=False
+                vert_grid, scalars='vert', opacity=w_opacity_tf, cmap='RdBu_r'#, clim=[-mvert, mvert]#, shade=False
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
@@ -258,7 +267,7 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             # middle-right: diagonal view of ω
             plotter.subplot(1, 1)
             actor1 = plotter.add_volume(
-                vort_grid, scalars='vort', opacity=ω_opacity_tf, cmap='jet', clim=[-0.8*mvort, mvort]#, shade=False
+                vort_grid, scalars='vort', opacity=ω_opacity_tf, cmap='jet'#, clim=[-0.8*mvort, mvort]#, shade=False
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]

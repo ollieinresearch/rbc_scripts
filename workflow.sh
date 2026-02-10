@@ -2,6 +2,7 @@
 
 
 print_params() {
+    echo "Job ID: $SLURM_JOB_ID"
     echo "Start time: $START_TIME"
     echo "Rayleigh number:$RA"
     echo "Prandtl number: $PR"
@@ -275,7 +276,8 @@ res_check() {
     #mkdir res_check
     #srun -c 3 python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
     #ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
-
+    export OMP_NUM_THREADS=6
+    export NUMEXPR_MAX_THREADS=6
     mkdir $PWD/res_check_3d
     srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
     ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
@@ -284,15 +286,32 @@ res_check() {
 
 
 
-res_check_vort() {
+res_check_3d_snaps() {
     #mkdir res_check
     #srun -c 3 python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
     #ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
-
-    mkdir $PWD/res_check_vort
-    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/power_vort.py $PWD/snapshots/*.h5 --mins=$MINS --maxs=$MAXS
-    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_vort/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_vort/movie.mp4
+    export OMP_NUM_THREADS=6
+    export NUMEXPR_MAX_THREADS=6
+    mkdir $PWD/res_check_3d
+    srun -n 8 --cpus-per-task=24 python3 $SCRIPTS_3D/power_v3.py $PWD/snapshots/*.h5 --mins=$MINS --maxs=$MAXS
+    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
   
+}
+
+
+
+res_check_vort() {
+    mkdir $PWD/res_check_vort
+
+    export OMP_NUM_THREADS=1
+    export NUMEXPR_MAX_THREADS=1
+    mkdir $PWD/res_check_vort
+    srun -n 8 -c 24 python3 $SCRIPTS_3D/power_vort.py $PWD/snapshots/*.h5 --mins=$VMINS --maxs=$VMAXS
+    export OMP_NUM_THREADS=32
+    export NUMEXPR_MAX_THREADS=32
+    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_vort/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_vort/movie.mp4
+
+
 }
 
 
@@ -307,7 +326,7 @@ plot_snapshots() {
 
     mkdir $PWD/visualization
 
-    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/visualization/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu --max_vort=$mv
+    srun -n 8 --cpus-per-task=24 python3 $SCRIPTS_3D/visualization/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu --max_vort=$mv
     ffmpeg -y -r 30 -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
 
 }
@@ -408,4 +427,18 @@ sig_handler_USR1()
 add_sig() {
     # Associate the function "sig_handler_USR1" with the USR1 signal
     trap 'sig_handler_USR1' SIGINT
+}
+
+
+vort_analysis() {
+    # Thread controls
+    srun -n 6 --cpus-per-task=32 python $SCRIPTS_3D/vort_analysis_merging.py $PWD/snapshots/*.h5
+
+    export OMP_NUM_THREADS=192
+    export MKL_NUM_THREADS=192
+    export OPENBLAS_NUM_THREADS=192
+    export BLIS_NUM_THREADS=192
+    export NUMEXPR_NUM_THREADS=192
+
+    srun -n 1 --cpus-per-task=192 python $SCRIPTS_3D/v_analysis.py $PWD
 }

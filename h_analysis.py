@@ -143,14 +143,14 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     if dim == 3:
         avgs = [
             avg_T,
-            avg_w_sq,
-            avg_u_sq,
+            avg_w_sq+avg_u_sq,
             avg_v_sq,
         ]
         dsets = [avg[start_ind:, 0, 0, :] for avg in avgs]
 
         # Kinetic energy is just the sum of the squared avg velocities
-        dsets.append(dsets[1]+dsets[2]+dsets[3])
+        dsets.append(dsets[1]+dsets[2])
+        dsets[1:3] = np.sqrt(dsets[1:3])
 
         horz_tex = r"$\sqrt{\overline{u^2+v^2}}$"
         kin_tex = r"$\overline{u^2+v^2+w^2}$"
@@ -165,6 +165,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
 
         # Kinetic energy is just the sum of the squared avg velocities
         dsets.append(dsets[1]+dsets[2])
+        dsets[1:3] = np.sqrt(dsets[1:3])
 
 
         horz_tex = r"$\sqrt{\overline{u^2}}$"

@@ -15,8 +15,14 @@ import h5py as h5
 import numpy as np
 from numpy.polynomial.chebyshev import chebpts2
 from pathlib import Path
+import matplotlib
 import matplotlib.pyplot as plt
 from scipy.interpolate import RegularGridInterpolator
+import matplotlib.ticker as ticker
+matplotlib.use("Agg")
+s = 30
+plt.rcParams.update({"font.size": 0.75*s})
+plt.ioff()
 
 #TODO: get this working for temp as well!
 # Questions:
@@ -27,13 +33,21 @@ def main(file, start, count, mins, maxs):
     fp = Path(file)
     basepath = Path(fp.parents[1])
     with h5.File(fp, 'r') as f:
-        # Collect the state file data (start/count is for parallelization)
-        time = np.array(f["scales/sim_time"][start:start+count])
-        writes = np.array(f["scales/write_number"][start:start+count])
-        u = np.array(f['tasks']['u'][start:start+count, 0])
-        v = np.array(f['tasks']['u'][start:start+count, 1])
-        w = np.array(f['tasks']['u'][start:start+count, 2])
-        nt, nx, ny, nz = u.shape       
+        try:
+            # Collect the state file data (start/count is for parallelization)
+            time = np.array(f["scales/sim_time"][start:start+count])
+            writes = np.array(f["scales/write_number"][start:start+count])
+            u = np.array(f['tasks']['u'][start:start+count, 0])
+            v = np.array(f['tasks']['u'][start:start+count, 1])
+            w = np.array(f['tasks']['u'][start:start+count, 2])
+            nt, nx, ny, nz = u.shape       
+        except:
+            time = np.array(f["scales/sim_time"][start:start+count])
+            writes = np.array(f["scales/write_number"][start:start+count])
+            u = np.array(f['tasks']['x'][start:start+count])
+            v = np.array(f['tasks']['y'][start:start+count])
+            w = np.array(f['tasks']['w'][start:start+count])
+            nt, nx, ny, nz = u.shape  
         
     # Discard the first timestep
     c=0
@@ -126,7 +140,7 @@ def main(file, start, count, mins, maxs):
         pars_kx = np.sum(E_kx)
         pars_kxy = np.sum(E_xy_flat)                
 
-        fig, axes = plt.subplots(2, 2, figsize=(22, 18))
+        fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
 
         # --- Dealiasing cutoffs (2/3 rule) ---
         kx_cut = (2/3) * np.max(np.abs(kx))
@@ -140,51 +154,65 @@ def main(file, start, count, mins, maxs):
         # --- Top-left: full 3D isotropic spectrum ---
         ax = axes[0, 0]
         ax.loglog(k_centers, E_k, '.-')
-        ax.axvline(k3d_cut, color='k', linestyle='--', alpha=0.7, label='2/3 cutoff')
+        #ax.axvline(k3d_cut, color='k', linestyle='--', alpha=0.7, label='2/3 cutoff')
         ax.set_xlabel(r'$k$')
         ax.set_ylabel(r'$E(k)$')
-        ax.set_title('3D isotropic spectrum')
+        ax.set_title(r'3D isotropic spectrum')
         ax.set_ylim((10**float(mins[0]), 10**float(maxs[0])))
         ax.legend(frameon=False)
+        yticks = np.logspace(mins[0], maxs[0], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
+
 
         # --- Top-right: vertical spectrum (kz) ---
         ax = axes[0, 1]
         ax.loglog(np.abs(kz), E_kz, '.-')
-        ax.axvline(kz_cut, color='k', linestyle='--', alpha=0.7)
+        #ax.axvline(kz_cut, color='k', linestyle='--', alpha=0.7)
         ax.set_xlabel(r'$k_z$')
         ax.set_ylabel(r'$E(k_z)$')
-        ax.set_title('Vertical spectrum')
+        ax.set_title(r'Vertical spectrum ($z$)')
         ax.set_ylim((10**float(mins[1]), 10**float(maxs[1])))
+        yticks = np.logspace(mins[1], maxs[1], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
 
+        
         # --- Bottom-left: horizontal spectrum (kx) ---
         ax = axes[1, 0]
         ax.loglog(np.abs(kx), E_kx, '.-')
-        ax.axvline(kx_cut, color='k', linestyle='--', alpha=0.7)
+        #ax.axvline(kx_cut, color='k', linestyle='--', alpha=0.7)
         ax.set_xlabel(r'$k_x$')
         ax.set_ylabel(r'$E(k_x)$')
-        ax.set_title('Horizontal spectrum (x)')
+        ax.set_title(r'Horizontal spectrum ($x$)')
         ax.set_ylim((10**float(mins[2]), 10**float(maxs[2])))
+        yticks = np.logspace(mins[2], maxs[2], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
 
+        
         # --- Bottom-right: 2D planar spectrum (xy) ---
         ax = axes[1, 1]
         ax.loglog(k_xy_centers, E_kxy, '.-')
-        ax.axvline(kxy_cut, color='k', linestyle='--', alpha=0.7)
+        #ax.axvline(kxy_cut, color='k', linestyle='--', alpha=0.7)
         ax.set_xlabel(r'$k = \sqrt{k_x^2 + k_y^2}$')
         ax.set_ylabel(r'$E_{xy}(k_{xy})$')
-        ax.set_title('Horizontal planar spectrum (xy)')
+        ax.set_title(rf'Horizontal planar spectrum ($xy$)')
         ax.set_ylim((10**float(mins[3]), 10**float(maxs[3])))
+        yticks = np.logspace(mins[3], maxs[3], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
 
+        
 
         # --- Global title with energy check ---
         fig.suptitle(
-            f't: {time[ti]:.4f}, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
-            fontsize=18
+            f'Velocity Power Spectra \n Time: {time[ti]:.4f}'#, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
         )
 
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
         savename=f"{str(basepath)}/res_check_3d/write_{writes[ti]+c:06}.png"
         fig.savefig(savename)
-        fig.clear()
+        plt.close()
 
 
 

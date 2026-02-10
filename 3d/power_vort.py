@@ -15,8 +15,16 @@ import h5py as h5
 import numpy as np
 from numpy.polynomial.chebyshev import chebpts2
 from pathlib import Path
+import matplotlib
 import matplotlib.pyplot as plt
 from scipy.interpolate import RegularGridInterpolator
+import matplotlib.ticker as ticker
+matplotlib.use("Agg")
+s = 30
+
+plt.rcParams.update({"font.size": 0.75*s})
+plt.ioff()
+
 
 #TODO: get this working for temp as well!
 # Questions:
@@ -67,7 +75,8 @@ def main(file, start, count, mins, maxs):
     bins = np.arange(0.5, Kmax + 1, 1.0)
     k_centers = 0.5 * (bins[:-1] + bins[1:])
     eps = 1e-12
-    
+
+
     # Main loop: interpolate, FFT, bin, plot
     for ti in range(nt):
         # Interpolators for current time slice
@@ -121,7 +130,6 @@ def main(file, start, count, mins, maxs):
         pars_kx = np.sum(E_kx)
         pars_kxy = np.sum(E_xy_flat)                
 
-        fig, axes = plt.subplots(2, 2, figsize=(22, 18))
 
         # --- Dealiasing cutoffs (2/3 rule) ---
         kx_cut = (2/3) * np.max(np.abs(kx))
@@ -132,54 +140,71 @@ def main(file, start, count, mins, maxs):
         k3d_cut = min(kx_cut, ky_cut, kz_cut)
         kxy_cut = min(kx_cut, ky_cut)
 
+        fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
+
         # --- Top-left: full 3D isotropic spectrum ---
         ax = axes[0, 0]
         ax.loglog(k_centers, E_k, '.-')
-        ax.axvline(k3d_cut, color='k', linestyle='--', alpha=0.7, label='2/3 cutoff')
+        #ax.axvline(k3d_cut, color='k', linestyle='--', alpha=0.7, label='2/3 cutoff')
         ax.set_xlabel(r'$k$')
         ax.set_ylabel(r'$E(k)$')
         ax.set_title('3D isotropic spectrum')
         ax.set_ylim((10**float(mins[0]), 10**float(maxs[0])))
         ax.legend(frameon=False)
+        yticks = np.logspace(mins[0], maxs[0], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
+        #ax.tick_params(axis='both', which='major', labelsize=18)
+
 
         # --- Top-right: vertical spectrum (kz) ---
         ax = axes[0, 1]
         ax.loglog(np.abs(kz), E_kz, '.-')
-        ax.axvline(kz_cut, color='k', linestyle='--', alpha=0.7)
+        #ax.axvline(kz_cut, color='k', linestyle='--', alpha=0.7)
         ax.set_xlabel(r'$k_z$')
         ax.set_ylabel(r'$E(k_z)$')
         ax.set_title('Vertical spectrum')
         ax.set_ylim((10**float(mins[1]), 10**float(maxs[1])))
+        yticks = np.logspace(mins[1], maxs[1], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
+        #ax.tick_params(axis='both', which='major', labelsize=18)
 
         # --- Bottom-left: horizontal spectrum (kx) ---
         ax = axes[1, 0]
         ax.loglog(np.abs(kx), E_kx, '.-')
-        ax.axvline(kx_cut, color='k', linestyle='--', alpha=0.7)
+        #ax.axvline(kx_cut, color='k', linestyle='--', alpha=0.7)
         ax.set_xlabel(r'$k_x$')
         ax.set_ylabel(r'$E(k_x)$')
         ax.set_title('Horizontal spectrum (x)')
         ax.set_ylim((10**float(mins[2]), 10**float(maxs[2])))
+        yticks = np.logspace(mins[2], maxs[2], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
+        #ax.tick_params(axis='both', which='major', labelsize=18)
 
         # --- Bottom-right: 2D planar spectrum (xy) ---
         ax = axes[1, 1]
         ax.loglog(k_xy_centers, E_kxy, '.-')
-        ax.axvline(kxy_cut, color='k', linestyle='--', alpha=0.7)
+        #ax.axvline(kxy_cut, color='k', linestyle='--', alpha=0.7)
         ax.set_xlabel(r'$k = \sqrt{k_x^2 + k_y^2}$')
         ax.set_ylabel(r'$E_{xy}(k_{xy})$')
         ax.set_title('Horizontal planar spectrum (xy)')
         ax.set_ylim((10**float(mins[3]), 10**float(maxs[3])))
+        yticks = np.logspace(mins[3], maxs[3], 4)
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(ticker.LogFormatterMathText())
+        #ax.tick_params(axis='both', which='major', labelsize=18)
 
 
         # --- Global title with energy check ---
         fig.suptitle(
-            f't: {time[ti]:.4f}, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
-            fontsize=18
+            f'Magnitude of Vorticity Power Spectra \n Time: {time[ti]:.4f}'#, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
         )
 
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
         savename=f"{str(basepath)}/res_check_vort/write_{writes[ti]+c:06}.png"
         fig.savefig(savename)
-        fig.clear()
+        plt.close()
 
 
 

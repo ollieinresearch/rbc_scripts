@@ -1,12 +1,9 @@
 """
-Checks the magnitude of the vorticity of snapshot files for negative values and volume averages.
+Checks the magnitude of the vorticity of snapshot files for negative values and volume averages. REQUIRES SAME RESOLUTION BETWEEN SNAPSHOT FILES!
 
 Usage:
-    vort_analysis.py <files>... [--mins=<mins>] [--maxs=<maxs>]
+    vort_analysis.py <files>...
 
-Options:
-    --mins=<mins>   Minimum log10 limit. String of csv floats.
-    --maxs=<maxs>   Maximum log10 limit. String of csv floats.
 """
 
 
@@ -14,160 +11,127 @@ Options:
 import h5py as h5
 import numpy as np
 from pathlib import Path
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use("Agg")
+plt.rcParams.update({"font.size": 14})
+plt.ioff()
+from scipy.integrate import simpson, cumulative_trapezoid
+import os
+import re
 
 
 
+def main(basepath):
+    snapshots = basepath / "snapshots"
+    output = basepath / 'outputs'
+    output.mkdir(exist_ok='true')
 
-def main(file, start, count):
-    fp = Path(file)
-    basepath = Path(fp.parents[1])
+
+    # We need the snapshot files in the right order; sometimes portions of simulations are accidentally ran multiple
+    # times, and in that case we may only consider one of the outputs (otherwise time integration can get a bit wacky).
+    # To only consider one set of outputs, we must ensure the times are nondecreasing, which requires the right
+    # file order.
+    fs = sorted(
+        snapshots.glob("snapshots_s*.h5"),
+        key=lambda p: int(re.search(r"snapshots_s(\d+)\.h5", p.name).group(1))
+    )
+
+    print(len(fs))
+    
+    fp = fs.pop(0)
+
+    # Save the data from the first file; now we may just check whether or not the times are decreasing with each
+    # file we load.
     with h5.File(fp, 'r') as f:
-        # Collect the file data (start/count is for parallelization)
-
-        time = np.array(f["scales/sim_time"][start:start+count])
-        writes = np.array(f["scales/write_number"][start:start+count])
-        omega = np.array(f['tasks']['vorticity'][start:start+count])
-        nt, nx, ny, nz = omega.shape       
     
-    # Discard the first timestep
-    c=0
-    if np.isclose(time[0],0):
-        if nt == 1:
-            return
-        time = time[1:]
-        omega = omega[1:]
-        nt -= 1
-        c = 1
+        time = np.array(f["scales/sim_time"][:])
+        writes = np.array(f["scales/write_number"][:])
+        omega = np.array(f['tasks']['vorticity'][:])
+        scales = f["scales"]
+
+        x_key = next(k for k in scales.keys() if k.startswith("x_"))
+        y_key = next(k for k in scales.keys() if k.startswith("y_"))
+        z_key = next(k for k in scales.keys() if k.startswith("z_"))
+
+        x = np.array(scales[x_key])
+        y = np.array(scales[y_key])
+        z = np.array(scales[z_key])
+
+    # Load all the files, ensuring the time at the end of the new file is more than the last one.
+    for fi in fs:
+        with h5.File(fi, 'r') as f:
+            start_time = time[-1]
+            if f['scales']['sim_time'][-1] > start_time:
+                start_ind = np.searchsorted(f['scales']['sim_time'][:], start_time)
+
+                time = np.append(time, f['scales']['sim_time'][start_ind:], axis=0)
+                writes = np.append(writes, f["scales/write_number"][start_ind:], axis=0)
+                omega = np.append(omega, f['tasks']['vorticity'][start_ind:], axis=0)
+                print(time.shape, writes.shape, omega.shape)
+
+                
+                # Collect the file data (start/count is for parallelization)
+
+    print(time.shape, writes.shape, omega.shape)
+    increased = time[1:] >= time[:-1]
+    if not np.all(increased):
+        print("not all increased")
+        indxs = np.argsort(time)
+
+        time = time[indxs] 
+        writes = writes[indxs] 
+        omega = omega[indxs] 
+
 
     
-    # Main loop: interpolate, FFT, bin, plot
-    for ti in range(nt):
-        # Interpolators for current time slice
-        interp_omega = RegularGridInterpolator((x, y, z_cheb), omega[ti], method='linear', bounds_error=False, fill_value=0)
-
-        # Interpolate onto uniform z grid
-        omega_uniform = interp_u(pts).reshape((nx, ny, nz))
-
-
-        # Compute 3D FFT and energy. Supposedly the ortho norm negates the
-        # need for renormalization. No dividing by resolution :)
-        Omega = np.fft.fftn(omega_uniform, norm='ortho')
-
-
-
-
-        # Bin power spectrum into magnitude of 3d wavevector - Full 3d spectra
-        E3d = np.abs(Omega)**2
-        E_k_flat = E3d.flatten()
-        pk, _ = np.histogram(Knorm_full, bins=bins, weights=E_k_flat)
-        nm, _ = np.histogram(Knorm_full, bins=bins)
-        E_k = pk / (nm + eps)
-
-
-        # Bin power spectrum into z wavenumber - vertical marginal
-        E_kz = np.sum(E3d, axis=(0,1))
-        kz_plot = np.abs(kz)
-
-        # Bin power into x wavenumber - horizontal marginal
-        E_kx = np.sum(E3d, axis=(1,2))
-        kx_plot = np.abs(kx)
-
-        # Bin power into xy wavevector - horizontal marginal
-        E_xy = np.sum(E3d, axis=2)
-        KX2D, KY2D = np.meshgrid(kx, ky, indexing='ij')
-        Kperp = np.sqrt(KX2D**2 + KY2D**2)
-
-        E_xy_flat = E_xy.ravel()
-        Kxy_flat = Kperp.ravel()
-        bins_xy = np.arange(0.5, Kperp.max() + 1.0, 1.0)
-
-        pk_xy, _ = np.histogram(Kxy_flat, bins=bins_xy, weights=E_xy_flat)
-        nm_xy, _ = np.histogram(Kxy_flat, bins=bins_xy)
-
-        E_kxy = pk_xy / (nm_xy + eps)
-        k_xy_centers = 0.5 * (bins_xy[:-1] + bins_xy[1:])
-
-        pars_grid = np.sum(omega_uniform**2)
-        pars_3d = np.sum(E3d)
-        pars_kz = np.sum(E_kz)
-        pars_kx = np.sum(E_kx)
-        pars_kxy = np.sum(E_xy_flat)                
-
-        fig, axes = plt.subplots(2, 2, figsize=(22, 18))
-
-        # --- Dealiasing cutoffs (2/3 rule) ---
-        kx_cut = (2/3) * np.max(np.abs(kx))
-        ky_cut = (2/3) * np.max(np.abs(ky))
-        kz_cut = (2/3) * np.max(np.abs(kz))
-
-        # For isotropic 3D and planar spectra, use the smallest relevant cutoff
-        k3d_cut = min(kx_cut, ky_cut, kz_cut)
-        kxy_cut = min(kx_cut, ky_cut)
-
-        # --- Top-left: full 3D isotropic spectrum ---
-        ax = axes[0, 0]
-        ax.loglog(k_centers, E_k, '.-')
-        ax.axvline(k3d_cut, color='k', linestyle='--', alpha=0.7, label='2/3 cutoff')
-        ax.set_xlabel(r'$k$')
-        ax.set_ylabel(r'$E(k)$')
-        ax.set_title('3D isotropic spectrum')
-        ax.set_ylim((10**float(mins[0]), 10**float(maxs[0])))
-        ax.legend(frameon=False)
-
-        # --- Top-right: vertical spectrum (kz) ---
-        ax = axes[0, 1]
-        ax.loglog(np.abs(kz), E_kz, '.-')
-        ax.axvline(kz_cut, color='k', linestyle='--', alpha=0.7)
-        ax.set_xlabel(r'$k_z$')
-        ax.set_ylabel(r'$E(k_z)$')
-        ax.set_title('Vertical spectrum')
-        ax.set_ylim((10**float(mins[1]), 10**float(maxs[1])))
-
-        # --- Bottom-left: horizontal spectrum (kx) ---
-        ax = axes[1, 0]
-        ax.loglog(np.abs(kx), E_kx, '.-')
-        ax.axvline(kx_cut, color='k', linestyle='--', alpha=0.7)
-        ax.set_xlabel(r'$k_x$')
-        ax.set_ylabel(r'$E(k_x)$')
-        ax.set_title('Horizontal spectrum (x)')
-        ax.set_ylim((10**float(mins[2]), 10**float(maxs[2])))
-
-        # --- Bottom-right: 2D planar spectrum (xy) ---
-        ax = axes[1, 1]
-        ax.loglog(k_xy_centers, E_kxy, '.-')
-        ax.axvline(kxy_cut, color='k', linestyle='--', alpha=0.7)
-        ax.set_xlabel(r'$k = \sqrt{k_x^2 + k_y^2}$')
-        ax.set_ylabel(r'$E_{xy}(k_{xy})$')
-        ax.set_title('Horizontal planar spectrum (xy)')
-        ax.set_ylim((10**float(mins[3]), 10**float(maxs[3])))
-
-
-        # --- Global title with energy check ---
-        fig.suptitle(
-            f't: {time[ti]:.4f}, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
-            fontsize=18
+    fig, axes = plt.subplots(
+            nrows=3,
+            ncols=1,
+            figsize=(12, 3 * 3),
+            layout="constrained",
         )
+    
+    c=0
+    omeg_mask = omega < 0
+    num_neg = np.sum(omeg_mask, axis=(1,2,3))
+    num_tot = x.shape[0] * y.shape[0] * z.shape[0]
 
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
-        savename=f"{str(basepath)}/res_check_vort/write_{writes[ti]+c:06}.png"
-        fig.savefig(savename)
-        fig.clear()
+    omega = np.where(omeg_mask, omega, 0)
+    
+    dset_omega = simpson(
+        simpson(
+            simpson(
+                omega, x, axis=1
+            ), y, axis=1
+        ), z, axis=1
+    )
 
+    print(dset_omega.shape, time.shape)
+
+    cumu_omega = cumulative_trapezoid(dset_omega, time, axis=0) / (time[1:]-time[0])
+
+    axes[0].plot(time, num_neg/num_tot)
+    axes[0].set_title(r"Percentage of grid points with a negative $\omega^2$")
+    axes[0].set_xlabel(r"$t$")
+    axes[1].plot(time, dset_omega)
+    axes[1].set_title(r"Volume average of $\min\{\omega^2, 0\}$ over time")
+    axes[1].set_xlabel(r"$t$")
+    axes[1].set_ylabel(r"$\int_\Omega \min\{\omega^2, 0\} dx$")
+    axes[2].plot(time[1:], cumu_omega)
+    axes[2].set_title(r"$\langle\overline{\min\{\omega^2, 0\}}\rangle$")
+    axes[2].set_xlabel(r"$t$")
+
+    fig.savefig(output / "vort_avg.pdf", dpi=400)
 
 
 if __name__ == "__main__":
-
     from docopt import docopt
-    from dedalus.tools import logging
-    from dedalus.tools import post
 
+    # Collect arguments
     args = docopt(__doc__)
 
+    file = Path(args["<files>"][0])
 
-
-    post.visit_writes(
-        args["<files>"],
-        main
-    )
+    main(file)
 

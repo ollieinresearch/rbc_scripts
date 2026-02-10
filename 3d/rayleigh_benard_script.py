@@ -112,8 +112,8 @@ snapshots_flag = args['--snapshots']
 fh_mode = 'append'
 
 # Iteration parameters
-state_time = 213 #save every 425 seconds (100 saves in 11hr 50 min)
-snap_time = 1/30 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
+state_time = 425 #save every 425 seconds (100 saves in 11hr 50 min)
+snap_time = 1/60 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
 analysis_time = 1/100 # 100 analysis file saves per unit of sim time 
 message_num_iters = 500
 
@@ -237,10 +237,13 @@ if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
     snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=30, mode=fh_mode, parallel=par)
     snap.add_task(T, name='temperature')
-    snap.add_task(omega@omega, name='vorticity')
     
-    # Velocity components & vorticity
+    # Velocity components & vorticity - currently only plotting w, but using for the power spectra now.
+    snap.add_task(u@ex, name='u')
+    snap.add_task(u@ey, name='v')
     snap.add_task(u@ez, name='w')
+    snap.add_task(omega@omega, name='vorticity')
+
 
     logger.info(f"Snapshots tasks added.")
 
