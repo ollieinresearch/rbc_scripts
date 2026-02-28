@@ -46,6 +46,7 @@ def main(basepath):
         time = f['time']
         num = f['num']
         omega = f['omega']
+        omega_full = f['omega_full']
   
     
     # Load all the files, ensuring the time at the end of the new file is more than the last one.
@@ -54,33 +55,28 @@ def main(basepath):
             time = np.append(time, fi['time'])
             num = np.append(num, fi['num'])
             omega = np.append(omega, fi['omega'])
-            print(time.shape, num.shape, omega.shape)
-
+            omega_full = np.append(omega_full, fi['omega_full'])
     
     fig, axes = plt.subplots(
-            nrows=3,
+            nrows=2,
             ncols=1,
-            figsize=(12, 3 * 3),
+            figsize=(8, 3 * 3),
             layout="constrained",
         )
     
+    axes[0].plot(time, num)
+    #axes[0].set_ylabel(r"Fraction of grid points with $\omega^2 < 0$")
+    axes[0].set_xlabel(r"$t$")
+    #axes[0].tick_params(axis='y', labelrotation=90)
 
     
-    cumu_omega = cumulative_trapezoid(omega, time, axis=0) / (time[1:]-time[0])
-
-    axes[0].plot(time, num)
-    axes[0].set_title(r"Percentage of grid points with a negative $\omega^2$")
-    axes[0].set_xlabel(r"$t$")
-    axes[1].plot(time, omega)
-    axes[1].set_title(r"Volume average of $\min\{\omega^2, 0\}$ over time")
+    axes[1].plot(time, -1 * omega / omega_full)
+    #axes[1].set_title(r"Normalized volume average of $\min\{\omega^2, 0\}$ over time")
     axes[1].set_xlabel(r"$t$")
-    axes[1].set_ylabel(r"$\int_\Omega \min\{\omega^2, 0\} dx$")
-    axes[2].plot(time[1:], cumu_omega)
-    axes[2].set_title(r"$\langle\overline{\min\{\omega^2, 0\}}\rangle$")
-    axes[2].set_xlabel(r"$t$")
-
+    #axes[1].set_ylabel(r"$\frac{\int_\Omega \min\{\omega^2, 0\} dx}{\int_\Omega \omega^2 dx}$")
+    #axes[1].tick_params(axis='y', labelrotation=90)
     fig.savefig(output / "vort_avg.pdf", dpi=400)
-
+    plt.close(fig)
 
 if __name__ == "__main__":
     from docopt import docopt

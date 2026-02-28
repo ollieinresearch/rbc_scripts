@@ -1,0 +1,102 @@
+
+            """            
+            # Top-right: diagonal view of ω
+            plotter.subplot(0, 1)
+            actor1 = plotter.add_volume(
+                vort_grid, scalars='vort', opacity=w_opacity_tf, cmap='jet', clim=[-0.8*mvort, mvort]#, shade=False
+            )
+            actor1.mapper.interpolate_before_map = False
+            plotter.camera_position = [(4, 4, 0.5), (xmid, ymid, zmid), (0, 0, 1)]
+            """
+
+            # Top-middle: diagonal view of w
+            plotter.subplot(0, 1)
+            actor1 = plotter.add_volume(
+                vert_grid, scalars='vert', opacity=w_opacity_tf, cmap='RdBu_r', show_scalar_bar=False#, clim=[-mvert, mvert]#, shade=False
+            )
+            plotter.add_scalar_bar(
+                title='Vertical Velocity',
+                width=0.75,
+                height=0.1,
+                position_x=0.125,
+                position_y=0.04,
+
+            )
+            actor1.mapper.interpolate_before_map = False
+            plotter.camera_position = [(4, 4, 1/2), (xmid, ymid, zmid-0.15), (0, 0, 1)]
+            plotter.add_text(time_text, position='upper_edge', font_size=36, color='black')
+
+            """
+            # Top-right: rotating diagonal view
+            angle = 2 * np.pi * (write_num % 150) / 150.0
+            cam_x = xmid + rot_radius * np.cos(angle)
+            cam_y = ymid + rot_radius * np.sin(angle)
+            plotter.subplot(0, 1)
+            actor2 = plotter.add_volume(
+                wgrid, scalars='w', opacity=w_opacity_tf, cmap='jet', shade=False
+            )
+            actor2.mapper.interpolate_before_map = False
+            plotter.camera_position = [(cam_x, cam_y, zmid), (xmid, ymid, zmid), (0, 0, 1)]
+            """
+            """
+            # top-right: temp midplane
+            plotter.subplot(1, 0)
+            actor3 = plotter.add_mesh(
+                t_grid_1, scalars='temp', cmap='RdBu_r'
+            )
+            actor3.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+            """
+            """
+            # middle-right: temp BL - no clim!
+            plotter.subplot(1, 1)
+            actor5 = plotter.add_mesh(
+                t_grid_2, scalars='temp', cmap='RdBu_r'
+            )
+            actor5.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+            """
+
+            # middle-right: diagonal view of ω
+            plotter.subplot(0, 2)
+            actor1 = plotter.add_volume(
+                vort_grid, scalars='vort', opacity=ω_opacity_tf, cmap='jet', show_scalar_bar=False#, clim=[-0.8*mvort, mvort]#, shade=False
+            )
+            plotter.add_scalar_bar(
+                title='Vorticity',
+                width=0.75,
+                height=0.1,
+                position_x=0.125,
+                position_y=0.04,
+
+            )
+            actor1.mapper.interpolate_before_map = False
+            plotter.camera_position = [(4, 4, 1/2), (xmid, ymid, zmid-0.15), (0, 0, 1)]
+            
+            
+            """
+            # Bottom-left: w midplane
+            plotter.subplot(2, 0)
+            actor4 = plotter.add_mesh(
+                vert_grid_1, scalars='vert', cmap='RdBu_r'#, clim=[-mvert, mvert]
+            )
+            actor4.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+
+            # Bottom-right: w bl - no clim!
+            plotter.subplot(2, 1)
+            actor6 = plotter.add_mesh(
+                vert_grid_2, scalars='vert', cmap='RdBu_r'#, clim=[-mvert, mvert]
+            )
+            actor6.mapper.interpolate_before_map = False
+            plotter.enable_2d_style()
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+            plotter.reset_camera()
+            """

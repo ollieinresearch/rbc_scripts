@@ -2,6 +2,7 @@
 
 
 print_params() {
+    echo "Time: $(date)"
     echo "Job ID: $SLURM_JOB_ID"
     echo "Start time: $START_TIME"
     echo "Rayleigh number:$RA"
@@ -95,6 +96,9 @@ srun_sim() {
     --cfl_safety="$CFL_SAFETY" \
     --cfl_threshold="$CFL_THRESHOLD" \
     --cfl_cadence="$CFL_CADENCE" \
+    --a_freq="$A_FREQ" \
+    --snaps_freq="$SNAPS_FREQ" \
+    --state_freq="$STATE_FREQ" \
     --tmp="$TMP" \
     --par="$PARA" \
     ${CFL:+--cfl} \
@@ -279,8 +283,8 @@ res_check() {
     export OMP_NUM_THREADS=6
     export NUMEXPR_MAX_THREADS=6
     mkdir $PWD/res_check_3d
-    srun -n 32 --cpus-per-task=6 python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
-    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
+    srun -n 16 --cpus-per-task=12 python3 $SCRIPTS_3D/power_v3.py $PWD/state/*.h5 --mins=$MINS --maxs=$MAXS
+    ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
   
 }
 
@@ -290,11 +294,10 @@ res_check_3d_snaps() {
     #mkdir res_check
     #srun -c 3 python3 $PATH_TO_SCRIPTS/power_v3.py $PWD/state/*.h5 --ymin=$YMIN --ymax=$YMAX
     #ffmpeg -y -r 30 -pattern_type glob -i 'res_check/*.png' -threads 32 -pix_fmt yuv420p res_check/movie.mp4
-    export OMP_NUM_THREADS=6
-    export NUMEXPR_MAX_THREADS=6
     mkdir $PWD/res_check_3d
-    srun -n 8 --cpus-per-task=24 python3 $SCRIPTS_3D/power_v3.py $PWD/snapshots/*.h5 --mins=$MINS --maxs=$MAXS
-    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
+    srun -n 6 --cpus-per-task=32 python3 $SCRIPTS_3D/power_v3.py $PWD/snapshots/*.h5 --mins=$MINS --maxs=$MAXS
+
+    ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
   
 }
 
@@ -303,15 +306,38 @@ res_check_3d_snaps() {
 res_check_vort() {
     mkdir $PWD/res_check_vort
 
-    export OMP_NUM_THREADS=1
-    export NUMEXPR_MAX_THREADS=1
-    mkdir $PWD/res_check_vort
-    srun -n 8 -c 24 python3 $SCRIPTS_3D/power_vort.py $PWD/snapshots/*.h5 --mins=$VMINS --maxs=$VMAXS
-    export OMP_NUM_THREADS=32
-    export NUMEXPR_MAX_THREADS=32
-    ffmpeg -y -r 30 -pattern_type glob -i 'res_check_vort/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_vort/movie.mp4
+    srun -n 6 -c 32 python3 $SCRIPTS_3D/power_vort.py $PWD/snapshots/*.h5 --mins=$VMINS --maxs=$VMAXS
+
+    ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_vort/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_vort/movie.mp4
 
 
+}
+
+
+res_check_temp() {
+    mkdir $PWD/res_check_temp
+
+    srun -n 6 -c 32 python3 $SCRIPTS_3D/power_temp.py $PWD/snapshots/*.h5 --mins=$TMINS --maxs=$TMAXS
+
+    ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_temp/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_temp/movie.mp4
+
+
+}
+
+
+
+res_check_combined() {
+    mkdir $PWD/res_check_temp
+    mkdir $PWD/res_check_3d
+
+    srun -n 6 -c 32 python3 $SCRIPTS_3D/power_combined.py $PWD/snapshots/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
+
+    ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_temp/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_temp/movie.mp4
+    ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
+
+    combine_spectra
+
+    srun -n 1 -c 192 python3 $SCRIPTS_3D/spectra_avg.py $PWD
 }
 
 
@@ -320,15 +346,16 @@ plot_snapshots() {
 
     nu=$(grep "Final Nusselt number:" outputs/info.txt | awk -F': ' '{print $2}')
 
-    srun python3 $SCRIPTS_PATH/max_vort.py $PWD/snapshots/*.h5
-    python3 $SCRIPTS_PATH/max_vort_2.py $PWD/snapshots
-    mv="$(cat snapshots/max_vort.txt)"
+    #srun python3 $SCRIPTS_PATH/max_vort.py $PWD/snapshots/*.h5
+    #python3 $SCRIPTS_PATH/max_vort_2.py $PWD/snapshots
+    mv=15 #"$(cat snapshots/max_vort.txt)"
 
     mkdir $PWD/visualization
 
-    srun -n 8 --cpus-per-task=24 python3 $SCRIPTS_3D/visualization/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu --max_vort=$mv
-    ffmpeg -y -r 30 -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
+    srun -n 6 --cpus-per-task=32 python3 $SCRIPTS_3D/visualization/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu --max_vort=$mv
+    ffmpeg -y -r $FPS -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
 
+    combine_flow_spectra
 }
 
 
@@ -441,4 +468,20 @@ vort_analysis() {
     export NUMEXPR_NUM_THREADS=192
 
     srun -n 1 --cpus-per-task=192 python $SCRIPTS_3D/v_analysis.py $PWD
+}
+
+
+
+
+combine_spectra() {
+    ffmpeg \                                  
+    -i $PWD/res_check_temp/movie.mp4 -i $PWD/res_check_3d/movie.mp4 \
+    -filter_complex "[0:v][1:v]hstack=2" \                       
+    $PWD/outputs/spectra.mp4
+}
+
+
+
+combine_flow_spectra() {
+    ffmpeg -i $PWD/visualization/movie.mp4 -i $PWD/outputs/spectra.mp4 -filter_complex "[0:v]scale=4800:-1[v0]; [1:v]scale=4800:-1[v1]; [v0][v1]vstack=inputs=2[v]" -map "[v]" $PWD/outputs/movie.mp4
 }

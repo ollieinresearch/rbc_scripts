@@ -2,7 +2,7 @@
 Dedalus script simulating 3D horizontally-periodic Rayleigh-Benard convection. No slip boundary conditions.
 
 Usage:
-    ded_example.py [options]
+    rayleigh_benard_script.py [options]
 
 Options:
     --Ra=<Ra>                         log_{10} of the Rayleigh number
@@ -23,11 +23,17 @@ Options:
     --index=<index>                   Restart write index. Default -1
     --tmp=<tmp>                       tmp_touchfile (str)? Default True
     --para=<para>                     type of parallel to use (str). Default virtual
-    --snapshots                       Enable snapshots for visualization
-    --cfl                             Enable CFL timestepping
+    --state_freq=<state_freq>         How many seconds (wall time) between state writes. Default 425
+    --a_freq=<a_freq>                 How much time (sim time) between analysis writes. Default 0.005
+    --snaps_freq=<snaps_freq>         How much time (sim time) between snapshots writes. Default 0.0166666667
+    --snapshots                       Flag to enable snapshots for visualization
+    --cfl                             Flag to enable CFL timestepping
 """
 
 from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.rank
+ncpu = comm.size
 import numpy as np
 import time
 from pathlib import Path
@@ -35,6 +41,12 @@ import dedalus.public as de
 import logging
 logger = logging.getLogger(__name__)
 import signal
+from docopt import docopt
+args = docopt(__doc__)
+
+from dedalus.tools.config import config
+
+
 
 def signal_handler(signum, frame):
     """
@@ -61,14 +73,11 @@ stop_requested = False
 signal.signal(signal.SIGUSR1, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
-signal.siginterrupt(signal.SIGINT, False)
-signal.siginterrupt(signal.SIGUSR1, False)
 
 
-from docopt import docopt
-args = docopt(__doc__)
 
-from dedalus.tools.config import config
+
+# Parameters
 par = str(args['--para'])
 tmp = str(args['--tmp'])
 
@@ -76,11 +85,6 @@ logger.info(f"Parallel mode: {par}")
 logger.info(f"Touch tmp: {tmp}")
 config['analysis']['FILEHANDLER_TOUCH_TMPFILE'] = tmp
 
-comm = MPI.COMM_WORLD
-rank = comm.rank
-ncpu = comm.size
-
-# Parameters
 basepath = Path(str(args['--basepath']))
 
 dtype = np.float64
@@ -98,6 +102,7 @@ dealias = 3/2
 
 stop_sim_time = np.float64(args['--sim_time'])
 stepper_name = str(args['--stepper'])
+
 timestepper = {
     'RK222': de.RK222,
     'CNAB2': de.CNAB2,
@@ -112,10 +117,10 @@ snapshots_flag = args['--snapshots']
 fh_mode = 'append'
 
 # Iteration parameters
-state_time = 425 #save every 425 seconds (100 saves in 11hr 50 min)
-snap_time = 1/60 # save 30 per time unit so that the fps will sync irl seconds to time units. (could increase to 1/60 so that each second of the movie is one second of the sim with a higher fps. also looks nicer)
-analysis_time = 1/100 # 100 analysis file saves per unit of sim time 
-message_num_iters = 500
+state_time = np.float64(args['--state_freq'])
+snap_time = np.float64(args['--snaps_freq'])
+analysis_time = np.float64(args['--a_freq'])
+message_num_iters = 500 # how many timesteps between writing to log file
 
 use_cfl = args['--cfl']
 arg_dt = np.float64(args['--dt'])
@@ -137,7 +142,7 @@ z = dist.local_grid(zbasis)
 ba = (xbasis,ybasis,zbasis)
 ba_p = (xbasis,ybasis)
 
-# For analysis only
+# For analysis only; redundant, but the name is consistent (compared to the auto generated hash code)
 z_an = dist.Field(name='z_an', bases=(zbasis))
 z_an['g'] = z
 
@@ -194,8 +199,8 @@ solver.stop_sim_time = stop_sim_time
 
 # Initial conditions OR restart
 restart_path = basepath / 'restart' / 'restart.h5'
-if not restart_path.exists():
 
+if not restart_path.exists():
     # Start from conductive profile with noise (parallel-friendly)
     b.fill_random('g', seed=42, distribution='normal', scale=1e-5) # Random noise
     b['g'] *= z * (Lz - z) # Damp noise at walls
@@ -218,9 +223,9 @@ else:
 kappa_xyz = 1/(Lx*Ly*Lz)
 kappa_xy = 1/(Lx*Ly)
 
-T = b0 + b
+T = b0 + b # temp/buoyancy is linear profile + deviation
 
-grad_T = de.grad(T)
+grad_T = de.grad(T) # for nusselt
 
 basepath.mkdir(parents=True, exist_ok=True)
 
@@ -235,13 +240,11 @@ logger.info(f"State tasks added.")
 # Snapshots for visualization
 if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
-    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=30, mode=fh_mode, parallel=par)
+    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=10, mode=fh_mode, parallel=par)
     snap.add_task(T, name='temperature')
     
     # Velocity components & vorticity - currently only plotting w, but using for the power spectra now.
-    snap.add_task(u@ex, name='u')
-    snap.add_task(u@ey, name='v')
-    snap.add_task(u@ez, name='w')
+    snap.add_task(u, name='u')
     snap.add_task(omega@omega, name='vorticity')
 
 

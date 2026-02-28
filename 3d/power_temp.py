@@ -2,7 +2,7 @@
 Script to perform analysis tasks...
 
 Usage:
-    power_v3.py <files>... [--mins=<mins>] [--maxs=<maxs>]
+    power_temp.py <files>... [--mins=<mins>] [--maxs=<maxs>]
 
 Options:
     --mins=<mins>   Minimum log10 limit. String of csv floats.
@@ -21,49 +21,32 @@ from scipy.interpolate import RegularGridInterpolator
 import matplotlib.ticker as ticker
 matplotlib.use("Agg")
 s = 30
+
 plt.rcParams.update({"font.size": 0.75*s})
 plt.ioff()
 
-#TODO: get this working for temp as well!
+
 # Questions:
 # Should I be checking that the energy is the same as the energy computed using the analysis files?
-# Any extra multiplicative factors that I forgot? does it really matter if things are scaled?
 
 def main(file, start, count, mins, maxs):
     fp = Path(file)
     basepath = Path(fp.parents[1])
-
+        
     prev_nx, prev_ny, prev_nz = (0,0,0)
+
 
     with h5.File(fp, 'r') as f:
         for ti in range(start, start+count):
-            try:
-                # Collect the state file data (start/count is for parallelization)
-                time = f["scales/sim_time"][ti]
-                write = f["scales/write_number"][ti]
-                u = np.array(f['tasks']['u'][ti, 0])
-                v = np.array(f['tasks']['u'][ti, 1])
-                w = np.array(f['tasks']['u'][ti, 2])
-                nx, ny, nz = u.shape
+            # Collect the file data (start/count is for parallelization)
+            time = f["scales/sim_time"][ti]
+            write = f["scales/write_number"][ti]
+            temp = np.array(f['tasks']['temperature'][ti])
 
-            except:
-                try:
-                    time = f["scales/sim_time"][ti]
-                    write = f["scales/write_number"][ti]
-                    u = np.array(f['tasks']['x'][ti])
-                    v = np.array(f['tasks']['y'][ti])
-                    w = np.array(f['tasks']['w'][ti])
-                    nx, ny, nz = u.shape
-
-                except:
-                    time = f["scales/sim_time"][ti]
-                    write = f["scales/write_number"][ti]
-                    u = np.array(f['tasks']['u'][ti])
-                    v = np.array(f['tasks']['v'][ti])
-                    w = np.array(f['tasks']['w'][ti])
-                    nx, ny, nz = u.shape
-
+            nx, ny, nz = temp.shape       
             
+            # Discard the first timestep
+            c=0
             if np.isclose(time,0):
                 continue
 
@@ -93,35 +76,24 @@ def main(file, start, count, mins, maxs):
                 bins = np.arange(0.5, Kmax + 1, 1.0)
                 k_centers = 0.5 * (bins[:-1] + bins[1:])
                 eps = 2 * np.finfo(np.float64).eps
-            
-            # Main loop: interpolate, FFT, bin, plot
 
-            # Create interpolators for current time slice,
-            # Interpolate onto uniform z grid,
+
+            # Main loop: interpolate, FFT, bin, plot
+            # Interpolators for current time slice
+            interp_temp = RegularGridInterpolator((x, y, z_cheb), temp, method='linear', bounds_error=False, fill_value=0)
+
+            # Interpolate onto uniform z grid
+            temp_uniform = interp_temp(pts).reshape((nx, ny, nz))
+            pars_grid = np.sum(temp_uniform**2)
+
             # Compute 3D FFT and energy. Supposedly the ortho norm negates the
             # need for renormalization. No dividing by resolution :)
+            Temp = np.fft.fftn(temp_uniform, norm='ortho')
+            E_3d = np.abs(Temp)**2
 
-            interp_u = RegularGridInterpolator((x, y, z_cheb), u, method='linear', bounds_error=False, fill_value=0)
-            u_uniform = interp_u(pts).reshape((nx, ny, nz))
-            pars_grid = np.sum(u_uniform**2)
-            U = np.fft.fftn(u_uniform, norm='ortho')
-            E_3d = np.abs(U)**2
-            del interp_u, u_uniform, U
+            del interp_temp, temp_uniform, Temp
 
-            interp_v = RegularGridInterpolator((x, y, z_cheb), v, method='linear', bounds_error=False, fill_value=0)
-            v_uniform = interp_v(pts).reshape((nx, ny, nz))
-            pars_grid += np.sum(v_uniform**2)
-            V = np.fft.fftn(v_uniform, norm='ortho')
-            E_3d += np.abs(V)**2
-            del interp_v, v_uniform, V
 
-            interp_w = RegularGridInterpolator((x, y, z_cheb), w, method='linear', bounds_error=False, fill_value=0)
-            w_uniform = interp_w(pts).reshape((nx, ny, nz))
-            pars_grid += np.sum(w_uniform**2)
-            W = np.fft.fftn(w_uniform, norm='ortho')
-            E_3d += np.abs(W)**2
-            del interp_w, w_uniform, W
-            
 
             # Bin power spectrum into magnitude of 3d wavevector - Full 3d spectra
             E_k_flat = E_3d.flatten()
@@ -158,9 +130,8 @@ def main(file, start, count, mins, maxs):
             #pars_kx = np.sum(E_kx)
             #pars_kxy = np.sum(E_xy_flat)                
 
-            fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
 
-            # --- Dealiasing cutoffs (2/3 rule) ---  IDK IF THIS IS USEFUL
+            # --- Dealiasing cutoffs (2/3 rule) --- IDK IF THIS IS USEFUL
             #kx_cut = (2/3) * np.max(np.abs(kx))
             #ky_cut = (2/3) * np.max(np.abs(ky))
             #kz_cut = (2/3) * np.max(np.abs(kz))
@@ -168,6 +139,8 @@ def main(file, start, count, mins, maxs):
             # For isotropic 3D and planar spectra, use the smallest relevant cutoff
             #k3d_cut = min(kx_cut, ky_cut, kz_cut)
             #kxy_cut = min(kx_cut, ky_cut)
+
+            fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
 
             # --- Top-left: full 3D isotropic spectrum ---
             ax = axes[0, 0]
@@ -180,7 +153,7 @@ def main(file, start, count, mins, maxs):
             ntick=4
             if maxs[0]-mins[0] < 4:
                 ntick = int(maxs[0]-mins[0]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[0])), np.log10(10**float(maxs[0])), ntick)            
+            log_ticks = np.linspace(np.log10(10**float(mins[0])), np.log10(10**float(maxs[0])), ntick)
             yticks = 10**log_ticks
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
             labels = [rf"$10^{{{int(np.floor(l))}}}$"
@@ -210,7 +183,6 @@ def main(file, start, count, mins, maxs):
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
             ax.yaxis.set_minor_locator(ticker.NullLocator())
 
-            
             # --- Bottom-left: horizontal spectrum (kx) ---
             ax = axes[1, 0]
             ax.loglog(np.abs(kx), E_kx, '.-')
@@ -231,16 +203,15 @@ def main(file, start, count, mins, maxs):
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
             ax.yaxis.set_minor_locator(ticker.NullLocator())
 
-            
             # --- Bottom-right: 2D planar spectrum (xy) ---
             ax = axes[1, 1]
             ax.loglog(k_xy_centers, E_kxy, '.-')
             #ax.axvline(kxy_cut, color='k', linestyle='--', alpha=0.7)
             ax.set_xlabel(r'$k = \sqrt{k_x^2 + k_y^2}$')
             ax.set_ylabel(r'$E_{xy}(k_{xy})$')
-            ax.set_title(rf'Horizontal planar spectrum ($xy$)')
+            ax.set_title(r'Horizontal planar spectrum ($xy$)')
             ax.set_ylim((10**float(mins[3]), 10**float(maxs[3])))
-            ntick = 4
+            ntick=4
             if maxs[3]-mins[3] < 4:
                 ntick = int(maxs[3]-mins[3]) + 1
             log_ticks = np.linspace(np.log10(10**float(mins[3])), np.log10(10**float(maxs[3])), ntick)              
@@ -252,14 +223,13 @@ def main(file, start, count, mins, maxs):
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
             ax.yaxis.set_minor_locator(ticker.NullLocator())
 
-            
 
             # --- Global title with energy check ---
             fig.suptitle(
-                f'Velocity Power Spectra \n Time: {time:.4f} \n Energy Check via Parseval: {np.isclose(pars_grid, pars_3d)}'#, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
+                f'Temperature Power Spectra \n Time: {time:.4f} \n Energy Check via Parseval: {np.isclose(pars_grid, pars_3d)}'#, grid: {pars_grid:.5e}, 3d: {pars_3d:.5e}, z: {pars_kz:.5e}, x: {pars_kx:.5e}, xy: {pars_kxy:.5e}',
             )
 
-            savename=f"{str(basepath)}/res_check_3d/write_{write:06}.png"
+            savename=f"{str(basepath)}/res_check_temp/write_{write:06}.png"
             fig.savefig(savename)
             plt.close()
 

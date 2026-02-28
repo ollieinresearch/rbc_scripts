@@ -38,13 +38,21 @@ def main(file, start, count):
         y = np.array(scales[y_key])
         z = np.array(scales[z_key])       
     
-        
+
+    dset_omega_full = simpson(
+        simpson(
+            simpson(
+                omega, x, axis=1
+            ), y, axis=1
+        ), z, axis=1
+    )
+
+
     omeg_mask = omega < 0
+    omega = np.where(omeg_mask, omega, 0)
     num_neg = np.sum(omeg_mask, axis=(1,2,3))
     num_tot = x.shape[0] * y.shape[0] * z.shape[0]
     num_neg = num_neg / num_tot
-
-    omega = np.where(omeg_mask, omega, 0)
     
     dset_omega = simpson(
         simpson(
@@ -54,7 +62,7 @@ def main(file, start, count):
         ), z, axis=1
     )
 
-    np.savez(fp.parent / f"{fp.stem}_avgd.npz", time=time, num=num_neg, omega=dset_omega)
+    np.savez(fp.parent / f"{fp.stem}_avgd.npz", time=time, num=num_neg, omega=dset_omega, omega_full=dset_omega_full)
 
 
 
