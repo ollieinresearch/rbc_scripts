@@ -205,8 +205,8 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             write_num = f['scales/write_number'][start+ti]
 
             # Set up a 2x2 subplot
-            plotter = pv.Plotter(shape=(1, 2), off_screen=True, border=False)
-            plotter.window_size = [840,300]
+            plotter = pv.Plotter(shape=(1, 1), off_screen=True, border=False)
+            plotter.window_size = [420,300]
             # Top-left: diagonal view of T
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
@@ -222,10 +222,10 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 1/2), (xmid, ymid, zmid-0.15), (0, 0, 1)]
-            plotter.add_text(time_text, position='upper_right', font_size=36, color='blue')
+            plotter.add_text(time_text, position='upper_edge', font_size=36, color='k')
 
 
-
+            """
             # Top-middle: diagonal view of w
             plotter.subplot(0, 1)
             actor1 = plotter.add_volume(
@@ -243,7 +243,7 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             plotter.camera_position = [(4, 4, 1/2), (xmid, ymid, zmid-0.15), (0, 0, 1)]
             plotter.add_text(time_text, position='upper_left', font_size=36, color='red')
             
-            
+            """
             # Save snapshot
             plotter.set_background('white')
             fname = os.path.join(output_dir, f"write_{write_num:06}.png")
