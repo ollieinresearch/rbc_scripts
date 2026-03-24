@@ -1,5 +1,5 @@
 """
-Script to perform analysis tasks...
+Script to calculate power spectra, plot them at each time, save them for cumulative time averaging.
 
 Usage:
     power_combined.py <files>... [--vmins=<vmins>] [--vmaxs=<vmaxs>] [--tmins=<tmins>] [--tmaxs=<tmaxs>]
@@ -26,7 +26,6 @@ s = 30
 plt.rcParams.update({"font.size": 0.75*s})
 plt.ioff()
 
-#TODO: get this working for temp as well!
 # Questions:
 # Should I be checking that the energy is the same as the energy computed using the analysis files?
 # Any extra multiplicative factors that I forgot? does it really matter if things are scaled?
@@ -50,7 +49,7 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             write = f["scales/write_number"][ti]
             temp = np.array(f['tasks']['temperature'][ti])
 
-
+            # There are a few different ways that the velocity has been saved; the first try is how it mostly is and should be.
             try:
                 u = np.array(f['tasks']['u'][ti, 0])
                 v = np.array(f['tasks']['u'][ti, 1])
@@ -101,6 +100,8 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
                 k_centers = 0.5 * (bins[:-1] + bins[1:])
                 eps = 2 * np.finfo(np.float64).eps
             
+
+
             # Main loop: interpolate, FFT, bin, plot
 
             # Create interpolators for current time slice,
@@ -198,17 +199,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E(k)$')
             ax.set_title(r'3D isotropic spectrum')
             ax.set_ylim((10**float(mins[0]), 10**float(maxs[0])))
-            ntick=4
-            if maxs[0]-mins[0] < 4:
-                ntick = int(maxs[0]-mins[0]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[0])), np.log10(10**float(maxs[0])), ntick)            
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[0]-mins[0] > 1 else 2
+
+            log_ticks = np.linspace(mins[0], maxs[0], ntick)
+            min_ticks = 10.0**np.linspace(mins[0], maxs[0], int(maxs[0]-mins[0])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[0]), int(maxs[0]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
 
             # --- Top-right: vertical spectrum (kz) ---
@@ -220,17 +224,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E(k_z)$')
             ax.set_title(r'Vertical spectrum ($z$)')
             ax.set_ylim((10**float(mins[1]), 10**float(maxs[1])))
-            ntick=4
-            if maxs[1]-mins[1] < 4:
-                ntick = int(maxs[1]-mins[1]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[1])), np.log10(10**float(maxs[1])), ntick)            
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[1]-mins[1] > 1 else 2
+
+            log_ticks = np.linspace(mins[1], maxs[1], ntick)
+            min_ticks = 10.0**np.linspace(mins[1], maxs[1], int(maxs[1]-mins[1])+1, dtype=int)
+            yticks = 10.0**log_ticks
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[1]), int(maxs[1]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
             
             # --- Bottom-left: horizontal spectrum (kx) ---
@@ -242,17 +249,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E(k_x)$')
             ax.set_title(r'Horizontal spectrum ($x$)')
             ax.set_ylim((10**float(mins[2]), 10**float(maxs[2])))
-            ntick=4
-            if maxs[2]-mins[2] < 4:
-                ntick = int(maxs[2]-mins[2]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[2])), np.log10(10**float(maxs[2])), ntick)              
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[2]-mins[2] > 1 else 2
+
+            log_ticks = np.linspace(mins[2], maxs[2], ntick)
+            min_ticks = 10.0**np.linspace(mins[2], maxs[2], int(maxs[2]-mins[2])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[2]), int(maxs[2]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
             
             # --- Bottom-right: 2D planar spectrum (xy) ---
@@ -263,17 +273,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E_{xy}(k_{xy})$')
             ax.set_title(rf'Horizontal planar spectrum ($xy$)')
             ax.set_ylim((10**float(mins[3]), 10**float(maxs[3])))
-            ntick = 4
-            if maxs[3]-mins[3] < 4:
-                ntick = int(maxs[3]-mins[3]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[3])), np.log10(10**float(maxs[3])), ntick)              
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[3]-mins[3] > 1 else 2
+
+            log_ticks = np.linspace(mins[3], maxs[3], ntick)
+            min_ticks = 10.0**np.linspace(mins[3], maxs[3], int(maxs[3]-mins[3])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[3]), int(maxs[3]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
             
 
@@ -302,7 +315,7 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
 
             # Interpolate onto uniform z grid
             temp_uniform = interp_temp(pts).reshape((nx, ny, nz))
-            # pars_grid = np.sum(temp_uniform**2)
+            pars_grid = np.sum(temp_uniform**2)
 
             # Compute 3D FFT and energy. Supposedly the ortho norm negates the
             # need for renormalization. No dividing by resolution :)
@@ -377,17 +390,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E(k)$')
             ax.set_title(r'3D isotropic spectrum')
             ax.set_ylim((10**float(mins[0]), 10**float(maxs[0])))
-            ntick=4
-            if maxs[0]-mins[0] < 4:
-                ntick = int(maxs[0]-mins[0]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[0])), np.log10(10**float(maxs[0])), ntick)
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[0]-mins[0] > 1 else 2
+
+            log_ticks = np.linspace(mins[0], maxs[0], ntick)
+            min_ticks = 10.0**np.linspace(mins[0], maxs[0], int(maxs[0]-mins[0])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[0]), int(maxs[0]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
 
             # --- Top-right: vertical spectrum (kz) ---
@@ -399,17 +415,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E(k_z)$')
             ax.set_title(r'Vertical spectrum ($z$)')
             ax.set_ylim((10**float(mins[1]), 10**float(maxs[1])))
-            ntick=4
-            if maxs[1]-mins[1] < 4:
-                ntick = int(maxs[1]-mins[1]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[1])), np.log10(10**float(maxs[1])), ntick)            
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[1]-mins[1] > 1 else 2
+
+            log_ticks = np.linspace(mins[1], maxs[1], ntick)
+            min_ticks = 10.0**np.linspace(mins[1], maxs[1], int(maxs[1]-mins[1])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[1]), int(maxs[1]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
             # --- Bottom-left: horizontal spectrum (kx) ---
             ax = axes[1, 0]
@@ -420,17 +439,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E(k_x)$')
             ax.set_title(r'Horizontal spectrum ($x$)')
             ax.set_ylim((10**float(mins[2]), 10**float(maxs[2])))
-            ntick=4
-            if maxs[2]-mins[2] < 4:
-                ntick = int(maxs[2]-mins[2]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[2])), np.log10(10**float(maxs[2])), ntick)              
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[2]-mins[2] > 1 else 2
+
+            log_ticks = np.linspace(mins[2], maxs[2], ntick)
+            min_ticks = 10.0**np.linspace(mins[2], maxs[2], int(maxs[2]-mins[2])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[2]), int(maxs[2]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
             # --- Bottom-right: 2D planar spectrum (xy) ---
             ax = axes[1, 1]
@@ -440,17 +462,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
             ax.set_ylabel(r'$E_{xy}(k_{xy})$')
             ax.set_title(r'Horizontal planar spectrum ($xy$)')
             ax.set_ylim((10**float(mins[3]), 10**float(maxs[3])))
-            ntick=4
-            if maxs[3]-mins[3] < 4:
-                ntick = int(maxs[3]-mins[3]) + 1
-            log_ticks = np.linspace(np.log10(10**float(mins[3])), np.log10(10**float(maxs[3])), ntick)              
-            yticks = 10**log_ticks
+            ntick = 3 if maxs[3]-mins[3] > 1 else 2
+
+            log_ticks = np.linspace(mins[3], maxs[3], ntick)
+            min_ticks = 10.0**np.linspace(mins[3], maxs[3], int(maxs[3]-mins[3])+1, dtype=int)
+            yticks = (10.0**log_ticks)
             ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
-            labels = [rf"$10^{{{int(np.floor(l))}}}$"
+            labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$"
                     for l in log_ticks]
 
             ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
+            ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** min_ticks))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+            for exp in np.arange(int(mins[3]), int(maxs[3]) + 1):
+                ax.axhline(10.0**exp, linestyle='--', color='gray', alpha=0.5, linewidth=0.8)
 
 
             # --- Global title with energy check ---

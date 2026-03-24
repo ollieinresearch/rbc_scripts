@@ -82,7 +82,8 @@ srun_sim() {
     srun -n $N -c $C python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
     --Ra="$RA" \
     --Pr="$PR" \
-    --nz="$RES" \
+    --nz="$RES_Z" \
+    --nx="$RES_HOR" \
     --gamma=$GAM \
     --dt="$DT" \
     --sim_time="$TOTAL_TIME" \

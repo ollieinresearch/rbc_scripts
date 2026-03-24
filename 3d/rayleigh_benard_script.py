@@ -8,6 +8,7 @@ Options:
     --Ra=<Ra>                         log_{10} of the Rayleigh number
     --Pr=<Pr>                         log_{10} of the Prandtl number
     --nz=<nz>                         Resolution in chebyshev direction
+    --nx=<nx>                         Resolution in each periodic direction
     --gamma=<gamma>                   Factor for resolution in fourier directions. Default 2
     --dt=<dt>                         Timestep (initial/max for CFL). Default 0.00001
     --cfl_safety=<cfl_safety>         Safety factor of CFL (see dedalus docs). Default 0.5
@@ -26,6 +27,7 @@ Options:
     --state_freq=<state_freq>         How many seconds (wall time) between state writes. Default 425
     --a_freq=<a_freq>                 How much time (sim time) between analysis writes. Default 0.005
     --snaps_freq=<snaps_freq>         How much time (sim time) between snapshots writes. Default 0.0166666667
+    --message_freq=<message_freq>     How many iterations between messages. Default 500
     --snapshots                       Flag to enable snapshots for visualization
     --cfl                             Flag to enable CFL timestepping
 """
@@ -49,7 +51,9 @@ from dedalus.tools.config import config
 
 
 def signal_handler(signum, frame):
+    #TODO: make the signals work properly!
     """
+    This is not currently being used.
     This function is called automatically when a signal arrives.
     signum: which signal (SIGINT, SIGUSR1, etc.)
     frame: current execution frame (we don't use it)
@@ -78,6 +82,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 # Parameters
+
 par = str(args['--para'])
 tmp = str(args['--tmp'])
 
@@ -94,15 +99,16 @@ Pr = 10**float(args['--Pr'])
 
 Lx, Ly, Lz = int(args['--Lx']), int(args['--Ly']), 1
 nz = int(args['--nz'])
-gamma = float(args['--gamma'])
-nx, ny = int(gamma * nz), int(gamma * nz)
+try:
+    nx, ny = int(args['--nx']), int(args['--nx'])
+except:
+    gamma = float(args['--gamma'])
+    nx, ny = int(gamma * nz), int(gamma * nz)
 
 meshx, meshy = int(args['--meshx']), int(args['--meshy'])
-dealias = 3/2
 
 stop_sim_time = np.float64(args['--sim_time'])
 stepper_name = str(args['--stepper'])
-
 timestepper = {
     'RK222': de.RK222,
     'CNAB2': de.CNAB2,
@@ -120,7 +126,7 @@ fh_mode = 'append'
 state_time = np.float64(args['--state_freq'])
 snap_time = np.float64(args['--snaps_freq'])
 analysis_time = np.float64(args['--a_freq'])
-message_num_iters = 500 # how many timesteps between writing to log file
+message_num_iters = int(args['--message_freq'])
 
 use_cfl = args['--cfl']
 arg_dt = np.float64(args['--dt'])
@@ -131,6 +137,7 @@ max_timestep = 1e-1
 
 
 # Bases
+dealias = 3/2
 coords = de.CartesianCoordinates('x', 'y', 'z')
 dist = de.Distributor(coords, mesh=[meshx,meshy], dtype=dtype)
 xbasis = de.RealFourier(coords['x'], size=nx, bounds=(0, Lx), dealias=dealias)

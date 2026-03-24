@@ -28,6 +28,6 @@ determine_ic
 srun_sim
 #move_from_slrmtmp
 post_process
-res_check
+res_check_combined
 
 exit 0

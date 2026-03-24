@@ -23,7 +23,7 @@ import re
 
 
 def main(basepath):
-    snapshots = basepath / "test"
+    snapshots = basepath / "snapshots"
     output = basepath / 'outputs'
     output.mkdir(exist_ok='true')
 
@@ -44,6 +44,7 @@ def main(basepath):
     # file we load.
     with np.load(fp) as f:
         time = f['time']
+        # each spectra in the file is [vert,temp]
         full_spectra = f['full_spectra']
         hor_spectra = f['hor_spectra']
         vert_spectra = f['vert_spectra']
@@ -57,26 +58,30 @@ def main(basepath):
             full_spectra = np.append(full_spectra, fi['full_spectra'], 1)
             hor_spectra = np.append(hor_spectra, fi['hor_spectra'], 1)
             vert_spectra = np.append(vert_spectra, fi['vert_spectra'], 1)
-            print(time.shape)
-            print(full_spectra.shape[1])
+
+
+    labels = [
+        (full_spectra, r'3D isotropic spectrum', r'$E(k)$', r'$k$'),
+        (hor_spectra, r'Horizontal spectrum', r'$E(k_x)$', r'$k_x$'),
+        (vert_spectra, r'Vertical spectrum', r'$E(k_z)$', r'$k_z$'),
+    ]
+
 
 
     full_time = time[-1] - time[0]
     fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
     with open(output / "spec_range.txt", 'w') as f:
-        for k, spectra in enumerate([full_spectra, hor_spectra, vert_spectra]):
+        for k, (spectra, title, y_ax, x_ax) in enumerate(labels):
             j = int(np.floor(k / 2))
-            print(j, k%2)
-
+            
             for i in range(2):
+                quantity = 'velocity' if i == 0 else 'temperature'
                 spec = spectra[i]
                 x = spec[0,0,:]
                 spec = spec[:,1,:]
                 #time = time[:spec.shape[0]]
                 cumu_spec = simpson(spec, time, axis=0) / full_time
                 mask = cumu_spec > 1e-20
-                print(cumu_spec)
-                print(x)
                 cumu_spec = cumu_spec[mask]
                 ma = np.max(np.log10(cumu_spec))
                 mi = np.min(np.log10(cumu_spec))
@@ -86,14 +91,14 @@ def main(basepath):
                 ax = axes[j, k%2]
                 ax.loglog(x[mask], cumu_spec, '.-')
                 #ax.axvline(k3d_cut, color='k', linestyle='--', alpha=0.7, label='2/3 cutoff')
-                ax.set_xlabel(r'$k$')
-                ax.set_ylabel(r'$E(k)$')
-                ax.set_title(r'3D isotropic spectrum')
+                ax.set_xlabel(x_ax)
+                ax.set_ylabel(y_ax)
+                ax.set_title(title)
                 ax.hlines([10**ma,10**mi],xmin=np.min(x[mask]), xmax=np.max(x[mask]), color='k', linestyle='--')
                 
 
-                f.write(f"Range of spectra: {span:.3f}")
-        fig.savefig(output / "cumulative_spectra.pdf")
+                f.write(f"Range of spectra for {quantity} {title}: {span:.3f}")
+        fig.savefig(output / "cumulative_spectra.pdf", transparent=True, dpi=600)
         plt.close(fig)
 
 

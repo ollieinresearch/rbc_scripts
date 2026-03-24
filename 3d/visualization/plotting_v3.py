@@ -186,7 +186,7 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             lin_color = np.linspace(min_vort, max_vort, 256)
             zero_start = np.searchsorted(lin_color, 0)
 
-            ω_opacity_tf = 1.0-np.exp(-3500.0*(w_opacity)**8)
+            ω_opacity_tf = 1.0-np.exp(-300000000000.0*(w_opacity)**26)
             if zero_start < 125:
                 if zero_start > 0:
                     ω_opacity_tf[zero_start-1:125] = np.zeros(125-zero_start+1)
@@ -205,8 +205,9 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             write_num = f['scales/write_number'][start+ti]
 
             # Set up a 2x2 subplot
-            plotter = pv.Plotter(shape=(1, 1), off_screen=True, border=False)
-            plotter.window_size = [420,300]
+            plotter = pv.Plotter(shape=(1, 2), off_screen=True, border=False)
+            plotter.window_size = [840,300]
+            plotter.add_text(time_text, position='upper_edge', font_size=36, color='k')
             # Top-left: diagonal view of T
             plotter.subplot(0, 0)
             actor1 = plotter.add_volume(
@@ -222,17 +223,17 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 1/2), (xmid, ymid, zmid-0.15), (0, 0, 1)]
-            plotter.add_text(time_text, position='upper_edge', font_size=36, color='k')
+            #plotter.add_text(time_text, position='upper_edge', font_size=36, color='k')
 
 
-            """
+            
             # Top-middle: diagonal view of w
             plotter.subplot(0, 1)
             actor1 = plotter.add_volume(
-                vert_grid, scalars='vert', opacity=w_opacity_tf, cmap='jet', show_scalar_bar=False#, clim=[-mvert, mvert]#, shade=False
+                vort_grid, scalars='vort', opacity=ω_opacity_tf, cmap='jet', show_scalar_bar=False#, clim=[-mvert, mvert]#, shade=False
             )
             plotter.add_scalar_bar(
-                title='Vertical Velocity',
+                title='Magnitude of Vorticity',
                 width=0.75,
                 height=0.1,
                 position_x=0.125,
@@ -241,9 +242,9 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             )
             actor1.mapper.interpolate_before_map = False
             plotter.camera_position = [(4, 4, 1/2), (xmid, ymid, zmid-0.15), (0, 0, 1)]
-            plotter.add_text(time_text, position='upper_left', font_size=36, color='red')
+            #plotter.add_text(time_text, position='upper_left', font_size=36, color='red')
             
-            """
+            
             # Save snapshot
             plotter.set_background('white')
             fname = os.path.join(output_dir, f"write_{write_num:06}.png")
