@@ -1,16 +1,17 @@
 """
-Script to calculate power spectra, plot them at each time, and save them for cumulative time averaging.
+Script to calculate power spectra, plot them at each time, and save them
+for cumulative time averaging.
 
 Physical setup
 --------------
 Domain : Lx = Ly = 2 (periodic), Lz = 1 (Chebyshev / wall-bounded)
 Bases  : Fourier in x, y  |  Chebyshev type-2 (Gauss-Lobatto) in z
 
-Usage:
+usage:
     spectra.py <files>... [--vmins=<vmins>] [--vmaxs=<vmaxs>]
                           [--tmins=<tmins>] [--tmaxs=<tmaxs>]
 
-Options:
+options:
     --vmins=<vmins>   Comma-separated log10 y-axis minima for velocity (4 values).
     --vmaxs=<vmaxs>   Comma-separated log10 y-axis maxima for velocity (4 values).
     --tmins=<tmins>   Comma-separated log10 y-axis minima for temperature (4 values).
@@ -51,24 +52,24 @@ plt.ioff()
 
 # Velocity spectra scaling laws:
 # ┌─────────────────────────────────────────────────────────────────────────┐
-# │  Kolmogorov (K41): E_v(k) ~ k^{-5/3}                                    │
+# │  Kolmogorov (K41): E_v(k) ~ k^{-5/3}                                   │
 # │    The classical inertial-range prediction for isotropic turbulence.    │
 # │    Valid when the kinetic energy cascade rate ε dominates buoyancy.     │
 # │                                                                         │
-# │  Bolgiano-Obukhov (BO59): E_v(k) ~ k^{-11/5}                            │
+# │  Bolgiano-Obukhov (BO59): E_v(k) ~ k^{-11/5}                           │
 # │    Applies when buoyancy forces are dominant at a given scale (the      │
-# │    "Bolgiano scale" L_B = (N^3/ε_T)^{1/2} is in the inertial range).    │
-# │    In most laboratory/numerical RBC, L_B ≈ L (whole domain), so BO      │
+# │    "Bolgiano scale" L_B = (N^3/ε_T)^{1/2} is in the inertial range).   │
+# │    In most laboratory/numerical RBC, L_B ≈ L (whole domain), so BO     │
 # │    scaling is rarely cleanly observed for velocity.                     │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
 # Temperature spectra scaling laws:
 # ┌─────────────────────────────────────────────────────────────────────────┐
-# │  Obukhov-Corrsin (K41 passive scalar): E_T(k) ~ k^{-5/3}                │
+# │  Obukhov-Corrsin (K41 passive scalar): E_T(k) ~ k^{-5/3}               │
 # │    Valid when T is advected passively and the scalar dissipation rate   │
-# │    χ is the relevant quantity. k^{-5/3} for the scalar in K41 regime.   │
+# │    χ is the relevant quantity. k^{-5/3} for the scalar in K41 regime.  │
 # │                                                                         │
-# │  Bolgiano-Obukhov: E_T(k) ~ k^{-7/5}                                    │
+# │  Bolgiano-Obukhov: E_T(k) ~ k^{-7/5}                                  │
 # │    The counterpart BO slope for the temperature spectrum. Note it is    │
 # │    shallower than the K41 -5/3, which seems counter-intuitive but       │
 # │    follows from the BO dimensional argument.                            │
@@ -78,14 +79,14 @@ plt.ioff()
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │  E(kz) ~ kz^{-3}                                                        │
 # │    Steep rolloff expected from thin boundary-layer structure. Because   │
-# │    the BL thickness δ ~ Ra^{-1/3}, energy at scales < δ decays rapidly. │
+# │    the BL thickness δ ~ Ra^{-1/3}, energy at scales < δ decays rapidly.│
 # │    This is not a universal law but a useful empirical reference.        │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
 # 2D planar slope (horizontal):
 # ┌─────────────────────────────────────────────────────────────────────────┐
-# │  E(k_perp) ~ k_perp^{-5/3}  (Kolmogorov)                                │
-# │  E(k_perp) ~ k_perp^{-3}    (2D enstrophy cascade / quasi-2D regime)    │
+# │  E(k_perp) ~ k_perp^{-5/3}  (Kolmogorov)                               │
+# │  E(k_perp) ~ k_perp^{-3}    (2D enstrophy cascade / quasi-2D regime)   │
 # │    At large Ra the flow can show a forward enstrophy cascade for        │
 # │    scales larger than the convective cell size.                         │
 # └─────────────────────────────────────────────────────────────────────────┘
@@ -103,13 +104,13 @@ _THEORY_VEL = {
 
 _THEORY_TEMP = {
     "3d":  ([-5/3, -7/5],
-            [r"$k^{-5/3}$ (Obukhov-Corrsin)", r"$k^{-7/5}$ (Bolgiano)"]),
+            [r"$k^{-5/3}$ (Obukhov–Corrsin)", r"$k^{-7/5}$ (Bolgiano)"]),
     "kz":  ([-3],
             [r"$k_z^{-3}$ (BL-dominated)"]),
     "kx":  ([-5/3, -7/5],
-            [r"$k_x^{-5/3}$ (Obukhov-Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
+            [r"$k_x^{-5/3}$ (Obukhov–Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
     "xy":  ([-5/3, -7/5],
-            [r"$k_\perp^{-5/3}$ (Obukhov-Corrsin)",
+            [r"$k_\perp^{-5/3}$ (Obukhov–Corrsin)",
              r"$k_\perp^{-7/5}$ (Bolgiano)"]),
 }
 
@@ -130,8 +131,8 @@ class RBCSpectraAnalyzer:
 
     Wavenumber convention
     ---------------------
-    All wavenumbers are ANGULAR (rad / unit length): k = 2π x (cycles / L).
-    This makes kx_max = kz_max = π x N/L for a matched grid, so comparisons
+    All wavenumbers are ANGULAR (rad / unit length): k = 2π × (cycles / L).
+    This makes kx_max = kz_max = π × N/L for a matched grid, so comparisons
     across directions are on an equal footing.
     """
 
@@ -152,10 +153,10 @@ class RBCSpectraAnalyzer:
         Returns a dict with:
           z_cheb, z_uniform, sort_idx     — z grids
           kx, ky, kz                      — 1D angular wavenumber arrays
-          Knorm                           — flattened 3D |k| array (nx*ny*nz,)
-          Kperp                           — flattened 2D k_perp array (nx*ny,)
-          bins_3d, k_centers_3d          — isotropic histogram bins / centres
-          bins_xy, k_centers_xy          — planar histogram bins / centres
+          Nmode_3d                        — flattened 3D mode-number radius (nx*ny*nz,)
+          Nmode_2d                        — flattened 2D mode-number radius (nx*ny,)
+          bins_3d, k_centers_3d          — isotropic histogram bins / centres (mode numbers)
+          bins_xy, k_centers_xy          — planar histogram bins / centres (mode numbers)
         """
         if self._grid is not None and self._grid["shape"] == (nx, ny, nz):
             return self._grid
@@ -176,34 +177,87 @@ class RBCSpectraAnalyzer:
         ky = 2 * np.pi * np.fft.fftfreq(ny, d=self.Ly / ny)  # (ny,)
         kz = 2 * np.pi * np.fft.fftfreq(nz, d=self.Lz / nz)  # (nz,)
 
-        # --- 3D isotropic binning ---
+        # --- Mode numbers: n_i = |k_i| * L_i / (2π) ---
+        #
+        # This converts angular wavenumber to the integer DFT mode index.
+        # Since k_i = 2π * fftfreq(N_i) * N_i / L_i, we have:
+        #   n_i = |k_i| * L_i / (2π) = |fftfreq(N_i)| * N_i  ← exact integers
+        #
+        # WHY MODE NUMBERS?
+        # -----------------
+        # Mode numbers are the most direct axis for a resolution diagnostic:
+        #   • n_i = 0, 1, 2, ..., N_i/2  (Nyquist = N_i/2, not N_i)
+        #   • Both horizontal and vertical marginals share the same axis range
+        #     whenever nx/Lx == nz/Lz (matched resolution per unit length).
+        #   • The rightmost plotted point tells you exactly which mode you
+        #     resolved — no conversion from rad/L required.
+        #   • The 2π factor from rad/L is physically meaningful but adds no
+        #     diagnostic information for comparing across directions.
+        #
+        # For the 3D and 2D spectra we form a "mode-number radius":
+        #   N_3d = sqrt((kx*Lx/2π)² + (ky*Ly/2π)² + (kz*Lz/2π)²)
+        #        = sqrt(n_x² + n_y² + n_z²)
+        # This equals the Euclidean distance in mode-index space.  Note that
+        # for a non-cubic domain (Lx ≠ Lz), different physical wavenumbers
+        # correspond to the same mode index in different directions
+        # (k_x per mode = 2π/Lx,  k_z per mode = 2π/Lz), so N_3d is not a
+        # true physical wavenumber magnitude — it is a resolution-space
+        # diagnostic.  The 1D marginals are fully unambiguous.
+        #
+        # LOG-SPACED BINS — why:
+        # Linear bins of width Δk cause the mode count per shell (nm) to
+        # oscillate at high k due to integer-lattice geometry, amplifying into
+        # a jagged "thick band" on the log-log plot.  Log-spaced bins widen
+        # with k, so nm is always large and smooth.
+        # 40 bins/decade gives ~40 points/decade, enough to resolve the
+        # inertial range while keeping the curve clean.
+
+        # Angular wavenumber meshgrid (kept for FFT indexing in marginals)
         KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing="ij")
-        Knorm = np.sqrt(KX**2 + KY**2 + KZ**2).ravel()  # (nx*ny*nz,)
 
-        # Bin width = smallest angular wavenumber step among all directions.
-        # δk_x = 2π/Lx = π,  δk_y = π,  δk_z = 2π/Lz = 2π  → min = π.
-        # Using this width ensures no mode is ever split across two bins.
-        dk = 2.0 * np.pi / max(self.Lx, self.Ly, self.Lz)   # = π here
-        Kmax       = Knorm.max()
-        bins_3d    = np.arange(0.5 * dk, Kmax + dk, dk)
-        k_centers_3d = 0.5 * (bins_3d[:-1] + bins_3d[1:])
+        # Mode-number arrays (dimensionless, exact integers for 1D)
+        nx_m = KX * self.Lx / (2.0 * np.pi)   # shape (nx, ny, nz)
+        ny_m = KY * self.Ly / (2.0 * np.pi)
+        nz_m = KZ * self.Lz / (2.0 * np.pi)
 
-        # --- 2D planar binning ---
+        # 3D mode-number radius, flattened
+        Nmode_3d = np.sqrt(nx_m**2 + ny_m**2 + nz_m**2).ravel()  # (nx*ny*nz,)
+
+        # 2D planar mode-number radius (kz summed out)
         KX2D, KY2D = np.meshgrid(kx, ky, indexing="ij")
-        Kperp       = np.sqrt(KX2D**2 + KY2D**2).ravel()  # (nx*ny,)
-        Kperp_max   = Kperp.max()
-        bins_xy     = np.arange(0.5 * dk, Kperp_max + dk, dk)
-        k_centers_xy = 0.5 * (bins_xy[:-1] + bins_xy[1:])
+        Nmode_2d = np.sqrt(
+            (KX2D * self.Lx / (2.0 * np.pi))**2 +
+            (KY2D * self.Ly / (2.0 * np.pi))**2
+        ).ravel()  # (nx*ny,)
+
+        # Build log-spaced bins in mode-number space
+        n_min_3d = 1.0   # lowest non-zero mode number
+        n_max_3d = Nmode_3d.max()
+        n_decades_3d = np.log10(n_max_3d / n_min_3d)
+        n_bins_3d    = max(80, int(np.ceil(40 * n_decades_3d)))
+        bins_3d      = np.logspace(np.log10(n_min_3d * 0.75),
+                                   np.log10(n_max_3d * 1.01),
+                                   n_bins_3d + 1)
+        k_centers_3d = np.sqrt(bins_3d[:-1] * bins_3d[1:])  # geometric centre
+
+        Nmode_2d_nz   = Nmode_2d[Nmode_2d > 0]
+        n_max_2d      = Nmode_2d.max()
+        n_decades_xy  = np.log10(n_max_2d / Nmode_2d_nz.min())
+        n_bins_xy     = max(80, int(np.ceil(40 * n_decades_xy)))
+        bins_xy       = np.logspace(np.log10(Nmode_2d_nz.min() * 0.75),
+                                    np.log10(n_max_2d * 1.01),
+                                    n_bins_xy + 1)
+        k_centers_xy  = np.sqrt(bins_xy[:-1] * bins_xy[1:])
 
         self._grid = dict(
             shape=(nx, ny, nz),
             z_cheb=z_cheb, z_uniform=z_uniform, sort_idx=sort_idx,
             kx=kx, ky=ky, kz=kz,
-            Knorm=Knorm,
-            Kperp=Kperp,
+            Lx=self.Lx, Ly=self.Ly, Lz=self.Lz,
+            Nmode_3d=Nmode_3d,
+            Nmode_2d=Nmode_2d,
             bins_3d=bins_3d, k_centers_3d=k_centers_3d,
             bins_xy=bins_xy, k_centers_xy=k_centers_xy,
-            dk=dk,
         )
         return self._grid
 
@@ -239,43 +293,57 @@ class RBCSpectraAnalyzer:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _one_sided_marginal(E_3d, k_1d, sum_axes):
+    def _one_sided_marginal(E_3d, k_1d, sum_axes, L_dir):
         """
-        Compute a one-sided 1D marginal power spectrum.
+        Compute a one-sided 1D marginal power spectrum with a MODE-NUMBER x-axis.
 
         Steps
         -----
         1. Sum E_3d over `sum_axes` (the two directions being marginalised).
-        2. Map every wavenumber index to |k|.
+        2. Convert angular wavenumber to integer mode number:
+               n = |k| * L / (2π)
+           For a standard DFT: k = 2π * fftfreq(N) * N/L, so
+               n = |fftfreq(N)| * N  ← exact integers 0, 1, 2, …, N/2
+           np.round() guards against floating-point rounding away from integers.
         3. Fold ±k together by SUMMING their contributions.
-           For a real-valued field, |X(-k)|² = |X(+k)|² exactly, so this
-           doubles the power at every non-zero k compared with looking at
-           positive frequencies only.  The DC component (k=0) and the Nyquist
-           component each appear once and are not doubled.
-        4. Return (k_unique_positive, E_folded), both ascending in k.
+           For a real-valued field |X(-k)|² = |X(+k)|² exactly, so this
+           doubles the power at every non-zero n.  DC (n=0) and Nyquist
+           (n=N/2) each appear only once and are not doubled.
+        4. Return (n_unique, E_folded) where n_unique are the integer mode
+           numbers 0, 1, …, N/2 and E_folded is the summed power.
 
-        Integrating E_folded x dk over k ≥ 0 gives the total energy in
-        that marginal direction (up to the field-normalisation convention).
+        Parameters
+        ----------
+        k_1d    : 1D array of angular wavenumbers for this direction
+        sum_axes: tuple of axes of E_3d to sum over (the OTHER two directions)
+        L_dir   : domain length in this direction (Lx, Ly, or Lz)
+
+        X-axis interpretation
+        ---------------------
+        n = 1  → one complete oscillation across the whole domain
+        n = N/2 → Nyquist: one complete oscillation per 2 grid points
+        Both horizontal and vertical marginals share the same n-axis range
+        whenever the grids are matched (same N/L in both directions).
         """
-        E_raw     = E_3d.sum(axis=sum_axes)              # 1D, indexed by k_1d
-        k_abs     = np.abs(k_1d)
-        k_unique, inv = np.unique(k_abs, return_inverse=True)
-        E_folded  = np.bincount(inv, weights=E_raw, minlength=len(k_unique))
-        return k_unique, E_folded
+        E_raw = E_3d.sum(axis=sum_axes)                        # 1D, indexed by k_1d
+        n_abs = np.round(np.abs(k_1d) * L_dir / (2.0 * np.pi)).astype(int)
+        n_unique, inv = np.unique(n_abs, return_inverse=True)
+        E_folded = np.bincount(inv, weights=E_raw, minlength=len(n_unique))
+        return n_unique.astype(float), E_folded
 
     def _bin_isotropic(self, E_3d, g):
-        """Bin a 3D power array into the isotropic 1D spectrum."""
-        pk, _   = np.histogram(g["Knorm"], bins=g["bins_3d"], weights=E_3d.ravel())
-        nm, _   = np.histogram(g["Knorm"], bins=g["bins_3d"])
+        """Bin a 3D power array into the isotropic 1D spectrum (mode-number x-axis)."""
+        pk, _   = np.histogram(g["Nmode_3d"], bins=g["bins_3d"], weights=E_3d.ravel())
+        nm, _   = np.histogram(g["Nmode_3d"], bins=g["bins_3d"])
         mask    = nm > 0
         E_iso   = np.where(mask, pk / np.where(mask, nm, 1.0), 0.0)
         return g["k_centers_3d"], E_iso
 
     def _bin_planar(self, E_3d, g):
-        """Sum over kz, then bin the (nx×ny) 2D power by k_perp."""
+        """Sum over kz, then bin the (nx×ny) 2D power by mode-number radius."""
         E_z_sum   = E_3d.sum(axis=2).ravel()
-        pk_xy, _  = np.histogram(g["Kperp"], bins=g["bins_xy"], weights=E_z_sum)
-        nm_xy, _  = np.histogram(g["Kperp"], bins=g["bins_xy"])
+        pk_xy, _  = np.histogram(g["Nmode_2d"], bins=g["bins_xy"], weights=E_z_sum)
+        nm_xy, _  = np.histogram(g["Nmode_2d"], bins=g["bins_xy"])
         mask      = nm_xy > 0
         E_xy      = np.where(mask, pk_xy / np.where(mask, nm_xy, 1.0), 0.0)
         return g["k_centers_xy"], E_xy
@@ -311,8 +379,8 @@ class RBCSpectraAnalyzer:
 
         k_3d, E_iso      = self._bin_isotropic(E_total, g)
         k_xy, E_xy       = self._bin_planar(E_total, g)
-        k_kx, E_kx       = self._one_sided_marginal(E_total, g["kx"], (1, 2))
-        k_kz, E_kz       = self._one_sided_marginal(E_total, g["kz"], (0, 1))
+        k_kx, E_kx       = self._one_sided_marginal(E_total, g["kx"], (1, 2), g["Lx"])
+        k_kz, E_kz       = self._one_sided_marginal(E_total, g["kz"], (0, 1), g["Lz"])
         del E_total
 
         return dict(
@@ -335,7 +403,7 @@ class RBCSpectraAnalyzer:
         IMPORTANT — mean subtraction
         ─────────────────────────────
         Before taking the FFT we subtract the horizontal (x,y) mean at each
-        z-level: T'(x,y,z) = T(x,y,z) - <T>(z).
+        z-level: T'(x,y,z) = T(x,y,z) − <T>(z).
 
         Why?  In RBC the temperature has a mean stratification T̄(z) that
         varies smoothly in z and carries almost all its energy in the lowest
@@ -365,8 +433,8 @@ class RBCSpectraAnalyzer:
 
         k_3d, E_iso  = self._bin_isotropic(E, g)
         k_xy, E_xy   = self._bin_planar(E, g)
-        k_kx, E_kx   = self._one_sided_marginal(E, g["kx"], (1, 2))
-        k_kz, E_kz   = self._one_sided_marginal(E, g["kz"], (0, 1))
+        k_kx, E_kx   = self._one_sided_marginal(E, g["kx"], (1, 2), g["Lx"])
+        k_kz, E_kz   = self._one_sided_marginal(E, g["kz"], (0, 1), g["Lz"])
         del E
 
         return dict(
@@ -384,40 +452,84 @@ class RBCSpectraAnalyzer:
 
     @staticmethod
     def _add_theory_slopes(ax, k_data, E_data, slopes, labels,
-                           position_frac=0.45):
+                           anchor_frac=0.15):
         """
-        Draw reference power-law lines anchored at position_frac of the way
-        through the plotted k range.  Each line spans ±0.7 decades in k.
+        Draw reference power-law lines spanning the FULL x-axis range.
+
+        Anchoring
+        ---------
+        The line is E_ref * (k / k_ref)^slope.  k_ref and E_ref are taken
+        from the data at `anchor_frac` of the way through the LOG k range
+        (default 0.15 = near the low-k / inertial-range end).  Anchoring
+        at the inertial range end means the lines are correctly positioned
+        relative to the energy-containing scales; anchoring in the middle
+        (old default) put them in the dissipation range where the spectrum
+        has already broken away from any power law.
+
+        Range
+        -----
+        The lines run from the smallest positive k in the data to the
+        largest k.  This lets you compare the theoretical slope against the
+        full spectrum at a glance.
         """
-        mask = E_data > 0
+        mask = (k_data > 0) & (E_data > 0)
         if not mask.any() or len(slopes) == 0:
             return
         k_v = k_data[mask]
         E_v = E_data[mask]
-        ref  = int(np.clip(len(k_v) * position_frac, 0, len(k_v) - 1))
-        k0, E0 = k_v[ref], E_v[ref]
+
+        # Anchor in log-k space at anchor_frac of the way through the range
+        log_k_min = np.log10(k_v[0])
+        log_k_max = np.log10(k_v[-1])
+        log_k_ref = log_k_min + anchor_frac * (log_k_max - log_k_min)
+        k_ref     = 10.0 ** log_k_ref
+        # Interpolate the data at the anchor point (in log-log space)
+        E_ref = 10.0 ** np.interp(log_k_ref, np.log10(k_v), np.log10(E_v))
+
+        # Draw across the full data range (300 points for a smooth line on log scale)
+        k_line = np.logspace(log_k_min, log_k_max, 300)
 
         colors = plt.cm.Set1(np.linspace(0.05, 0.75, len(slopes)))
         for slope, label, color in zip(slopes, labels, colors):
-            k_line = np.logspace(np.log10(k0) - 0.7, np.log10(k0) + 0.7, 60)
-            ax.loglog(k_line, E0 * (k_line / k0) ** slope,
-                      "--", color=color, alpha=0.75, linewidth=1.8, label=label)
+            ax.loglog(k_line, E_ref * (k_line / k_ref) ** slope,
+                      "--", color=color, alpha=0.80, linewidth=1.8, label=label)
         ax.legend(fontsize=max(8, plt.rcParams["font.size"] * 0.45),
                   framealpha=0.5, loc="lower left")
 
     @staticmethod
     def _setup_yaxis(ax, ymin, ymax):
-        """Consistent log y-axis with grey decade guide lines."""
+        """
+        Log y-axis matching the original tick style:
+          - 3 labelled major ticks (2 if the span is <= 2 decades), evenly
+            spaced from ymin to ymax in log-space.
+          - Unlabelled minor ticks at every integer decade.
+          - Dashed grey guide lines at every integer decade.
+
+        This deliberately keeps the y-axis uncluttered: you read the scale
+        from the two or three large labels and use the dashed lines to count
+        decades by eye.
+        """
         ax.set_ylim(10**ymin, 10**ymax)
-        ntick     = max(3, int(ymax - ymin) + 1)
+        span = ymax - ymin
+
+        # --- Labelled major ticks (2 or 3 only) ---
+        ntick = 3 if span > 2 else 2
         log_ticks = np.linspace(ymin, ymax, ntick)
-        ax.yaxis.set_major_locator(ticker.FixedLocator(10.0 ** log_ticks))
-        ax.yaxis.set_major_formatter(
-            ticker.FuncFormatter(lambda v, _: rf"$10^{{{np.log10(v):.1f}}}$")
-        )
-        for exp in range(int(np.floor(ymin)), int(np.ceil(ymax)) + 1):
+        yticks    = 10.0 ** log_ticks
+        ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
+        # Clean exponent labels: strip trailing zeros, e.g. "-10.0" -> "-10"
+        labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$" for l in log_ticks]
+        ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
+
+        # --- Unlabelled minor ticks at every integer decade ---
+        int_decades = np.arange(int(np.floor(ymin)), int(np.ceil(ymax)) + 1)
+        ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** int_decades))
+        ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+
+        # --- Dashed grey guide lines at every integer decade ---
+        for exp in int_decades:
             ax.axhline(10.0**exp, linestyle="--", color="gray",
-                       alpha=0.35, linewidth=0.8)
+                       alpha=0.5, linewidth=0.8)
 
     def plot_spectra(self, spec, title, savepath, mins, maxs, field_type="velocity"):
         """
@@ -438,21 +550,26 @@ class RBCSpectraAnalyzer:
 
         panels = [
             # (ax, k_key, E_key, xlabel, ylabel, title_str, theory_key)
+            #
+            # X-axis is MODE NUMBER throughout:
+            #   n_i = |k_i| * L_i / (2π)  — the integer DFT index in direction i.
+            #   Nyquist = N_i / 2  (NOT N_i; a 256-pt grid → max mode = 128).
+            #   3D / 2D axes use the Euclidean mode-number radius across directions.
             (axes[0, 0], "k_3d", "E_3d",
-             r"$k$ [rad/L]", r"$E(k)$",
+             r"$n = \sqrt{n_x^2 + n_y^2 + n_z^2}$  [mode number]", r"$E(n)$",
              "3D isotropic spectrum", "3d"),
 
             (axes[0, 1], "k_kz", "E_kz",
-             r"$k_z$ [rad/L]", r"$E(k_z)$",
+             r"$n_z$  [mode number, max $= N_z/2$]", r"$E(n_z)$",
              "Vertical marginal", "kz"),
 
             (axes[1, 0], "k_kx", "E_kx",
-             r"$k_x$ [rad/L]", r"$E(k_x)$",
+             r"$n_x$  [mode number, max $= N_x/2$]", r"$E(n_x)$",
              "Horizontal marginal ($x$)", "kx"),
 
             (axes[1, 1], "k_xy", "E_xy",
-             r"$k_\perp = \sqrt{k_x^2+k_y^2}$ [rad/L]",
-             r"$E(k_\perp)$",
+             r"$n_\perp = \sqrt{n_x^2 + n_y^2}$  [mode number]",
+             r"$E(n_\perp)$",
              "2D planar spectrum", "xy"),
         ]
 
@@ -474,11 +591,11 @@ class RBCSpectraAnalyzer:
         )
         fig.suptitle(
             f"{title}\n"
-            f"Parseval: {parseval_ok}"
+            f"Parseval: {'✓' if parseval_ok else '✗ FAILED'}"
             f"  (grid {spec['parseval_grid']:.4e},"
             f"  spec {spec['parseval_spec']:.4e})"
         )
-        fig.savefig(savepath, dpi=600, transparent=True)
+        fig.savefig(savepath, dpi=150)
         plt.close(fig)
 
 
@@ -525,17 +642,20 @@ def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
                 u = np.array(f["tasks"]["u"][ti, 0])
                 v = np.array(f["tasks"]["u"][ti, 1])
                 w = np.array(f["tasks"]["u"][ti, 2])
+                nx, ny, nz = u.shape
             except Exception:
                 try:
                     u = np.array(f["tasks"]["x"][ti])
                     v = np.array(f["tasks"]["y"][ti])
                     w = np.array(f["tasks"]["w"][ti])
+                    nx, ny, nz = u.shape
                 except Exception:
                     u = np.array(f["tasks"]["u"][ti])
                     v = np.array(f["tasks"]["v"][ti])
                     w = np.array(f["tasks"]["w"][ti])
+                    nx, ny, nz = u.shape
 
-            nx, ny, nz = u.shape
+            
 
             # Rebuild grid only when resolution changes
             if (nx, ny, nz) != prev_shape:

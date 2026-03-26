@@ -47,13 +47,13 @@ _THEORY_VEL = {
 
 _THEORY_TEMP = {
     "3d":  ([-5/3, -7/5],
-            [r"$k^{-5/3}$ (Obukhov-Corrsin)", r"$k^{-7/5}$ (Bolgiano)"]),
+            [r"$k^{-5/3}$ (Obukhov–Corrsin)", r"$k^{-7/5}$ (Bolgiano)"]),
     "kz":  ([-3],
             [r"$k_z^{-3}$ (BL-dominated)"]),
     "kx":  ([-5/3, -7/5],
-            [r"$k_x^{-5/3}$ (Obukhov-Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
+            [r"$k_x^{-5/3}$ (Obukhov–Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
     "xy":  ([-5/3, -7/5],
-            [r"$k_\perp^{-5/3}$ (Obukhov-Corrsin)",
+            [r"$k_\perp^{-5/3}$ (Obukhov–Corrsin)",
              r"$k_\perp^{-7/5}$ (Bolgiano)"]),
 }
 
@@ -62,47 +62,64 @@ _THEORY_TEMP = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def add_theory_slopes(ax, k_data, E_data, slopes, labels, position_frac=0.45):
+def add_theory_slopes(ax, k_data, E_data, slopes, labels, anchor_frac=0.15):
     """
-    Draw reference power-law slope lines on a log-log axis.
+    Draw reference power-law lines spanning the FULL x-axis range.
 
-    Each line is anchored at a reference point `position_frac` of the way
-    through the data and extends ±0.7 decades in k.  This lets you visually
-    judge whether any stretch of the spectrum is consistent with a given
-    theoretical prediction.
+    The line E_ref * (k/k_ref)^slope is anchored at anchor_frac of the way
+    through the LOG k range (default 0.15 = near the inertial-range end).
+    Anchoring near the low-k end means the lines are positioned relative to
+    the energy-containing scales rather than the dissipation range.
     """
-    mask = E_data > 0
+    mask = (k_data > 0) & (E_data > 0)
     if not mask.any() or not slopes:
         return
     k_v, E_v = k_data[mask], E_data[mask]
-    ref       = int(np.clip(len(k_v) * position_frac, 0, len(k_v) - 1))
-    k0, E0    = k_v[ref], E_v[ref]
+
+    log_k_min = np.log10(k_v[0])
+    log_k_max = np.log10(k_v[-1])
+    log_k_ref = log_k_min + anchor_frac * (log_k_max - log_k_min)
+    k_ref     = 10.0 ** log_k_ref
+    E_ref     = 10.0 ** np.interp(log_k_ref, np.log10(k_v), np.log10(E_v))
+
+    k_line = np.logspace(log_k_min, log_k_max, 300)
 
     colors = plt.cm.Set1(np.linspace(0.05, 0.75, len(slopes)))
     for slope, label, color in zip(slopes, labels, colors):
-        k_line = np.logspace(np.log10(k0) - 0.7, np.log10(k0) + 0.7, 60)
-        ax.loglog(k_line, E0 * (k_line / k0) ** slope,
-                  "--", color=color, alpha=0.75, linewidth=1.8, label=label)
+        ax.loglog(k_line, E_ref * (k_line / k_ref) ** slope,
+                  "--", color=color, alpha=0.80, linewidth=1.8, label=label)
     ax.legend(fontsize=10, framealpha=0.5, loc="lower left")
 
 
 def setup_yaxis(ax, ymin, ymax):
-    """Log y-axis with decade guide lines and clean tick labels."""
+    """
+    Log y-axis matching the original tick style:
+      - 3 labelled major ticks (2 if span <= 2 decades).
+      - Unlabelled minor ticks at every integer decade.
+      - Dashed grey guide lines at every integer decade.
+    """
     ax.set_ylim(10**ymin, 10**ymax)
-    ntick     = max(3, int(ymax - ymin) + 1)
+    span = ymax - ymin
+
+    ntick = 3 if span > 2 else 2
     log_ticks = np.linspace(ymin, ymax, ntick)
-    ax.yaxis.set_major_locator(ticker.FixedLocator(10.0**log_ticks))
-    ax.yaxis.set_major_formatter(
-        ticker.FuncFormatter(lambda v, _: rf"$10^{{{np.log10(v):.1f}}}$")
-    )
-    for exp in range(int(np.floor(ymin)), int(np.ceil(ymax)) + 1):
+    yticks    = 10.0 ** log_ticks
+    ax.yaxis.set_major_locator(ticker.FixedLocator(yticks))
+    labels = [rf"$10^{{{f'{l:.1f}'.rstrip('0').rstrip('.')}}}$" for l in log_ticks]
+    ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
+
+    int_decades = np.arange(int(np.floor(ymin)), int(np.ceil(ymax)) + 1)
+    ax.yaxis.set_minor_locator(ticker.FixedLocator(10.0 ** int_decades))
+    ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+
+    for exp in int_decades:
         ax.axhline(10.0**exp, linestyle="--", color="gray",
-                   alpha=0.35, linewidth=0.8)
+                   alpha=0.5, linewidth=0.8)
 
 
 def time_average(time, E_mat):
     """
-    True time average via Simpson's rule: <E(k)> = ∫ E(k,t) dt / (t_end - t_0).
+    True time average via Simpson's rule: <E(k)> = ∫ E(k,t) dt / (t_end − t_0).
 
     time  : shape (nt,)        — simulation times for each snapshot
     E_mat : shape (nt, nk)     — spectral power at each time
@@ -127,7 +144,7 @@ def count_decades(E_avg):
 
     This is the primary diagnostic metric: how many decades of power does
     your simulation resolve?  A larger number means better scale separation
-    and a cleaner inertial range.  You want at least 2-3 decades of clean
+    and a cleaner inertial range.  You want at least 2–3 decades of clean
     power-law behaviour to draw meaningful conclusions.
     """
     mask = E_avg > 0
@@ -235,46 +252,49 @@ def main(basepath):
     #   (k_key, E_key, title, xlabel, ylabel, theory_key, field_type)
     #
     panels = [
+        # X-axis is MODE NUMBER throughout: n_i = |k_i| * L_i / (2π).
+        # Nyquist = N_i/2. A 256-pt grid → marginals max out at 128.
+
         # --- Velocity ---
         ("vel_k_3d", "vel_E_3d",
          "Velocity - 3D isotropic",
-         r"$k$ [rad/L]", r"$E(k)$",
+         r"$n = \sqrt{n_x^2 + n_y^2 + n_z^2}$  [mode number]", r"$E(n)$",
          "3d", "velocity"),
 
         ("vel_k_kz", "vel_E_kz",
          "Velocity - vertical marginal",
-         r"$k_z$ [rad/L]", r"$E(k_z)$",
+         r"$n_z$  [mode number, max $= N_z/2$]", r"$E(n_z)$",
          "kz", "velocity"),
 
         ("vel_k_kx", "vel_E_kx",
          "Velocity - horizontal marginal ($x$)",
-         r"$k_x$ [rad/L]", r"$E(k_x)$",
+         r"$n_x$  [mode number, max $= N_x/2$]", r"$E(n_x)$",
          "kx", "velocity"),
 
         ("vel_k_xy", "vel_E_xy",
          "Velocity - 2D planar",
-         r"$k_\perp = \sqrt{k_x^2 + k_y^2}$ [rad/L]", r"$E(k_\perp)$",
+         r"$n_\perp = \sqrt{n_x^2 + n_y^2}$  [mode number]", r"$E(n_\perp)$",
          "xy", "velocity"),
 
         # --- Temperature ---
         ("temp_k_3d", "temp_E_3d",
          "Temperature - 3D isotropic",
-         r"$k$ [rad/L]", r"$E_T(k)$",
+         r"$n = \sqrt{n_x^2 + n_y^2 + n_z^2}$  [mode number]", r"$E_T(n)$",
          "3d", "temperature"),
 
         ("temp_k_kz", "temp_E_kz",
          "Temperature - vertical marginal",
-         r"$k_z$ [rad/L]", r"$E_T(k_z)$",
+         r"$n_z$  [mode number, max $= N_z/2$]", r"$E_T(n_z)$",
          "kz", "temperature"),
 
         ("temp_k_kx", "temp_E_kx",
          "Temperature - horizontal marginal ($x$)",
-         r"$k_x$ [rad/L]", r"$E_T(k_x)$",
+         r"$n_x$  [mode number, max $= N_x/2$]", r"$E_T(n_x)$",
          "kx", "temperature"),
 
         ("temp_k_xy", "temp_E_xy",
          "Temperature - 2D planar",
-         r"$k_\perp = \sqrt{k_x^2 + k_y^2}$ [rad/L]", r"$E_T(k_\perp)$",
+         r"$n_\perp = \sqrt{n_x^2 + n_y^2}$  [mode number]", r"$E_T(n_\perp)$",
          "xy", "temperature"),
     ]
 

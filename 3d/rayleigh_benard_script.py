@@ -27,7 +27,6 @@ Options:
     --state_freq=<state_freq>         How many seconds (wall time) between state writes. Default 425
     --a_freq=<a_freq>                 How much time (sim time) between analysis writes. Default 0.005
     --snaps_freq=<snaps_freq>         How much time (sim time) between snapshots writes. Default 0.0166666667
-    --message_freq=<message_freq>     How many iterations between messages. Default 500
     --snapshots                       Flag to enable snapshots for visualization
     --cfl                             Flag to enable CFL timestepping
 """
@@ -126,7 +125,7 @@ fh_mode = 'append'
 state_time = np.float64(args['--state_freq'])
 snap_time = np.float64(args['--snaps_freq'])
 analysis_time = np.float64(args['--a_freq'])
-message_num_iters = int(args['--message_freq'])
+message_num_iters = 500
 
 use_cfl = args['--cfl']
 arg_dt = np.float64(args['--dt'])
