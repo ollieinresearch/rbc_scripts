@@ -153,11 +153,63 @@ def count_decades(E_avg):
     return float(np.log10(E_avg[mask].max()) - np.log10(E_avg[mask].min()))
 
 
-def plot_panel(ax, k, E_avg, title, xlabel, ylabel, slopes, slope_labels):
-    """Render one averaged spectrum panel with theory overlays."""
+def _trim_trailing_drop(k, E, threshold=0.25):
+    """
+    Remove the last point of a 1D spectrum if it drops anomalously.
+
+    WHY: The Nyquist mode (n = N/2) has only ONE DFT coefficient for a real
+    field, while every other non-zero mode has TWO (the ±k pair).  When we
+    fold ±k and sum, the Nyquist therefore accumulates half the power of its
+    neighbours — a systematic drop of log10(2) ≈ 0.30 decades regardless of
+    the true spectral slope.  This is not physics; it is an artifact of the
+    even-length real DFT.
+
+    We detect this by comparing the last step in log-space against the local
+    slope extrapolated from the two preceding points.  If the excess drop
+    exceeds `threshold` decades (default 0.25, safely below the 0.30-decade
+    Nyquist artifact), the last point is removed.
+
+    This is applied only to 1D marginals (kx, kz) in plot_panel; the
+    isotropic and planar log-binned spectra use many modes per bin so the
+    Nyquist is diluted and causes no visible artifact.
+    """
+    mask = (k > 0) & (E > 0)
+    if mask.sum() < 3:
+        return k, E
+    k_v = k[mask]
+    E_v = E[mask]
+
+    # Local slope from the two points before the last
+    dk_log   = np.log10(k_v[-2]) - np.log10(k_v[-3])
+    dE_log   = np.log10(E_v[-2]) - np.log10(E_v[-3])
+    slope    = dE_log / dk_log if dk_log != 0 else 0.0
+    expected = np.log10(E_v[-2]) + slope * (np.log10(k_v[-1]) - np.log10(k_v[-2]))
+    actual   = np.log10(E_v[-1])
+    excess_drop = expected - actual   # positive = last point is lower than expected
+
+    if excess_drop > threshold:
+        # Drop the last entry; rebuild full arrays with DC still included
+        valid_indices = np.where(mask)[0]
+        keep = np.ones(len(k), dtype=bool)
+        keep[valid_indices[-1]] = False
+        return k[keep], E[keep]
+    return k, E
+
+
+def plot_panel(ax, k, E_avg, title, xlabel, ylabel, slopes, slope_labels,
+               trim_nyquist=False):
+    """Render one averaged spectrum panel with theory overlays.
+
+    trim_nyquist : if True, apply _trim_trailing_drop to remove the Nyquist
+                   artifact.  Should be True for 1D marginal panels (kx, kz)
+                   and False for isotropic / planar log-binned panels.
+    """
+    if trim_nyquist:
+        k, E_avg = _trim_trailing_drop(k, E_avg)
+
     mask = (k > 0) & (E_avg > 0)          # skip DC mode on log scale
     ax.loglog(k[mask], E_avg[mask], ".-", linewidth=1.5, markersize=4)
-    add_theory_slopes(ax, k[mask], E_avg[mask], slopes, slope_labels)
+    #add_theory_slopes(ax, k[mask], E_avg[mask], slopes, slope_labels)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
@@ -167,6 +219,8 @@ def plot_panel(ax, k, E_avg, title, xlabel, ylabel, slopes, slope_labels):
     ax.text(0.04, 0.06, f"{decades:.2f} decades",
             transform=ax.transAxes, fontsize=11,
             bbox=dict(boxstyle="round", fc="white", alpha=0.75))
+
+    return k, E_avg
 
 
 # ---------------------------------------------------------------------------
@@ -325,8 +379,9 @@ def main(basepath):
             panel_idx = idx % 4
             ax = axes_t_flat[panel_idx] if is_temp else axes_v_flat[panel_idx]
 
-            plot_panel(ax, k_vals, E_avg, title, xlabel, ylabel,
-                       slopes, slope_labels)
+            is_marginal = tkey in ("kx", "kz")
+            k_vals, E_avg = plot_panel(ax, k_vals, E_avg, title, xlabel, ylabel,
+                       slopes, slope_labels, trim_nyquist=is_marginal)
 
             report.write(f"{title}\n")
             report.write(f"  Decades of dynamic range: {decades:.3f}\n")

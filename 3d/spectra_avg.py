@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 plt.rcParams.update({"font.size": 14})
 plt.ioff()
 from scipy.integrate import simpson, cumulative_trapezoid
-import os
+
 import re
 
 

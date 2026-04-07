@@ -104,13 +104,13 @@ _THEORY_VEL = {
 
 _THEORY_TEMP = {
     "3d":  ([-5/3, -7/5],
-            [r"$k^{-5/3}$ (Obukhov–Corrsin)", r"$k^{-7/5}$ (Bolgiano)"]),
+            [r"$k^{-5/3}$ (Obukhov-Corrsin)", r"$k^{-7/5}$ (Bolgiano)"]),
     "kz":  ([-3],
             [r"$k_z^{-3}$ (BL-dominated)"]),
     "kx":  ([-5/3, -7/5],
-            [r"$k_x^{-5/3}$ (Obukhov–Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
+            [r"$k_x^{-5/3}$ (Obukhov-Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
     "xy":  ([-5/3, -7/5],
-            [r"$k_\perp^{-5/3}$ (Obukhov–Corrsin)",
+            [r"$k_\perp^{-5/3}$ (Obukhov-Corrsin)",
              r"$k_\perp^{-7/5}$ (Bolgiano)"]),
 }
 
@@ -131,8 +131,8 @@ class RBCSpectraAnalyzer:
 
     Wavenumber convention
     ---------------------
-    All wavenumbers are ANGULAR (rad / unit length): k = 2π × (cycles / L).
-    This makes kx_max = kz_max = π × N/L for a matched grid, so comparisons
+    All wavenumbers are ANGULAR (rad / unit length): k = 2π x (cycles / L).
+    This makes kx_max = kz_max = π x N/L for a matched grid, so comparisons
     across directions are on an equal footing.
     """
 
@@ -580,7 +580,7 @@ class RBCSpectraAnalyzer:
             mask = (k > 0) & (E > 0)
             ax.loglog(k[mask], E[mask], ".-", linewidth=1.2, markersize=4)
             slopes, labels = theory[tkey]
-            self._add_theory_slopes(ax, k[mask], E[mask], slopes, labels)
+            # self._add_theory_slopes(ax, k[mask], E[mask], slopes, labels)
             ax.set_xlabel(xl)
             ax.set_ylabel(yl)
             ax.set_title(ttl)
@@ -591,11 +591,9 @@ class RBCSpectraAnalyzer:
         )
         fig.suptitle(
             f"{title}\n"
-            f"Parseval: {'✓' if parseval_ok else '✗ FAILED'}"
-            f"  (grid {spec['parseval_grid']:.4e},"
-            f"  spec {spec['parseval_spec']:.4e})"
+            f"Parseval: {parseval_ok}"
         )
-        fig.savefig(savepath, dpi=150)
+        fig.savefig(savepath, dpi=200)
         plt.close(fig)
 
 

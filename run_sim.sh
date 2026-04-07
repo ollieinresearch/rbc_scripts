@@ -28,6 +28,9 @@ determine_ic
 srun_sim
 #move_from_slrmtmp
 post_process
-res_check_combined
+res_check_combined_test
+compare_spectra
+load_modules_plotting
+plot_snapshots
 
 exit 0

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --output=post_process.out
+#SBATCH --output=job_post.out
 #SBATCH --time=02:59:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=192
 #SBATCH --mem=0
-#SBATCH --job-name=raXprXeX_X_post
+#SBATCH --job-name=ra_post
 #SBATCH --account=def-goluskin
 
 
@@ -17,4 +17,7 @@ print_params
 load_modules
 
 post_process
-res_check
+res_check_combined_test
+compare_spectra
+load_modules_plotting
+plot_snapshots
