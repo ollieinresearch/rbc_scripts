@@ -370,6 +370,7 @@ def make_comparison_figure(simulations, field, theory_dict, basepath):
             Line2D([0], [0], color=color, linestyle=lstyle,
                    linewidth=1.8, label=label)
         )
+    
     # Add theory entries from the last panel's legend
     extra = [h for h in ax_flat[-1].get_legend_handles_labels()[0]]
     if extra:
@@ -379,10 +380,10 @@ def make_comparison_figure(simulations, field, theory_dict, basepath):
             leg = ax.get_legend()
             if leg:
                 leg.remove()
+    
 
     fig.legend(
         handles=legend_handles,
-        loc="outside upper right",
         fontsize=11,
         framealpha=0.85,
         #title=field.capitalize() + " spectra",

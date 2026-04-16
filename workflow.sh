@@ -7,8 +7,8 @@ print_params() {
     echo "Start time: $START_TIME"
     echo "Rayleigh number:$RA"
     echo "Prandtl number: $PR"
-    echo "Vertical resolution: $RES"
-    echo "Factor for horizontal resolution: $GAM"
+    echo "Vertical resolution: $RES_Z"
+    echo "Horizontal resolution: $RES_HOR"
     echo "Initial timestep: $DT"
     echo "Length of simulation (dimensionless units): $SIM_TIME"
     echo "Timestepper: $STEPPER"
@@ -352,6 +352,9 @@ res_check_combined_test() {
     ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_temp/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_temp/movie.mp4
     ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
 
+    rm -rf res_check_temp/*.png
+    rm -rf res_check_3d/*.png
+
     combine_spectra
 
     python3 $SCRIPTS_3D/spectra_cumulative.py $PWD
@@ -383,6 +386,8 @@ plot_snapshots() {
 
     srun -n 6 --cpus-per-task=32 python3 $SCRIPTS_3D/visualization/plotting_v3.py $PWD/snapshots/*.h5 --basepath=$PWD --nu=$nu --max_vort=$mv
     ffmpeg -y -r $FPS -pattern_type glob -i 'visualization/*.png' -threads 32 -pix_fmt yuv420p visualization/movie.mp4
+
+    rm -rf visualization/*.png
 
     combine_flow_spectra
 }

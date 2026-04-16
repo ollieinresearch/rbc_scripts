@@ -246,7 +246,7 @@ logger.info(f"State tasks added.")
 # Snapshots for visualization
 if snapshots_flag:
     (basepath / 'snapshots').mkdir(exist_ok=True)
-    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=10, mode=fh_mode, parallel=par)
+    snap = solver.evaluator.add_file_handler(basepath / 'snapshots', sim_dt=snap_time, max_writes=30, mode=fh_mode, parallel=par)
     snap.add_task(T, name='temperature')
     
     # Velocity components & vorticity - currently only plotting w, but using for the power spectra now.
