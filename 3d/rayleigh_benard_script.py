@@ -324,6 +324,7 @@ startup_iter = 100
 try:
     good_solution = True
     logger.info('Starting loop')
+    logger.info(f'Iteration={solver.iteration:d}, Time={solver.sim_time:.5f}, dt={dt:.4e}')
     start_time = time.time()
     main_start = time.time()
 

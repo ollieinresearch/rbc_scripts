@@ -347,7 +347,7 @@ res_check_combined_test() {
     mkdir $PWD/res_check_3d
 
     #python3 $SCRIPTS_3D/spectra.py $PWD/test/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
-    srun python3 $SCRIPTS_3D/spectra.py $PWD/snapshots/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
+    srun -n 6 -c $(($C/6)) python3 $SCRIPTS_3D/spectra.py $PWD/snapshots/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
 
     ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_temp/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_temp/movie.mp4
     ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
@@ -357,7 +357,7 @@ res_check_combined_test() {
 
     combine_spectra
 
-    python3 $SCRIPTS_3D/spectra_cumulative.py $PWD
+    python3 -n 1 -c $(($N*$C)) $SCRIPTS_3D/spectra_cumulative.py $PWD
 }
 
 
