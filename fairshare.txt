@@ -1,0 +1,4 @@
+sshare -l -A rrg-goluskin -u ollie
+sshare -l -A rrg-goluskin
+sshare -l -A def-goluskin -u ollie
+sshare -l -A def-goluskin
