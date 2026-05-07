@@ -48,7 +48,7 @@ determine_ic() {
 
 run_sim() {
 
-    mpirun python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
+    mpirun -n $N python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
     --Ra="$RA" \
     --Pr="$PR" \
     --nz="$RES" \

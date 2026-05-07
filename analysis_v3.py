@@ -78,7 +78,12 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         Pr = float(f['tasks']['Pr'][-1])
 
         full_time = f['scales']['sim_time'][:]
-        avg_K = f['tasks']['avg_K'][:]
+        try: # some analysis files don't have; only the horizontal analysis files do for those sims
+            avg_K = f['tasks']['avg_K'][:]
+            k_exists = True
+        except:
+            print("no avg_k")
+            k_exists = False
         avg_wT = f['tasks']['avg_wT'][:]
         avg_vorticity_sq = f['tasks']['avg_vorticity_sq'][:]
         avg_grad_T_sq = f['tasks']['avg_grad_T_sq'][:]
@@ -92,7 +97,12 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
                 start_ind = np.searchsorted(f['scales']['sim_time'][:], start_time)
 
                 full_time = np.append(full_time, f['scales']['sim_time'][start_ind:], axis=0)
-                avg_K = np.append(avg_K, f['tasks']['avg_K'][start_ind:], axis=0)
+                if k_exists:
+                    try:
+                        avg_K = np.append(avg_K, f['tasks']['avg_K'][start_ind:], axis=0)
+                    except:
+                        print("no avg_k")
+                        k_exists = False
                 avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][start_ind:], axis=0)
                 avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][start_ind:], axis=0)
                 avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:], axis=0)
@@ -102,8 +112,10 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     avg_wT = np.ravel(avg_wT)
     avg_vorticity_sq = np.ravel(avg_vorticity_sq)
     avg_grad_T_sq = np.ravel(avg_grad_T_sq)
-    avg_K = np.ravel(avg_K)
-
+    if k_exists:
+        avg_K = np.ravel(avg_K)
+    else:
+        avg_K = np.zeros_like(avg_wT)
 
     increased = full_time[1:] >= full_time[:-1]
     if not np.all(increased):
@@ -111,7 +123,8 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
         indxs = np.argsort(full_time)
 
         full_time = full_time[indxs] 
-        avg_K = avg_K[indxs] 
+        if k_exists:
+            avg_K = avg_K[indxs] 
         avg_wT = avg_wT[indxs] 
         avg_vorticity_sq = avg_vorticity_sq[indxs] 
         avg_grad_T_sq = avg_grad_T_sq[indxs] 
