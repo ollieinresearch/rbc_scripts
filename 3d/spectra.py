@@ -604,6 +604,10 @@ class RBCSpectraAnalyzer:
 def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
     fp       = Path(file)
     basepath = Path(fp.parents[1])
+    spec_file = fp.parent / f"{fp.stem}.npz"
+    
+    if spec_file.exists():
+        return
 
     (basepath / "res_check_3d").mkdir(exist_ok=True)
     (basepath / "res_check_temp").mkdir(exist_ok=True)

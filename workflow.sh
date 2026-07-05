@@ -116,6 +116,44 @@ srun_sim() {
 }
 
 
+
+preload_dedalus() {
+
+    FULL_PRELOAD_TIME=$(echo "$TOTAL_TIME+$PRELOAD_TIME" | bc)
+
+    srun -n $N -c $C python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
+    --Ra="$RA" \
+    --Pr="$PR" \
+    --nz="$RES_Z" \
+    --nx="$RES_HOR" \
+    --gamma=$GAM \
+    --dt="$DT" \
+    --sim_time="$FULL_PRELOAD_TIME" \
+    --index="$IND" \
+    --basepath="$PWD" \
+    --stepper="$STEPPER" \
+    --Lx="$LX" \
+    --Ly="$LY" \
+    --meshx="$MESHX" \
+    --meshy="$MESHY" \
+    --cfl_safety="$CFL_SAFETY" \
+    --cfl_threshold="$CFL_THRESHOLD" \
+    --cfl_cadence="$CFL_CADENCE" \
+    --a_freq="$A_FREQ" \
+    --snaps_freq="$SNAPS_FREQ" \
+    --state_freq="$STATE_FREQ" \
+    --tmp="$TMP" \
+    --par="$PARA" \
+    ${CFL:+--cfl} \
+    ${SNAPSHOTS:+--snapshots} &
+
+    wait
+
+
+
+}
+
+
 test_parallel() {
     
     mpirun --timeout 300 python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
@@ -350,8 +388,11 @@ res_check_combined_test() {
     mkdir $PWD/res_check_temp
     mkdir $PWD/res_check_3d
 
+    export OMP_NUM_THREADS=32
+    export NUMEXPR_MAX_THREADS=32
+
     #python3 $SCRIPTS_3D/spectra.py $PWD/test/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
-    srun -n 6 -c $(($C/6)) python3 $SCRIPTS_3D/spectra.py $PWD/snapshots/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
+    srun -n 32 -c $(($N/32)) python3 $SCRIPTS_3D/spectra.py $PWD/snapshots/*.h5 --vmins=$VMINS --vmaxs=$VMAXS --tmins=$TMINS --tmaxs=$TMAXS
 
     ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_temp/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_temp/movie.mp4
     ffmpeg -y -r $FPS -pattern_type glob -i 'res_check_3d/*.png' -threads 32 -pix_fmt yuv420p $PWD/res_check_3d/movie.mp4
@@ -361,7 +402,7 @@ res_check_combined_test() {
 
     combine_spectra
 
-    python3 -n 1 -c $(($N*$C)) $SCRIPTS_3D/spectra_cumulative.py $PWD
+    srun -n 1 -c $N python3 $SCRIPTS_3D/spectra_cumulative.py $PWD
 }
 
 

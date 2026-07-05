@@ -82,7 +82,6 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
             avg_K = f['tasks']['avg_K'][:]
             k_exists = True
         except:
-            print("no avg_k")
             k_exists = False
         avg_wT = f['tasks']['avg_wT'][:]
         avg_vorticity_sq = f['tasks']['avg_vorticity_sq'][:]
@@ -95,17 +94,20 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
             start_time = full_time[-1]
             if f['scales']['sim_time'][-1] > start_time:
                 start_ind = np.searchsorted(f['scales']['sim_time'][:], start_time)
+                end_ind=f['tasks']['avg_grad_T_sq'].shape[0]
 
-                full_time = np.append(full_time, f['scales']['sim_time'][start_ind:], axis=0)
+                full_time = np.append(full_time, f['scales']['sim_time'][start_ind:end_ind], axis=0)
                 if k_exists:
                     try:
-                        avg_K = np.append(avg_K, f['tasks']['avg_K'][start_ind:], axis=0)
+                        avg_K = np.append(avg_K, f['tasks']['avg_K'][start_ind:end_ind], axis=0)
+                        
                     except:
                         print("no avg_k")
                         k_exists = False
-                avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][start_ind:], axis=0)
-                avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][start_ind:], axis=0)
-                avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:], axis=0)
+                avg_wT = np.append(avg_wT, f['tasks']['avg_wT'][start_ind:end_ind], axis=0)
+                avg_vorticity_sq = np.append(avg_vorticity_sq, f['tasks']['avg_vorticity_sq'][start_ind:end_ind], axis=0)
+                avg_grad_T_sq = np.append(avg_grad_T_sq, f['tasks']['avg_grad_T_sq'][start_ind:end_ind], axis=0)
+
                 
 
     # Flatten to one axis (time), Dedalus automatically recognizes there are volume axes.
@@ -114,6 +116,7 @@ def main(basepath: Path, start_ave: np.float64, end_ave: np.float64):
     avg_grad_T_sq = np.ravel(avg_grad_T_sq)
     if k_exists:
         avg_K = np.ravel(avg_K)
+        
     else:
         avg_K = np.zeros_like(avg_wT)
 
