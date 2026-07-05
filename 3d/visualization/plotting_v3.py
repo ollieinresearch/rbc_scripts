@@ -186,7 +186,8 @@ def main(h5_file, start, count, output_dir, mvort, mvert, nu):
             lin_color = np.linspace(min_vort, max_vort, 256)
             zero_start = np.searchsorted(lin_color, 0)
 
-            ω_opacity_tf = 1.0-np.exp(-300000000000.0*(w_opacity)**26)
+            ω_opacity_tf = 1.0-np.exp(-300000000000.0*(w_opacity)**22)
+            # ω_opacity_tf = 1.0-np.exp(-300000000000.0*(w_opacity)**26)
             if zero_start < 125:
                 if zero_start > 0:
                     ω_opacity_tf[zero_start-1:125] = np.zeros(125-zero_start+1)
