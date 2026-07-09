@@ -430,7 +430,7 @@ res_check_combined_test() {
     rm -rf res_check_temp/*.png
     rm -rf res_check_3d/*.png
 
-    combine_spectra
+    # combine_spectra
 
     srun -n 1 -c $N python3 $SCRIPTS_3D/spectra_cumulative.py $PWD
 }
