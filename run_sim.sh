@@ -33,4 +33,6 @@ compare_spectra
 load_modules_plotting
 plot_snapshots
 
+backup_analyses
+
 exit 0
