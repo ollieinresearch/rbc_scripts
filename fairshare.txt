@@ -2,3 +2,7 @@ sshare -l -A rrg-goluskin -u ollie
 sshare -l -A rrg-goluskin
 sshare -l -A def-goluskin -u ollie
 sshare -l -A def-goluskin
+
+# ror
+sshare -l -A def-goluskin_cpu -u ollie
+sshare -l -A def-goluskin_cpu
