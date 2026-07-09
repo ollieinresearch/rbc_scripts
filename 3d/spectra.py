@@ -99,7 +99,7 @@ _THEORY_VEL = {
     "kx":  ([-5/3],
             [r"$k_x^{-5/3}$ (Kolmogorov)"]),
     "xy":  ([-5/3, -3],
-            [r"$k_\perp^{-5/3}$ (Kolmogorov)", r"$k_\perp^{-3}$ (enstrophy)"]),
+            [r"$k_{perp}^{-5/3}$ (Kolmogorov)", r"$k_{perp}^{-3}$ (enstrophy)"]),
 }
 
 _THEORY_TEMP = {
@@ -110,8 +110,8 @@ _THEORY_TEMP = {
     "kx":  ([-5/3, -7/5],
             [r"$k_x^{-5/3}$ (Obukhov-Corrsin)", r"$k_x^{-7/5}$ (Bolgiano)"]),
     "xy":  ([-5/3, -7/5],
-            [r"$k_\perp^{-5/3}$ (Obukhov-Corrsin)",
-             r"$k_\perp^{-7/5}$ (Bolgiano)"]),
+            [r"$k_{perp}^{-5/3}$ (Obukhov-Corrsin)",
+             r"$k_{perp}^{-7/5}$ (Bolgiano)"]),
 }
 
 
@@ -568,8 +568,8 @@ class RBCSpectraAnalyzer:
              "Horizontal marginal ($x$)", "kx"),
 
             (axes[1, 1], "k_xy", "E_xy",
-             r"$n_\perp = \sqrt{n_x^2 + n_y^2}$  [mode number]",
-             r"$E(n_\perp)$",
+             r"$n_{perp} = \sqrt{n_x^2 + n_y^2}$  [mode number]",
+             r"$E(n_{perp})$",
              "2D planar spectrum", "xy"),
         ]
 
@@ -604,9 +604,10 @@ class RBCSpectraAnalyzer:
 def main(file, start, count, vmins, vmaxs, tmins, tmaxs):
     fp       = Path(file)
     basepath = Path(fp.parents[1])
-    spec_file = fp.parent / f"{fp.stem}.npz"
+    spec_file = fp.parent / f"{fp.stem}_spectra.npz"
     
     if spec_file.exists():
+        print(f"Skipping {fp.name}: {spec_file.name} already exists.")
         return
 
     (basepath / "res_check_3d").mkdir(exist_ok=True)
@@ -734,9 +735,22 @@ if __name__ == "__main__":
     tmins = list(map(float, args["--tmins"].split(",")))
     tmaxs = list(map(float, args["--tmaxs"].split(",")))
 
-    post.visit_writes(
-        args["<files>"],
-        main,
-        vmins=vmins, vmaxs=vmaxs,
-        tmins=tmins, tmaxs=tmaxs,
-    )
+    try:
+        from mpi4py import MPI
+        _comm = MPI.COMM_WORLD
+        _rank = _comm.rank
+        _size = _comm.size
+    except ImportError:
+        _rank, _size = 0, 1
+ 
+    all_files = sorted(args["<files>"])   # sort for reproducible ordering
+    my_files  = all_files[_rank::_size]   # this rank's disjoint slice
+ 
+    if _rank == 0:
+        print(f"spectra.py: {len(all_files)} file(s) distributed across "
+              f"{_size} rank(s).")
+ 
+    for fp in my_files:
+        main(fp, 0, None,
+             vmins=vmins, vmaxs=vmaxs,
+             tmins=tmins, tmaxs=tmaxs)

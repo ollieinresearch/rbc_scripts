@@ -13,8 +13,8 @@ load_modules() {
     source $ENV_PATH/bin/activate;
 
     # Dedalus performance tip!
-    export OMP_NUM_THREADS=1
-    export NUMEXPR_MAX_THREADS=1
+    export OMP_NUM_THREADS=$C
+    export NUMEXPR_MAX_THREADS=$C
     
 }
 
