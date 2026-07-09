@@ -115,6 +115,38 @@ srun_sim() {
 
 
 
+trill_run_sim() {
+
+    mpirun -n $N python3 "$SCRIPTS_3D/fixed_get_file.py" "$SCRIPTS_3D/rayleigh_benard_script.py" \
+    --Ra="$RA" \
+    --Pr="$PR" \
+    --nz="$RES_Z" \
+    --nx="$RES_HOR" \
+    --gamma=$GAM \
+    --dt="$DT" \
+    --sim_time="$TOTAL_TIME" \
+    --index="$IND" \
+    --basepath="$PWD" \
+    --stepper="$STEPPER" \
+    --Lx="$LX" \
+    --Ly="$LY" \
+    --meshx="$MESHX" \
+    --meshy="$MESHY" \
+    --cfl_safety="$CFL_SAFETY" \
+    --cfl_threshold="$CFL_THRESHOLD" \
+    --cfl_cadence="$CFL_CADENCE" \
+    --a_freq="$A_FREQ" \
+    --snaps_freq="$SNAPS_FREQ" \
+    --state_freq="$STATE_FREQ" \
+    --tmp="$TMP" \
+    --par="$PARA" \
+    ${CFL:+--cfl} \
+    ${SNAPSHOTS:+--snapshots}
+
+}
+
+
+
 preload_dedalus() {
 
     FULL_PRELOAD_TIME=$(echo "$TOTAL_TIME+$PRELOAD_TIME" | bc)

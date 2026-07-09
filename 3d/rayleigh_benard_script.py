@@ -342,6 +342,7 @@ try:
                 main_start = time.time()
 
             solver.step(dt)
+
             if (solver.iteration-1) % message_num_iters == 0:
                 l_dts = len(dts)
                 avg_Re = flow.grid_average('Re')
