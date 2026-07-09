@@ -48,7 +48,7 @@ determine_ic() {
 
 run_sim() {
 
-    mpirun -n $N python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
+    mpirun -n $N --map-by :PE=$C python3 "$SCRIPTS_3D/rayleigh_benard_script.py" \
     --Ra="$RA" \
     --Pr="$PR" \
     --nz="$RES_Z" \
@@ -117,7 +117,7 @@ srun_sim() {
 
 trill_run_sim() {
 
-    mpirun -n $N python3 "$SCRIPTS_3D/fixed_get_file.py" "$SCRIPTS_3D/rayleigh_benard_script.py" \
+    mpirun -n $N --map-by :PE=$C python3 "$SCRIPTS_3D/fixed_get_file.py" "$SCRIPTS_3D/rayleigh_benard_script.py" \
     --Ra="$RA" \
     --Pr="$PR" \
     --nz="$RES_Z" \
@@ -430,7 +430,7 @@ res_check_combined_test() {
     rm -rf res_check_temp/*.png
     rm -rf res_check_3d/*.png
 
-    combine_spectra
+    # combine_spectra
 
     srun -n 1 -c $N python3 $SCRIPTS_3D/spectra_cumulative.py $PWD
 }
