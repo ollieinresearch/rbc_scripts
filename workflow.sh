@@ -72,9 +72,7 @@ run_sim() {
     --tmp="$TMP" \
     --par="$PARA" \
     ${CFL:+--cfl} \
-    ${SNAPSHOTS:+--snapshots} &
-
-    wait
+    ${SNAPSHOTS:+--snapshots}
 
 
 

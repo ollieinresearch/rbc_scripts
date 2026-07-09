@@ -198,6 +198,7 @@ problem.add_equation("ez@tau_u1 = 0", condition="nx == 0 and ny == 0")
 problem.add_equation("b(z=Lz) = 0")
 problem.add_equation("u(z=Lz) = 0")
 
+logger.info("Parameters added, problem defined. Building timestepping matrices.")
 
 # Solver
 solver = problem.build_solver(timestepper)
