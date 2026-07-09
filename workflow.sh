@@ -564,3 +564,15 @@ combine_spectra() {
 combine_flow_spectra() {
     ffmpeg -i $PWD/visualization/movie.mp4 -i $PWD/outputs/spectra.mp4 -filter_complex "[0:v]scale=4800:-1[v0]; [1:v]scale=4800:-1[v1]; [v0][v1]vstack=inputs=2[v]" -map "[v]" $PWD/outputs/movie.mp4
 }
+
+
+
+
+backup_analyses() {
+
+    cd $SCRATCH/ollie_rb_data/3d
+
+    find . -type d -name analysis -print0 | rsync -avR -r --from0 --files-from=- . $HOME/ollie_rb_data/3d/
+    find . -type d -name horizontal_analysis -print0 | rsync -avR -r --from0 --files-from=- . $HOME/ollie_rb_data/3d/
+
+}
