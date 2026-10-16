@@ -1,0 +1,19 @@
+# Simulation/analysis venv ($ENV_PATH, "ded3"): pip install --no-index -r requirements.txt
+# Dedalus 3.0.4 and its declared dependencies (docopt, pytest*, xarray, ... are Dedalus'
+# own requirements), plus pandas for rbc. numpy/scipy/matplotlib/mpi4py/h5py come from the
+# scipy-stack, mpi4py and hdf5-mpi modules loaded by shell/setup.sh.
+coverage==7.10.7+computecanada
+dedalus==3.0.4+computecanada
+docopt==0.6.2+computecanada
+iniconfig==2.1.0+computecanada
+numpy==1.26.4+computecanada
+packaging==25.0+computecanada
+pandas==2.3.3+computecanada
+pluggy==1.6.0+computecanada
+py==1.11.0+computecanada
+pytest==8.4.2+computecanada
+pytest_benchmark==5.1.0+computecanada
+pytest_cov==7.0.0+computecanada
+pytest_parallel==0.1.1+computecanada
+tblib==3.2.1+computecanada
+xarray==2025.10.1+computecanada

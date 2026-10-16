@@ -1,0 +1,14 @@
+# Results stay private until the paper is published (backed up to $HOME and $PROJECT instead)
+data/results*.csv
+data/results*.parquet
+figures/
+# Documentation build output
+docs/_build/
+docs/gallery/auto_examples/
+docs/reference/api/generated/
+docs/sg_execution_times.rst
+# Python
+__pycache__/
+*.egg-info/
+build/
+.ipynb_checkpoints/

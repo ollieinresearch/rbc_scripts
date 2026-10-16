@@ -1,0 +1,21 @@
+/* Side-by-side cluster comparisons: differing lines are highlighted, and each numbered
+   difference has its own colour, matched by the badge in the explanation below. */
+.highlight .hll { background-color: var(--rbc-hl, rgba(255, 196, 0, 0.28)); }
+.cluster-card .sd-card-header { font-weight: 600; }
+.cluster-fir .sd-card-header { border-left: 4px solid #1f77b4; }
+.cluster-trillium .sd-card-header { border-left: 4px solid #d62728; }
+
+/* Slightly tighter tables of options and columns. */
+table.docutils td, table.docutils th { padding: 0.3rem 0.6rem; }
+
+/* Derivation dropdowns: a calmer colour than the default admonitions. */
+details.sd-dropdown.derivation > summary { background: var(--pst-color-surface); }
+
+/* Status placeholders the maintainer still needs to fill in. */
+.todo-note { border-left: 4px solid var(--pst-color-warning); padding-left: 0.6rem; }
+
+/* No notebook downloads in the gallery (scripts only). */
+.sphx-glr-download-jupyter { display: none; }
+
+/* Comparison cards: smaller code so lines fit side by side. */
+.cluster-card pre { font-size: 0.78rem; }

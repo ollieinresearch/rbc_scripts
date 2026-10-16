@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rbc"
+version = "0.2.0"
+description = "Rayleigh-Benard convection simulation scripts: Dedalus v3 helpers, analysis and figures"
+license = {text = "GPL-3.0-or-later"}
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "pandas", "h5py", "matplotlib"]
+
+[project.optional-dependencies]
+vis = ["pyvista"]
+parquet = ["pyarrow"]
+docs = [
+    "sphinx>=8", "pydata-sphinx-theme", "myst-parser", "sphinx-design", "sphinx-copybutton",
+    "sphinx-argparse", "sphinx-tippy", "sphinx-gallery", "numpydoc",
+]
+
+[tool.setuptools.packages.find]
+include = ["rbc*"]
+
+[tool.setuptools.package-data]
+"rbc.style" = ["*.mplstyle"]

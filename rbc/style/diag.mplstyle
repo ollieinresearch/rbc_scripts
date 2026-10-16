@@ -1,0 +1,13 @@
+# Diagnostic figures written into each run's outputs/ on the cluster.
+# Layered on top of paper.mplstyle: same look, larger, raster-friendly, no LaTeX.
+
+font.size          : 11
+axes.labelsize     : 11
+axes.titlesize     : 11
+legend.fontsize    : 10
+xtick.labelsize    : 10
+ytick.labelsize    : 10
+lines.linewidth    : 1.2
+figure.dpi         : 100
+savefig.dpi        : 200
+text.usetex        : False
