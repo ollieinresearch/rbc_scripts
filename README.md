@@ -10,7 +10,7 @@ This repository holds the simulation, the job scripts for Fir and Trillium, the 
 package (restarts, checkpoint management, analysis, convergence and resolution checks,
 results collection) and every figure of the paper.
 
-**Documentation: https://OWNER.github.io/rbc_scripts/** (built from `docs/`; to build it
+**Documentation: https://ollieinresearch.github.io/rbc_scripts/** (built from `docs/`; to build it
 locally, `pip install -e ".[docs]" && sphinx-build -b html docs docs/_build/html`).
 
 ## Install on a cluster
