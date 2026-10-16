@@ -25,7 +25,7 @@ import rbc  # noqa: E402
 logging.getLogger("fontTools").setLevel(logging.ERROR)   # font-subsetting chatter in gallery output
 
 # Edit to the repository's address once it is on GitHub.
-GITHUB_URL = "https://github.com/OWNER/rbc_scripts"
+GITHUB_URL = "https://github.com/ollieinresearch/rbc_scripts"
 
 project = "Rayleigh–Bénard Convection Simulation Scripts"
 author = "Oliver Brown"
