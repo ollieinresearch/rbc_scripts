@@ -311,6 +311,7 @@ def main(argv=None) -> None:
             solver.step(step_dt)
             if solver.iteration == start_iter + 1:
                 logger.info(f"First step done ({time.time() - t_start:.1f} s, includes first handler writes)")
+                logger.info("-"*64)
             if solver.iteration % 10 == 0:
                 watchdog()
             if spectra is not None:
@@ -324,9 +325,11 @@ def main(argv=None) -> None:
                     logger.error("Re is not finite; stopping.")
                     break
                 if dts:
+                    logger.info("-"*64)
                     logger.info(f"dt changed {len(dts)}x: mean {np.mean(dts):.3e}, "
                                 f"min {np.min(dts):.3e}, max {np.max(dts):.3e}")
                 logger.info(f"Iteration={solver.iteration}, t={solver.sim_time:.5f}, dt={step_dt:.4e}, Re={Re:.2f}")
+                logger.info("-"*64)
                 dts = []
             if CFL is not None:
                 new_dt = CFL.compute_timestep()

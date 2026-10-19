@@ -47,14 +47,9 @@ $Pr = 10^{-2.5} \approx 3.2\times10^{-3}$ is `pr3e-3`. {func}`rbc.cases.parse_ru
 reads them back as exact half-decade exponents ($\log_{10}$ values), which is how every
 script identifies a run; {func}`rbc.cases.folder_value` goes the other way.
 
-The label starts with the number of Chebyshev modes $N_z$. `Gam2` is the
-{term}`aspect ratio` Γ = 2 (so $N_x = N_y = 2N_z$).
+The label starts with the number of Chebyshev modes $N_z$. `Gam2_2` is the
+{term}`aspect ratio` Γ = (2,2) (so $N_x = 2N_z, N_y = 2N_z$).
 
-```{admonition} To fill in
-:class: todo-note
-
-What the trailing `_2` of the label means.
-```
 
 The analysis takes the true grid sizes from the files, not from the label, so a label
 that does not follow the pattern only affects sorting.

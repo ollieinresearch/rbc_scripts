@@ -1,7 +1,7 @@
 #!/bin/bash
 # Lustre clusters (Fir, Rorqual, Nibi): srun launch. Trillium: use run_sim_trillium.sh.
 # Submit with: bash $SCRIPTS_PATH/shell/submit.sh   (queues post-processing too)
-#SBATCH --output=job_sim_%j.out
+#SBATCH --output=jobs/job_sim_%j.out
 #SBATCH --time=11:59:00
 #SBATCH --nodes=27
 #SBATCH --ntasks-per-node=192

@@ -3,6 +3,8 @@
 #     bash $SCRIPTS_PATH/shell/submit.sh                      # picks the launcher for this cluster
 #     bash $SCRIPTS_PATH/shell/submit.sh run_sim.sh [sbatch options]
 # Queues the simulation, then post.sh to start when it ends (whatever its exit state).
+
+mkdir -p jobs
 set -e
 if [[ -n $1 && $1 != -* ]]; then script=$1; shift
 elif [[ ${CC_CLUSTER:-} == trillium ]]; then script=run_sim_trillium.sh

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Trillium (VAST): mpirun launch packed per L3 cache. Lustre clusters: use run_sim.sh.
 # Submit from a login node with: bash $SCRIPTS_PATH/shell/submit.sh
-#SBATCH --output=job_sim_%j.out
+#SBATCH --output=jobs/job_sim_%j.out
 #SBATCH --time=11:59:00
 #SBATCH --nodes=27
 #SBATCH --ntasks-per-node=192
