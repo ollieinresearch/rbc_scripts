@@ -77,7 +77,7 @@ def _secants(g, along, other, name):
         h = a[i + 1] - a[i]
         out.append({"kind": name, along: 0.5 * (a[i] + a[i + 1]), other: g[other].iloc[0],
                     "value": (L[i + 1] - L[i]) / h, "err": np.hypot(s[i], s[i + 1]) / h,
-                    "span": h, "source": "edge"})
+                    "span": h, "Lmin": min(L[i], L[i + 1]), "source": "edge"})
     return out
 
 
@@ -93,14 +93,15 @@ def edges(d: pd.DataFrame) -> pd.DataFrame:
     -------
     pandas.DataFrame
         Columns ``kind`` (alpha or beta), ``x``, ``y`` (midpoint), ``value``, ``err``,
-        ``span`` (step in decades) and ``source`` (``"edge"``).
+        ``span`` (step in decades), ``Lmin`` (the smaller L of the two runs) and ``source``
+        (``"edge"``).
     """
     rows = []
     for _, g in d.groupby("y"):
         rows += _secants(g, "x", "y", "beta")
     for _, g in d.groupby("x"):
         rows += _secants(g, "y", "x", "alpha")
-    return pd.DataFrame(rows, columns=["kind", "x", "y", "value", "err", "span", "source"])
+    return pd.DataFrame(rows, columns=["kind", "x", "y", "value", "err", "span", "Lmin", "source"])
 
 
 def cells(d: pd.DataFrame) -> pd.DataFrame:
@@ -116,8 +117,8 @@ def cells(d: pd.DataFrame) -> pd.DataFrame:
     pandas.DataFrame
         Columns ``x``, ``y`` (cell centre), ``alpha``, ``alpha_err``, ``beta``,
         ``beta_err``, ``cov`` (their covariance), ``s_slice`` = beta - alpha/2 (slope
-        along the Pr ∝ Ra^-1/2 slice through the centre), ``s_slice_err`` and ``c``
-        (that slice's label log10 Pr_0).
+        along the Pr ∝ Ra^-1/2 slice through the centre), ``s_slice_err``, ``c``
+        (that slice's label log10 Pr_0) and ``Lmin`` (the smallest L of the four corners).
     """
     xs, ys = np.sort(d["x"].unique()), np.sort(d["y"].unique())
     look = {(r.x, r.y): (r.L, r.sL) for r in d.itertuples()}
@@ -139,7 +140,8 @@ def cells(d: pd.DataFrame) -> pd.DataFrame:
             rows.append(dict(x=0.5 * (x0 + x1), y=0.5 * (y0 + y1), alpha=alpha, alpha_err=sa,
                              beta=beta, beta_err=sb, cov=cov, s_slice=s_minus,
                              s_slice_err=np.sqrt(sb ** 2 + 0.25 * sa ** 2 - cov),
-                             c=0.5 * (y0 + y1) + 0.5 * (0.5 * (x0 + x1) - 5)))   # slice id log10 Pr_0
+                             c=0.5 * (y0 + y1) + 0.5 * (0.5 * (x0 + x1) - 5),
+                             Lmin=min(L00, L10, L01, L11)))   # slice id log10 Pr_0
     return pd.DataFrame(rows)
 
 
@@ -203,7 +205,7 @@ def lines(d: pd.DataFrame, min_points: int = 3) -> pd.DataFrame:
             f = _wfit(g[along], g["L"], g["sL"], 1)
             rows.append({"kind": name, other: val, along: g[along].mean(), "lo": g[along].min(),
                          "hi": g[along].max(), "value": f["coef"][0], "err": f["err"][0],
-                         "chi2_dof": f["chi2_dof"], "n": len(g), "source": "line"})
+                         "chi2_dof": f["chi2_dof"], "n": len(g), "Lmin": g["L"].min(), "source": "line"})
     return pd.DataFrame(rows)
 
 

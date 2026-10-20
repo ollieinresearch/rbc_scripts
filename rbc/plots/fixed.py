@@ -51,13 +51,13 @@ def qcol(df, q):
     return df[q], df.get(f"{q}_se")
 
 
-def panel(ax, df, q, along, lit=None, slopes=False):
+def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None):
     """One curve per value of the fixed parameter.
 
     Parameters
     ----------
     ax : matplotlib.axes.Axes
-        Axes.
+        Axes for the curves.
     df : pandas.DataFrame
         Results rows.
     q : {"Nu-1", "Nu", "Re"}
@@ -67,24 +67,28 @@ def panel(ax, df, q, along, lit=None, slopes=False):
     lit : pandas.DataFrame, optional
         Published data to overlay.
     slopes : bool, optional
-        Add each curve's fitted exponent to its legend label.
+        Add each curve's fitted exponent (a single power law through all its points) to
+        its legend entry.
+    leg_ax : matplotlib.axes.Axes, optional
+        Empty axes beside ``ax`` that holds the legend as one column (default: inside
+        ``ax``).
     """
     other, x = ("log_ra", "Pr") if along == "pr" else ("log_pr", "Ra")
     vals = sorted(df[other].unique())
     cmap = colormaps["viridis"]
     lo, hi = min(vals), max(vals)
+    sym = r"\alpha" if along == "pr" else r"\beta"
     for v in vals:
         g = df[df[other] == v].sort_values(x)
         if len(g) < 2:
             continue
         col = cmap(0.9 * (v - lo) / max(hi - lo, 1e-9))
-        lab = rf"$Ra = {style.pow10(v)}$" if along == "pr" else rf"$Pr = {style.pow10(v)}$"
+        lab = rf"${style.pow10(v)}$"
         y, err = qcol(g, q)
-        if slopes and len(g) >= 2:
+        if slopes:      # value first, so the numbers line up in the legend column
             f = fit_loglog(g[x].values, y.values, None if err is None else err.values)
-            sym = r"\alpha" if along == "pr" else r"\beta"
-            lab += rf": ${sym}={f['coef'][-2]:.3f}$"
-        ax.errorbar(g[x], y, yerr=err, color=col, marker="o", ms=3.5, lw=0.9, capsize=1.5, label=lab)
+            lab = rf"${sym} = {f['coef'][-2]:.3f}$ at {lab}"
+        ax.errorbar(g[x], y, yerr=err, color=col, marker="o", ms=3, lw=0.9, capsize=1.5, label=lab)
     if lit is not None:
         for i, (src, g) in enumerate(lit.groupby("source")):
             y, _ = qcol(g, q) if (q != "Nu-1" or "Nu" in g) else (None, None)
@@ -97,8 +101,16 @@ def panel(ax, df, q, along, lit=None, slopes=False):
     tidy_log_y(ax)
     ax.set_xlabel(style.SYM["Pr" if along == "pr" else "Ra"])
     ax.set_ylabel(r"$Nu-1$" if q == "Nu-1" else style.SYM[q])
-    ax.legend(fontsize=6.5, ncol=1 if len(vals) < 5 else 2, loc="upper left", bbox_to_anchor=(0, -0.2),
-              columnspacing=0.8, handletextpad=0.4)
+    fixed = "Ra" if along == "pr" else "Pr"
+    title = rf"fixed ${fixed}$" + (r" (fitted slope)" if slopes else "")
+    h, l = ax.get_legend_handles_labels()
+    if leg_ax is None:
+        ax.legend(h, l, title=title, fontsize=6.5, title_fontsize=7, loc="best")
+    else:
+        leg_ax.axis("off")
+        leg_ax.legend(h, l, title=title, loc="center left", borderaxespad=0, fontsize=7,
+                      title_fontsize=7, handlelength=1.4, handletextpad=0.5, labelspacing=0.35,
+                      alignment="left")
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -132,12 +144,15 @@ def main(argv=None) -> None:
 
     style.use("paper", usetex=False if a.no_tex else None)
     df = rc.load_results(a.results)
+    rc.require_columns(df, ["Nu" if a.q == "Nu-1" else a.q], "the fixed-parameter figure")
     df = df[(df["status"] == "finished") & np.isfinite(df["Nu" if a.q == "Nu-1" else a.q])]
     lit = pd.read_csv(a.lit) if a.lit else None
-    fig, axes = plt.subplots(1, len(a.along), figsize=style.figsize(1.0, 0.6 if len(a.along) > 1 else 0.95),
-                             squeeze=False)
-    for ax, along in zip(axes[0], a.along):
-        panel(ax, df, a.q, along, lit, a.slopes)
+    n = len(a.along)
+    w, _ = style.figsize(1.0)
+    fig = plt.figure(figsize=(w, 0.37 * w * n + 0.1))
+    gs = fig.add_gridspec(n, 2, width_ratios=[2.5, 1])
+    for k, along in enumerate(a.along):
+        panel(fig.add_subplot(gs[k, 0]), df, a.q, along, lit, a.slopes, leg_ax=fig.add_subplot(gs[k, 1]))
     print(style.save(fig, a.out / f"fixed_{a.q.replace('-', 'm')}_{'_'.join(a.along)}", png=a.png))
 
 

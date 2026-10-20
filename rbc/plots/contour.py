@@ -57,6 +57,7 @@ def main(argv=None) -> None:
     style.use("paper", usetex=False if a.no_tex else None)
 
     df = rc.load_results(a.results)
+    rc.require_columns(df, [a.q], "the contour figure")
     df = df[(df["status"] == "finished") & np.isfinite(df[a.q])]
     x, y = df["log_ra"].values.astype(float), df["log_pr"].values.astype(float)
     v = np.log10(df[a.q].values / df["Ra"].values ** a.comp)

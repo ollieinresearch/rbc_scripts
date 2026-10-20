@@ -236,6 +236,7 @@ def main(argv=None) -> None:
     alpha = a.alpha if a.alpha is not None else alpha
     beta = a.beta if a.beta is not None else beta
     df = rc.load_results(a.results)
+    rc.require_columns(df, ["Nu" if a.q == "Nu-1" else a.q], "the scaling figure")
     df = df[np.isfinite(df["Nu" if a.q == "Nu-1" else a.q])]
     n = len(a.family)
     fig, axes = plt.subplots(1, n, figsize=style.figsize(a.width, 0.55 if n > 1 else 0.95), squeeze=False)

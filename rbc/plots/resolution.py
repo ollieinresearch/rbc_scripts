@@ -192,7 +192,9 @@ def main(argv=None) -> None:
     """
     a = get_parser().parse_args(argv)
     style.use("paper", usetex=False if a.no_tex else None)
-    st = studies(rc.load_results(a.results, production=False), a.min_runs)
+    df = rc.load_results(a.results, production=False)
+    rc.require_columns(df, ["nz", "Nu_gradT", "Nu_vort"], "the resolution figure")
+    st = studies(df, a.min_runs)
     if not st:
         raise SystemExit("no (Ra, Pr) point has enough resolutions")
     if a.figure == "study":

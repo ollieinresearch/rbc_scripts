@@ -97,6 +97,9 @@ def get_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m rbc.plots.param_grid", description=__doc__.split("\n")[0])
     p.add_argument("--dim", type=int, choices=(2, 3), nargs="*", default=[2, 3], help="which dimensions to draw (one figure each)")
     p.add_argument("--csv", type=Path, default=rc.CASES_CSV, help="the cases registry")
+    p.add_argument("--results", type=Path,
+                   help="draw the points of this results file (e.g. a simple Ra,Pr,Nusselt CSV, all "
+                        "shown as finished) instead of cases.csv")
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--span", choices=("all", "finished"), default="all", help="slice lines run through all points, or stop at the last finished one")
     p.add_argument("--ra-inv", action="store_true", help="also draw slices Pr ∝ Ra^-1")
@@ -122,7 +125,17 @@ def main(argv=None) -> None:
     a = get_parser().parse_args(argv)
 
     style.use("paper", usetex=False if a.no_tex else None)
-    allcases = rc.load_cases(a.csv)
+    if a.results:
+        allcases = rc.load_results(a.results, dim=None)
+        allcases = allcases.drop_duplicates(["dim", "log_ra", "log_pr"])
+        if "status" not in allcases:
+            allcases["status"] = "finished"
+        allcases["status"] = allcases["status"].fillna("finished")
+        allcases["res_check"] = allcases.get("res_check", False)
+        allcases["res_check"] = allcases["res_check"].fillna(False).astype(bool)
+        a.dim = [d for d in a.dim if (allcases["dim"] == d).any()]
+    else:
+        allcases = rc.load_cases(a.csv)
     ylim = _limits(allcases["log_pr"], a.pad)   # shared so 2d/3d panels line up
 
     for dim in a.dim:

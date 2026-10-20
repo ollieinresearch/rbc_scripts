@@ -154,6 +154,7 @@ def main(argv=None) -> None:
     a = get_parser().parse_args(argv)
     style.use("paper", usetex=False if a.no_tex else None)
     df = rc.load_results(a.results)
+    rc.require_columns(df, ["delta_T", "delta_u_slope", "nz"], "the boundary-layer figure")
     df = df[df["status"] == "finished"].dropna(subset=["delta_T", "delta_u_slope"])
     (ratio_fig if a.figure == "ratio" else lambda d, o, pn: grid_fig(d, a.points, o, pn, a.span))(df, a.out, a.png)
 

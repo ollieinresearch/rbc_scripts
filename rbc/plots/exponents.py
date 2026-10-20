@@ -67,8 +67,8 @@ def gather(d, method, use_cells):
     Returns
     -------
     pandas.DataFrame
-        Columns ``kind``, ``x``, ``y``, ``value``, ``err``, ``source`` (and ``lo``,
-        ``hi`` for lines).
+        Columns ``kind``, ``x``, ``y``, ``value``, ``err``, ``Lmin``, ``source`` (and
+        ``lo``, ``hi`` for lines).
     """
     parts = [ex.edges(d) if method == "pairs" else ex.lines(d)]
     if use_cells:
@@ -76,12 +76,19 @@ def gather(d, method, use_cells):
         if len(c):
             for k in ("alpha", "beta"):
                 parts.append(pd.DataFrame(dict(kind=k, x=c.x, y=c.y, value=c[k], err=c[f"{k}_err"],
-                                               source="cell")))
+                                               Lmin=c.Lmin, source="cell")))
     return pd.concat(parts, ignore_index=True)
 
 
-def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=None):
+def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=None, lmin=-np.inf,
+          ref_labels=True):
     """One exponent against one parameter, coloured by the other.
+
+    Two-point estimates along the same row (same value of the other parameter) are
+    joined by a thin line in that row's colour, so each row's trend can be followed;
+    cell-centre estimates are open diamonds. Estimates involving a run with
+    log10 Q < ``lmin`` are drawn as grey crosses and left out of the trend fit and of
+    the y range.
 
     Parameters
     ----------
@@ -100,48 +107,31 @@ def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=No
     refs : list of float
         Reference values drawn as dotted lines.
     fit_source : {"edge", "line", "cell"}
-        Estimates used for the flatness fit.
+        Estimates used for the trend fit.
     surf : rbc.analysis.exponents.Surface, optional
-        Surface fit to overlay along each row or column (within the data range).
+        Surface fit whose exponents are drawn along each row or column (within the data).
     grid : pandas.DataFrame, optional
         The data points (needed with ``surf``).
+    lmin : float, optional
+        Smallest log10 Q of the runs an estimate may use.
+    ref_labels : bool, optional
+        Label the reference lines at the right edge.
 
     Returns
     -------
     dict
-        Output of :func:`rbc.analysis.exponents.flatness` (empty if too few points).
+        Output of :func:`rbc.analysis.exponents.flatness` for the kept estimates (empty
+        if too few).
     """
     other = "y" if coord == "x" else "x"
     e = est[est.kind == kind]
-    for src, mk, ms, fill in (("edge", "o", 3.5, True), ("line", "o", 4, True), ("cell", "D", 2.6, False)):
-        g = e[e.source == src]
-        if g.empty:
-            continue
-        cols = cmap(norm(g[other]))
-        xerr = None
-        if src == "line" and "lo" in g and coord == ("y" if kind == "alpha" else "x"):
-            xerr = np.vstack([10 ** g[coord] - 10 ** g["lo"], 10 ** g["hi"] - 10 ** g[coord]])
-        for i, (_, r) in enumerate(g.iterrows()):
-            ax.errorbar(10 ** r[coord], r["value"], yerr=r["err"] if np.isfinite(r["err"]) else None,
-                        xerr=None if xerr is None else xerr[:, [i]], fmt=mk, ms=ms, color=cols[i],
-                        mfc=cols[i] if fill else "white", mew=0.7, elinewidth=0.6, capsize=1.2, zorder=3)
+    ok = e["Lmin"] >= lmin if "Lmin" in e else pd.Series(True, index=e.index)
     for v in refs:
-        ax.axhline(v, color="0.45", lw=0.7, ls=":", zorder=1)
-        ax.annotate(frac(v), (1.0, v), xycoords=("axes fraction", "data"), xytext=(2, 0),
-                    textcoords="offset points", va="center", fontsize=7, color="0.35",
-                    annotation_clip=False)
-    fs = e[e.source == fit_source]
-    stats = ex.flatness(fs[coord], fs["value"], fs["err"]) if len(fs) > 2 else {}
-    if stats:
-        t = np.linspace(fs[coord].min(), fs[coord].max(), 50)
-        ax.plot(10 ** t, stats["mean"] + 0 * t, color="0.2", lw=0.6, ls="--", zorder=2)
-        ax.plot(10 ** t, stats["slope"] * t + stats["intercept"], color="k", lw=1, zorder=2)
-        chi = (rf"$\chi^2_\nu = {stats['chi2_flat']:.2g}$" if np.isfinite(stats["chi2_flat"])
-               else "errors unknown")
-        txt = (rf"$d{SYMB[kind]}/d\log_{{10}}{COORD[coord]} = {stats['slope']:+.3f}\pm{stats['slope_err']:.3f}$" "\n"
-               rf"$\langle{SYMB[kind]}\rangle = {stats['mean']:.3f}\pm{stats['mean_err']:.3f}$, " + chi)
-        ax.text(0.03, 0.97, txt, transform=ax.transAxes, va="top", fontsize=6.5,
-                bbox=dict(fc="white", ec="none", alpha=0.8, pad=1.5))
+        ax.axhline(v, color="0.55", lw=0.6, ls=":", zorder=1)
+        if ref_labels:
+            ax.annotate(frac(v), (1.0, v), xycoords=("axes fraction", "data"), xytext=(2, 0),
+                        textcoords="offset points", va="center", fontsize=7, color="0.35",
+                        annotation_clip=False)
     if surf is not None:      # drawn only across the data range of each row/column (no extrapolation)
         for o in np.sort(grid[other].unique()):
             near = grid[np.abs(grid[other] - o) < 1e-9][coord]
@@ -150,7 +140,36 @@ def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=No
             t = np.linspace(near.min(), near.max(), 40)
             xx, yy = (t, np.full_like(t, o)) if coord == "x" else (np.full_like(t, o), t)
             val, _ = surf.exponent(xx, yy, kind)
-            ax.plot(10 ** t, val, color=cmap(norm(o)), lw=0.7, ls="-", alpha=0.6, zorder=1)
+            ax.plot(10 ** t, val, color=cmap(norm(o)), lw=0.6, ls="--", alpha=0.7, zorder=1)
+    for src in ("edge", "line"):     # one thin line per row through its kept estimates
+        g = e[(e.source == src) & ok]
+        for o, r in g.groupby(other):
+            r = r.sort_values(coord)
+            if len(r) > 1:
+                ax.plot(10 ** r[coord], r["value"], color=cmap(norm(o)), lw=0.7, alpha=0.8, zorder=2)
+    for src, mk, ms, fill in (("edge", "o", 3.2, True), ("line", "o", 3.6, True), ("cell", "D", 2.4, False)):
+        g = e[(e.source == src) & ok]
+        for _, r in g.iterrows():
+            col = cmap(norm(r[other]))
+            ax.errorbar(10 ** r[coord], r["value"], yerr=r["err"] if np.isfinite(r["err"]) else None,
+                        fmt=mk, ms=ms, color=col, mfc=col if fill else "white", mew=0.7, elinewidth=0.6,
+                        capsize=1.2, zorder=3)
+    bad = e[~ok]
+    if len(bad):
+        ax.plot(10 ** bad[coord], bad["value"], ls="none", marker="x", ms=3, mew=0.6, color="0.6", zorder=2)
+        kept = e[ok]["value"]
+        if len(kept):
+            lo, hi = kept.min(), kept.max()
+            pad = 0.12 * max(hi - lo, 0.05)
+            lo, hi = min(lo - pad, min(refs, default=lo)), max(hi + pad, max(refs, default=hi))
+            ax.set_ylim(lo - 0.02, hi + 0.02)
+    fs = e[(e.source == fit_source) & ok]
+    stats = ex.flatness(fs[coord], fs["value"], fs["err"]) if len(fs) > 2 else {}
+    if stats:
+        t = np.linspace(fs[coord].min(), fs[coord].max(), 50)
+        ax.plot(10 ** t, stats["slope"] * t + stats["intercept"], color="k", lw=0.9, zorder=4)
+        ax.set_title(rf"trend ${stats['slope']:+.3f}\pm{stats['slope_err']:.3f}$ per decade, "
+                     rf"mean ${stats['mean']:.3f}$", fontsize=7, pad=3)
     ax.set_xscale("log")
     decade_ticks(ax, "x")
     ax.set_xlabel(style.SYM[COORD[coord]])
@@ -173,6 +192,11 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--fit-source", choices=("edge", "line", "cell"), help="estimates used for the flatness fit")
     p.add_argument("--surface", type=int, default=0, help="overlay a polynomial surface fit of this degree")
     p.add_argument("--refs", type=float, nargs="*", default=[0.5, 1 / 3], help="reference exponents drawn as dotted lines")
+    p.add_argument("--draw-surface", action="store_true",
+                   help="with --surface: also draw the surface's exponents along each row (dashed)")
+    p.add_argument("--min-q", type=float, default=0.0,
+                   help="leave out (grey crosses, not fitted) estimates using a run with Q below this, "
+                        "e.g. 1 to drop the weakly convective corner where Nu-1 < 1")
     p.add_argument("--min-points", type=int, default=3, help="for --method lines")
     p.add_argument("--include-running", action="store_true", help="also use points whose cases.csv status is not 'finished'")
     p.add_argument("--results", type=Path, default=rc.RESULTS_CSV, help="results table (default: data/results.csv)")
@@ -194,6 +218,7 @@ def main(argv=None) -> None:
     style.use("paper", usetex=False if a.no_tex else None)
 
     df = rc.load_results(a.results)
+    rc.require_columns(df, ["Nu" if a.q == "Nu-1" else a.q], "the exponent figure")
     if not a.include_running:
         df = df[df["status"] == "finished"]
     d = ex.prepare(df, a.q)
@@ -215,24 +240,41 @@ def main(argv=None) -> None:
     print(f"single power law over all points: {a.q} ~ Pr^({al:.4f} ± {ale:.4f}) Ra^({be:.4f} ± {bee:.4f})   {gof}")
 
     w, _ = style.figsize(1.0)
-    fig, axes = plt.subplots(2, 2, figsize=(w, 0.78 * w), sharey="row")
+    fig, axes = plt.subplots(2, 2, figsize=(w, 0.88 * w), sharey="row", sharex="col")
     cmap = colormaps["viridis"]
     norms = {"x": Normalize(d["y"].min(), d["y"].max()), "y": Normalize(d["x"].min(), d["x"].max())}
+    lmin = np.log10(a.min_q) if a.min_q > 0 else -np.inf
     summary = []
     for i, kind in enumerate(("alpha", "beta")):
         for j, coord in enumerate(("x", "y")):
-            st = panel(axes[i, j], est, kind, coord, cmap, norms[coord], a.refs, fit_source, surf, d)
+            st = panel(axes[i, j], est, kind, coord, cmap, norms[coord], a.refs, fit_source,
+                       surf if a.draw_surface else None, d, lmin, ref_labels=(j == 1))
             summary.append(dict(kind=kind, vs=COORD[coord], **st))
+        lims = [ax.get_ylim() for ax in axes[i]]
+        axes[i, 0].set_ylim(min(l[0] for l in lims), max(l[1] for l in lims))
+    for ax in axes[0]:
+        ax.set_xlabel("")
     for j, coord in enumerate(("x", "y")):
         other = "Pr" if coord == "x" else "Ra"
-        cb = fig.colorbar(ScalarMappable(norms[coord], cmap), ax=axes[:, j], location="top", shrink=0.8,
-                          aspect=30, pad=0.02)
-        cb.set_label(rf"$\log_{{10}}{other}$", fontsize=7)
+        vals = np.sort(d["y" if coord == "x" else "x"].unique())
+        cb = fig.colorbar(ScalarMappable(norms[coord], cmap), ax=axes[:, j], location="top", shrink=0.85,
+                          aspect=32, pad=0.02, ticks=vals[::2] if len(vals) > 7 else vals)
+        cb.set_label(rf"colour: $\log_{{10}}{other}$", fontsize=7)
         cb.ax.tick_params(labelsize=6)
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], marker="o", ls="-", lw=0.7, ms=3, color="0.3", label="two-point, joined by row"
+                      if a.method == "pairs" else "row/column fit"),
+               Line2D([], [], marker="D", ls="none", ms=2.6, mfc="white", color="0.3", label="cell centre"),
+               Line2D([], [], color="k", lw=0.9, label="weighted trend" if d["sL"].notna().all() else "trend (unweighted)")]
+    if np.isfinite(lmin):
+        handles.append(Line2D([], [], marker="x", ls="none", ms=3, color="0.6",
+                              label=rf"left out: ${'Nu-1' if a.q == 'Nu-1' else a.q} < {a.min_q:g}$"))
+    if a.draw_surface and surf is not None:
+        handles.append(Line2D([], [], ls="--", lw=0.6, color="0.3", label=f"degree-{a.surface} surface"))
+    fig.legend(handles=handles, loc="outside lower center", ncol=len(handles), fontsize=6.5,
+               handlelength=1.6, columnspacing=1.2)
     qlab = {"Nu-1": "Nu-1"}.get(a.q, a.q)
-    fig.suptitle(rf"local exponents of ${qlab}\sim Pr^{{\alpha}}Ra^{{\beta}}$ "
-                 f"({'two-point secants' if a.method == 'pairs' else 'row/column regressions'}"
-                 f"{', diamonds: cell centres' if not a.no_cells else ''})", fontsize=8)
+    fig.suptitle(rf"Local exponents of ${qlab}\sim Pr^{{\alpha}}Ra^{{\beta}}$", fontsize=8)
     tag = f"{a.q.replace('-', 'm')}_{a.method}" + (f"_surf{a.surface}" if a.surface else "")
     print(style.save(fig, a.out / f"exponents_{tag}", png=a.png))
     a.out.mkdir(parents=True, exist_ok=True)
