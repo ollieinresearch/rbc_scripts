@@ -2,9 +2,7 @@
 
 Direct numerical simulations of three-dimensional Rayleigh–Bénard convection at small
 Prandtl number with [Dedalus](https://dedalus-project.readthedocs.io), run on the clusters
-of the Digital Research Alliance of Canada. The project measures how the heat transport
-(the Nusselt number) depends on the Rayleigh and Prandtl numbers, in particular along
-slices Pr ∝ Ra^-1/2, where the Shishkina–Lohse theory makes a definite prediction.
+of the Digital Research Alliance of Canada.
 
 This repository holds the simulation, the job scripts for Fir and Trillium, the `rbc`
 package (restarts, checkpoint management, analysis, convergence and resolution checks,
