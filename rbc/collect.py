@@ -37,7 +37,8 @@ import pandas as pd
 from rbc import cases as rc
 
 CLUSTER = os.environ.get("CC_CLUSTER") or socket.gethostname().split(".")[0].rstrip("0123456789-")
-NU_KEYS = ("avg_wT", "avg_grad_T_sq", "avg_vorticity_sq")
+#: Identities whose diagnostics enter the convergence columns (as in rbc.analysis.nusselt).
+NU_KEYS = ("avg_wT", "avg_grad_T_sq")
 
 
 def default_root() -> Path:
@@ -197,7 +198,8 @@ def row(run: Path) -> dict:
     if nu:
         r.update(t0=nu["t0"], t1=nu["t1"], T_avg=nu["T_avg"], n_samples=nu["n_samples"],
                  Nu=nu["Nu"], Nu_se=nu["Nu_se"], Nu_gradT=nu["avg_grad_T_sq"]["Nu"],
-                 Nu_vort=nu["avg_vorticity_sq"]["Nu"],
+                 Nu_vort=nu.get("avg_vorticity_sq", {}).get("Nu", np.nan),
+                 vort_diff_pct=nu.get("vort_diff_pct", np.nan),
                  section_spread_pct=max(nu[k]["spread_pct"] for k in NU_KEYS),
                  qoi_spread_pct=nu["qoi_spread_pct"], converged=nu["converged"])
         if "se_tau" in nu["avg_wT"]:

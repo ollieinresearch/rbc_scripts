@@ -12,11 +12,17 @@ the window [t0, t1], three exact identities give Nu in a statistically steady st
 The plate fluxes Nu_bot = -∂T/∂z(0) and Nu_top = -∂T/∂z(1), from the horizontally
 averaged temperature profile, are a fourth estimate and a stationarity check.
 
+Convergence is judged on Nu - 1 from ⟨wT⟩ and from ``⟨|∇T|²⟩`` only (``CONVERGENCE_QOI``).
+The vorticity identity is computed and reported but not checked: ``⟨|ω|²⟩`` is dominated by
+the smallest scales, which can be under-resolved while the velocity and temperature
+spectra, and so the heat transport, are not. Its difference from ⟨wT⟩ is reported as
+``vort_diff_pct``, a resolution diagnostic rather than a convergence one.
+
 Convergence diagnostics (see the "Statistical convergence" page of the documentation):
 
 ``spread_pct``
     largest difference of Nu - 1 between the three equal sections of the window, in
-    percent of Nu - 1 (the group's original rule: below 1% for all three identities).
+    percent of Nu - 1 (the group's original rule: below 1% for ⟨wT⟩ and ``⟨|∇T|²⟩``).
 ``se``, ``se_tau``
     standard error of the time mean: batch means over 10 blocks, and from the
     integrated autocorrelation time ``tau_int`` (Sokal's automatic window). ``n_eff``
@@ -26,7 +32,8 @@ Convergence diagnostics (see the "Statistical convergence" page of the documenta
 ``drift_z``
     fitted linear trend over the window divided by its standard error.
 ``t0_mser``
-    MSER-5 estimate of where the initial transient ends (White 1997).
+    MSER-5 estimate of where the initial transient ends (White 1997), the later of the
+    two checked identities.
 ``plate_imbalance_z``
     mean of Nu_bot - Nu_top over the window divided by its standard error. In a
     steady state it vanishes, since d⟨T⟩/dt = kappa (Nu_bot - Nu_top).
@@ -52,6 +59,9 @@ QOI = {  # task -> (Nu from time-mean of task, label)
     "avg_grad_T_sq": (lambda m, Ra, Pr: m, r"$\langle|\nabla T|^2\rangle$"),
     "avg_vorticity_sq": (lambda m, Ra, Pr: 1 + Pr * m, r"$\langle|\omega|^2\rangle$"),
 }
+#: Identities whose convergence is checked (``converged``, ``converged_stat``, the MSER
+#: window start and ``qoi_spread_pct``). The vorticity identity is reported only.
+CONVERGENCE_QOI = ("avg_wT", "avg_grad_T_sq")
 #: Thresholds of the proposed statistical convergence rule (``converged_stat``).
 CRITERIA = dict(rel_se=0.005, n_eff=50, p_sections=0.01, drift_z=3.0, plate_z=3.0)
 
@@ -302,8 +312,8 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
     run : pathlib.Path
         Run directory containing ``analysis/`` (and optionally ``horizontal_analysis/``).
     t0 : float or "auto", optional
-        Start of the averaging window; ``"auto"`` uses the MSER-5 estimate (the latest
-        over the three Nu series).
+        Start of the averaging window; ``"auto"`` uses the MSER-5 estimate (the later of
+        the two checked Nu series).
     t1 : float, optional
         End of the averaging window.
 
@@ -311,19 +321,22 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
     -------
     res : dict
         Results written to ``outputs/nusselt.json``. Per identity (keys ``avg_wT``,
-        ``avg_grad_T_sq``, ``avg_vorticity_sq``): ``Nu``, ``sections``, ``spread_pct``,
-        ``se``, ``se_tau``, ``tau_int``, ``n_eff``, ``rel_se``, ``p_sections``,
-        ``drift_pct``, ``drift_z``. Top level: ``Nu`` and ``Nu_se`` (the ⟨wT⟩ values),
-        ``Re``, ``plates``, ``qoi_spread_pct``, ``t0_mser``, ``converged``,
-        ``converged_stat``.
+        ``avg_grad_T_sq`` and, if written, ``avg_vorticity_sq``): ``Nu``, ``sections``,
+        ``spread_pct``, ``se``, ``se_tau``, ``tau_int``, ``n_eff``, ``rel_se``,
+        ``p_sections``, ``drift_pct``, ``drift_z``. Top level: ``Nu`` and ``Nu_se`` (the
+        ⟨wT⟩ values), ``Re``, ``plates``, ``qoi_spread_pct`` (⟨wT⟩ against ``⟨|∇T|²⟩``),
+        ``vort_diff_pct``, ``t0_mser``, ``converged``, ``converged_stat``,
+        ``convergence_qoi``.
     series : dict
         Time series for :func:`plot`.
     """
     tasks = list(QOI) + ["avg_K", "Ra", "Pr"]
-    t_all, d_all = io.load_series(run / "analysis", tasks, optional=("avg_K", "Ra", "Pr"))
+    t_all, d_all = io.load_series(run / "analysis", tasks,
+                                  optional=("avg_K", "Ra", "Pr", "avg_vorticity_sq"))
     Ra, Pr = run_params(run, d_all)
-    nu_all = {k: f(d_all[k].ravel(), Ra, Pr) for k, (f, _) in QOI.items()}
-    t0_mser = max(mser(t_all, v) for v in nu_all.values())
+    qois = [k for k in QOI if k in d_all]
+    nu_all = {k: QOI[k][0](d_all[k].ravel(), Ra, Pr) for k in qois}
+    t0_mser = max(mser(t_all, nu_all[k]) for k in CONVERGENCE_QOI)
     if isinstance(t0, str):
         if t0 != "auto":
             raise ValueError(f"t0 must be a number or 'auto', not {t0!r}")
@@ -334,9 +347,11 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
         raise ValueError(f"{run}: only {t.size} samples in [{t0}, {t1}]")
 
     res = dict(Ra=Ra, Pr=Pr, t_start=float(t_all[0]), t_end=float(t_all[-1]), t0=float(t[0]), t1=float(t[-1]),
-               T_avg=float(t[-1] - t[0]), n_samples=int(t.size), t0_mser=float(t0_mser), criteria=CRITERIA)
+               T_avg=float(t[-1] - t[0]), n_samples=int(t.size), t0_mser=float(t0_mser), criteria=CRITERIA,
+               convergence_qoi=list(CONVERGENCE_QOI))
     series = dict(t=t, t_all=t_all, nu_all=nu_all)
-    for task, (f, _) in QOI.items():
+    for task in qois:
+        f = QOI[task][0]
         x = d_all[task][w].ravel()
         y = f(x, Ra, Pr)
         nu = float(f(tmean(t, x), Ra, Pr))
@@ -354,11 +369,13 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
         series["avg_K"] = (K, np.sqrt(Ra / Pr * cumulative_trapezoid(K, t) / (t[1:] - t[0])))
         series["K_all"] = d_all["avg_K"].ravel()
 
-    nus = np.array([res[k]["Nu"] for k in QOI]) - 1
+    nus = np.array([res[k]["Nu"] for k in CONVERGENCE_QOI]) - 1
     res["Nu"] = res["avg_wT"]["Nu"]
     res["Nu_se"] = res["avg_wT"]["se"]
     res["qoi_spread_pct"] = float(100 * (nus.max() - nus.min()) / nus.mean())
-    res["converged"] = bool(all(res[k]["spread_pct"] < 1.0 for k in QOI))
+    if "avg_vorticity_sq" in res:
+        res["vort_diff_pct"] = float(100 * (res["avg_vorticity_sq"]["Nu"] - res["Nu"]) / (res["Nu"] - 1))
+    res["converged"] = bool(all(res[k]["spread_pct"] < 1.0 for k in CONVERGENCE_QOI))
 
     ok_plates = True
     pf = plate_fluxes(run, t[0], t[-1])
@@ -372,7 +389,7 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
                              imbalance_z=float(imb / se_d) if se_d > 0 else float("nan"))
         ok_plates = abs(res["plates"]["imbalance_z"]) < CRITERIA["plate_z"]
         series["plates"] = (tp, nb, nt)
-    res["converged_stat"] = bool(all(_passes(res[k]) for k in QOI) and ok_plates)
+    res["converged_stat"] = bool(all(_passes(res[k]) for k in CONVERGENCE_QOI) and ok_plates)
     series["t0_scan"] = t0_scan(t_all, nu_all["avg_wT"], t1)
     return res, series
 
@@ -428,8 +445,10 @@ def write_info(res: dict, path: Path) -> None:
          f"MSER-5 estimate of the end of the transient: t = {res['t0_mser']:.2f}",
          "-" * 80]
     for k in QOI:
+        if k not in res:
+            continue
         r = res[k]
-        L += [f"QoI {k}:"]
+        L += [f"QoI {k}:" + ("" if k in CONVERGENCE_QOI else " (reported only, not a convergence check)")]
         L += [f"  section {i + 1}/{N_SECTIONS}: Nu = {v:.4f}" for i, v in enumerate(r["sections"])]
         L += [f"  max % difference of Nu-1 over sections: {r['spread_pct']:.4f}%",
               f"  Nu (full window): {r['Nu']:.6f}",
@@ -442,11 +461,14 @@ def write_info(res: dict, path: Path) -> None:
         pl = res["plates"]
         L += [f"Plate fluxes: Nu_bot = {pl['Nu_bot']:.6f}, Nu_top = {pl['Nu_top']:.6f}, "
               f"imbalance {pl['imbalance_pct']:+.3f}% of Nu-1 ({pl['imbalance_z']:+.1f} sigma)"]
-    L += [f"Maximum percent difference in Nusselt-1 over all QoI: {res['qoi_spread_pct']:.4f}%",
-          f"Final Nusselt number: {res['Nu']:.6f}"]
+    L += [f"Percent difference in Nusselt-1, <wT> vs <|grad T|^2>: {res['qoi_spread_pct']:.4f}%"]
+    if "vort_diff_pct" in res:
+        L += [f"Vorticity identity vs <wT> (resolution diagnostic): {res['vort_diff_pct']:+.4f}% of Nu-1"]
+    L += [f"Final Nusselt number: {res['Nu']:.6f}"]
     if "Re" in res:
         L += [f"Final Reynolds number: {res['Re']['Re']:.6f}"]
     L += ["-" * 80,
+          "Convergence checks use <wT> and <|grad T|^2> only.",
           f"Converged (sections within 1%): {res['converged']}",
           f"Converged (statistical rule: SE <= {100 * c['rel_se']:g}% of Nu-1, n_eff >= {c['n_eff']}, "
           f"p_sections >= {c['p_sections']}, |drift| < {c['drift_z']} sigma, "
@@ -519,6 +541,8 @@ def plot(res: dict, s: dict, path: Path, max_pts: int = 20000) -> None:
         for (a, b), v in zip(section_bounds(t, N_SECTIONS), r["sections"]):
             ax[0].hlines(v, t[a], t[b], color="k", lw=1)
         ax[0].set_ylabel(f"$Nu$ via {QOI[key][1]}")
+        if key not in CONVERGENCE_QOI:
+            ax[0].set_title("reported only (not a convergence check)", fontsize=9)
         ax[1].plot(t[1::k], cumu[::k])
         ax[1].axhline(r["Nu"], color="C1", lw=0.8)
         ax[1].set_title(f"$Nu = {r['Nu']:.5g} \\pm {r['se_tau']:.2g}$, sections {r['spread_pct']:.2f}%, "

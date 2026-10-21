@@ -1,10 +1,12 @@
 #!/bin/bash
-#SBATCH --output=job_post_%j.out
-#SBATCH --time=03:00:00
+#SBATCH --output=jobs/job_post_%j.out
+#SBATCH --time=02:59:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=192
 #SBATCH --mem=0
+#SBATCH --account=rrg-goluskin
+
 
 # Submitted by run_sim.sh with --dependency=afterany; runs in the same run directory.
 source params.conf
