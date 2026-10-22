@@ -8,6 +8,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --job-name=ra8pr-2.5
 #SBATCH --account=rrg-goluskin
+#SBATCH --mem=0
 
 source params.conf
 source "$SETUP_PATH"
