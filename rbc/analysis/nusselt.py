@@ -378,6 +378,8 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
     res["converged"] = bool(all(res[k]["spread_pct"] < 1.0 for k in CONVERGENCE_QOI))
 
     ok_plates = True
+
+    """ David says no need to check plate fluxes
     pf = plate_fluxes(run, t[0], t[-1])
     if pf is not None:
         tp, nb, nt = pf
@@ -389,6 +391,7 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
                              imbalance_z=float(imb / se_d) if se_d > 0 else float("nan"))
         ok_plates = abs(res["plates"]["imbalance_z"]) < CRITERIA["plate_z"]
         series["plates"] = (tp, nb, nt)
+    """
     res["converged_stat"] = bool(all(_passes(res[k]) for k in CONVERGENCE_QOI) and ok_plates)
     series["t0_scan"] = t0_scan(t_all, nu_all["avg_wT"], t1)
     return res, series

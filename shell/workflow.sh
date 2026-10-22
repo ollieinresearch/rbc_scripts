@@ -137,6 +137,12 @@ plot_snapshots() {
         --jobs "${VIS_JOBS:-16}" --stride "${VIS_STRIDE:-1}" --fps "$FPS"
 }
 
+# 2D slices movie (needs SNAPSHOTS and the vis env).
+plot_snapshots() {
+    python3 -m rbc.vis.slices "$PWD" --mode "${VIS_MODE:-iso}" --spectra --movie \
+        --jobs "${VIS_JOBS:-16}" --stride "${VIS_STRIDE:-1}" --fps "$FPS"
+}
+
 # Spectra computed from saved snapshots (runs made before in-sim spectra existed).
 snapshot_spectra() {
     srun -n "${SPEC_TASKS:-32}" -c 1 python3 -m rbc.spectra.snapshots snapshots/snapshots_s*.h5 --plot-every=0
