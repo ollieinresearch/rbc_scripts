@@ -9,6 +9,11 @@ never rescales. Usage::
     python -m rbc.vis.slices RUN_A RUN_B --movie --jobs 16
 
 Heights: mid (z = 1/2), bl (z = delta_T/2 = 1/(4 Nu)), bl-edge (z = delta_T), or a number.
+
+Each plane is Fourier-interpolated to at least ``--points`` points per side (exact for these
+periodic fields: the resolved field drawn smoothly rather than as blocks), and drawn with
+antialiasing, so a plane with more points than the panel has pixels is averaged rather
+than subsampled. Movie frames are written at ``--dpi``.
 """
 from __future__ import annotations
 
@@ -31,7 +36,7 @@ LABEL = {"T": r"$\theta/\theta_{\rm rms}$", "w": r"$w/w_{\rm rms}$", "u": r"$u/u
 HEIGHT_LABEL = {"mid": r"$z=1/2$", "bl": r"$z=\delta_T/2$", "bl-edge": r"$z=\delta_T$"}
 
 
-def frame(runs, fields_, heights, k, lim, out_png=None, width=1.0, keep_negative=False):
+def frame(runs, fields_, heights, k, lim, out_png=None, width=1.0, keep_negative=False, points=512, dpi=300):
     """One figure: rows are runs, columns are (field, height) pairs.
 
     Parameters
@@ -52,6 +57,10 @@ def frame(runs, fields_, heights, k, lim, out_png=None, width=1.0, keep_negative
         Fraction of the text width.
     keep_negative : bool, optional
         Keep negative ``|ω|²`` points.
+    points : int, optional
+        Fourier-interpolate each plane to at least this many points per side (0: off).
+    dpi : int, optional
+        Resolution of ``out_png``.
 
     Returns
     -------
@@ -72,7 +81,8 @@ def frame(runs, fields_, heights, k, lim, out_png=None, width=1.0, keep_negative
             x, y, _ = fl.grids(h)
             for j, (f, hgt) in enumerate(cols):
                 z0 = info.height(hgt)
-                d = fl.normalized(info, f, fl.plane(h, f, wr.index, z0), z0, keep_negative)
+                raw = fl.fourier_resample(fl.plane(h, f, wr.index, z0), points)
+                d = fl.normalized(info, f, raw, z0, keep_negative)
                 if f == "vort":
                     d = np.log10(np.clip(d, 1e-3, None))
                     vmin, vmax = -1.0, 1.5
@@ -80,7 +90,7 @@ def frame(runs, fields_, heights, k, lim, out_png=None, width=1.0, keep_negative
                     vmin, vmax = -lim, lim
                 ax = axes[i, j]
                 ims[f] = ax.imshow(d.T, origin="lower", cmap=CMAP[f], vmin=vmin, vmax=vmax,
-                                   extent=(0, x.max() + x[1], 0, y.max() + y[1]), interpolation="nearest")
+                                   extent=(0, x.max() + x[1], 0, y.max() + y[1]), interpolation="antialiased")
                 ax.set_xticks([])
                 ax.set_yticks([])
                 if i == 0:
@@ -95,7 +105,7 @@ def frame(runs, fields_, heights, k, lim, out_png=None, width=1.0, keep_negative
         cb.ax.tick_params(labelsize=6)
     fig.suptitle(", ".join(f"$t={t:.2f}$" for t in times), fontsize=7)
     if out_png:
-        fig.savefig(out_png, dpi=200)
+        fig.savefig(out_png, dpi=dpi)
         plt.close(fig)
     return fig
 
@@ -123,6 +133,9 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--movie", action="store_true", help="render every snapshot and assemble an MP4 (needs ffmpeg)")
     p.add_argument("--jobs", type=int, default=4, help="parallel processes")
     p.add_argument("--fps", type=int, default=30, help="movie frame rate")
+    p.add_argument("--points", type=int, default=512,
+                   help="Fourier-interpolate each plane to at least this many points per side (0: off)")
+    p.add_argument("--dpi", type=int, default=300, help="resolution of movie frames")
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--name", default="slices", help="output file name")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
@@ -142,14 +155,14 @@ def main(argv=None) -> None:
     a.out.mkdir(parents=True, exist_ok=True)
 
     if not a.movie:
-        fig = frame(a.runs, a.fields, a.heights, a.write, a.lim, keep_negative=a.keep_negative)
+        fig = frame(a.runs, a.fields, a.heights, a.write, a.lim, keep_negative=a.keep_negative, points=a.points)
         print(style.save(fig, a.out / a.name, png=True))
         return
     n = min(len(fl.writes(Path(r).resolve())) for r in a.runs)
     fdir = a.out / f"{a.name}_frames"
     fdir.mkdir(exist_ok=True)
-    jobs = [(a.runs, a.fields, a.heights, k, a.lim, fdir / f"frame_{k:05d}.png", 1.0, a.keep_negative)
-            for k in range(n)]
+    jobs = [(a.runs, a.fields, a.heights, k, a.lim, fdir / f"frame_{k:05d}.png", 1.0, a.keep_negative,
+             a.points, a.dpi) for k in range(n)]
     with ProcessPoolExecutor(a.jobs) as ex:
         for done in ex.map(_frame_job, jobs):
             pass

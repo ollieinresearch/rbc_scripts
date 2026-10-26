@@ -57,4 +57,4 @@ Run directories made before 2026 used separate scripts. Where their code went:
 | `param_grid.py`, `rbc_slice.py`, `contour.py`, `res_scaling.py` | {mod}`rbc.plots.param_grid`, {mod}`~rbc.plots.scaling`, {mod}`~rbc.plots.contour`, {mod}`~rbc.plots.resolution` |
 | `plotting_v3.py` | {mod}`rbc.vis.render3d` |
 | `power*.py` | retired |
-| post-processing inside `run_sim.sh`; `post_process.sh`, `plotting.sh`, `sim_ready.sh` | `shell/post.sh`, a dependent one-node job |
+| post-processing inside `run_sim.sh`; `post_process.sh`, `plotting.sh` | `shell/post.sh`, a dependent one-node job |

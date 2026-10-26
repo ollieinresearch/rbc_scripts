@@ -37,9 +37,10 @@ post-processing as a dependent job. For a run already finished:
 **Cause.** Loading a `virtual` checkpoint through the joint file opens every process file
 on every rank ({ref}`n2-opens`).
 
-**Fix.** The fast loader avoids it when the process mesh is unchanged. If the log says
-"decomposition changed; using Dedalus load_state", restore the previous `MESHX`/`MESHY`, or
-accept one slow restart: the next checkpoint matches the new mesh.
+**Fix.** The fast loader avoids it, whether or not the process mesh changed. If the log
+says `vast.load_state: using Dedalus load_state (...)`, the reason in brackets says why it
+fell back; a regridded restart is read that way on purpose and is a single file, so it is
+not slow.
 :::
 
 ## Errors at start-up
@@ -57,21 +58,34 @@ in the equations (`dt`, `lap`, `grad`, `div`, `lift`, ...).
 **Cause.** Restarting from a coefficient-space checkpoint at a different resolution with
 Dedalus' own loader.
 
-**Fix.** Set the new `RES_Z` in `params.conf` and submit as usual: `determine_ic` regrids the
-checkpoint first ({doc}`user-guide/restarts`).
+**Fix.** Change resolution in a new run directory with `RESTART_FROM` pointing at the old
+run: `determine_ic` regrids the checkpoint first ({doc}`user-guide/restarts`).
 :::
 
-:::{dropdown} "no usable restart in state/" with `IC=1`
+:::{dropdown} "restart: checkpoint ... has shape ... but RES_HOR/RES_Z give ..."
+**Cause.** `RES_Z` (or `RES_HOR`) was changed inside a run that already has checkpoints.
+
+**Fix.** Put it back, or make a new run directory for the new resolution with
+`RESTART_FROM` set to this one ({doc}`user-guide/restarts`).
+:::
+
+:::{dropdown} "determine_ic: no usable restart" with `IC=1`
 **Cause.** No readable checkpoint: none written yet, or the only ones were cut off
 mid-write.
 
-**Fix.** `python -m rbc.restart RUN` reports which sets it skipped. Start fresh (`IC=0`) or
-restart from another run (`RESTART_FROM`).
+**Fix.** The message just above it, from {mod}`rbc.restart`, says why; `python -m
+rbc.restart RUN` reports which sets it skipped. Start fresh (`IC=0`) or restart from
+another run (`RESTART_FROM`).
 :::
 
 :::{dropdown} "WARNING: rbc package not installed"
-**Fix.** `source $ENV_PATH/bin/activate && pip install --no-index -e $SCRIPTS_PATH`, or rerun
-`shell/install_envs.sh`.
+**Cause.** The environment's editable install of `rbc` points at the repository's absolute
+path, so moving or renaming the folder breaks it (`pip list` still lists it). The
+`load_modules*` functions already try to reinstall it when `import rbc` fails; this
+warning means that did not work either.
+
+**Fix.** `source $ENV_PATH/bin/activate && pip install --no-index -e $SCRIPTS_PATH` (and the
+same for `$VIS_ENV_PATH`) and read pip's error, or rerun `shell/install_envs.sh`.
 :::
 
 ## Errors during a run

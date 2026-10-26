@@ -10,7 +10,8 @@ the window [t0, t1], three exact identities give Nu in a statistically steady st
     Nu = 1 + sqrt(Ra Pr) ⟨wT⟩ = ⟨|∇T|²⟩ = 1 + Pr ⟨|ω|²⟩,     Re = sqrt(Ra/Pr ⟨|u|²⟩).
 
 The plate fluxes Nu_bot = -∂T/∂z(0) and Nu_top = -∂T/∂z(1), from the horizontally
-averaged temperature profile, are a fourth estimate and a stationarity check.
+averaged temperature profile, are a fourth estimate; they are reported but not part of
+the convergence rule.
 
 Convergence is judged on Nu - 1 from ⟨wT⟩ and from ``⟨|∇T|²⟩`` only (``CONVERGENCE_QOI``).
 The vorticity identity is computed and reported but not checked: ``⟨|ω|²⟩`` is dominated by
@@ -23,20 +24,28 @@ Convergence diagnostics (see the "Statistical convergence" page of the documenta
 ``spread_pct``
     largest difference of Nu - 1 between the three equal sections of the window, in
     percent of Nu - 1 (the group's original rule: below 1% for ⟨wT⟩ and ``⟨|∇T|²⟩``).
-``se``, ``se_tau``
-    standard error of the time mean: batch means over 10 blocks, and from the
-    integrated autocorrelation time ``tau_int`` (Sokal's automatic window). ``n_eff``
-    = T / (2 tau_int) is the number of effectively independent samples.
+``se``
+    standard error of the time mean by batch means: the window is cut into ``n_blocks``
+    equal blocks, each at least ``BLOCK_TAU`` integrated autocorrelation times long
+    (between ``N_BLOCKS_MIN`` and ``N_BLOCKS_MAX`` blocks), and se = std(block means) /
+    sqrt(n_blocks). Every test below uses it.
+``se_tau``, ``tau_int``, ``n_eff``
+    the integrated autocorrelation time (Sokal's automatic window), the standard error it
+    implies, and n_eff = T / (2 tau_int). ``tau_int`` sets the block length and the
+    record-length test; ``se_tau`` is reported for comparison only. It overestimates the
+    error for ⟨wT⟩: Nu_wT(t) = Nu_vort(t) + sqrt(Ra Pr) dK/dt exactly, and the
+    derivative's autocorrelation integrates to zero only through negative lobes that the
+    window cuts off, while it contributes only sqrt(Ra Pr) ΔK / T to the mean.
 ``p_sections``
     chi-square test that the three section means differ only by sampling noise.
 ``drift_z``
-    fitted linear trend over the window divided by its standard error.
+    linear trend of the block means over the window divided by its standard error.
 ``t0_mser``
     MSER-5 estimate of where the initial transient ends (White 1997), the later of the
     two checked identities.
 ``plate_imbalance_z``
     mean of Nu_bot - Nu_top over the window divided by its standard error. In a
-    steady state it vanishes, since d⟨T⟩/dt = kappa (Nu_bot - Nu_top).
+    steady state it vanishes, since d⟨T⟩/dt = kappa (Nu_bot - Nu_top). Reported only.
 ``converged``
     the original thirds-within-1% rule; ``converged_stat`` the proposed statistical
     rule (thresholds in ``CRITERIA``).
@@ -53,7 +62,11 @@ from scipy.integrate import cumulative_trapezoid, trapezoid
 from rbc import io
 from rbc.cases import parse_run_path
 
-N_SECTIONS, N_BLOCKS = 3, 10
+N_SECTIONS = 3
+#: Batch means: blocks at least BLOCK_TAU integrated autocorrelation times long, and between
+#: N_BLOCKS_MIN and N_BLOCKS_MAX of them. With n_eff >= 50 (T >= 100 tau_int), 10 blocks of
+#: 10 tau_int always fit.
+BLOCK_TAU, N_BLOCKS_MIN, N_BLOCKS_MAX = 10, 10, 20
 QOI = {  # task -> (Nu from time-mean of task, label)
     "avg_wT": (lambda m, Ra, Pr: 1 + np.sqrt(Ra * Pr) * m, r"$\langle wT\rangle$"),
     "avg_grad_T_sq": (lambda m, Ra, Pr: m, r"$\langle|\nabla T|^2\rangle$"),
@@ -62,8 +75,9 @@ QOI = {  # task -> (Nu from time-mean of task, label)
 #: Identities whose convergence is checked (``converged``, ``converged_stat``, the MSER
 #: window start and ``qoi_spread_pct``). The vorticity identity is reported only.
 CONVERGENCE_QOI = ("avg_wT", "avg_grad_T_sq")
-#: Thresholds of the proposed statistical convergence rule (``converged_stat``).
-CRITERIA = dict(rel_se=0.005, n_eff=50, p_sections=0.01, drift_z=3.0, plate_z=3.0)
+#: Thresholds of the statistical convergence rule (``converged_stat``); the standard error
+#: is the batch-means one.
+CRITERIA = dict(rel_se=0.005, n_eff=50, p_sections=0.01, drift_z=3.0)
 
 
 def section_bounds(t: np.ndarray, n: int) -> list[tuple[int, int]]:
@@ -157,20 +171,102 @@ def autocorr_time(t: np.ndarray, x: np.ndarray, c: float = 5.0) -> tuple[float, 
     se : float
         Standard error of the time mean of ``x``.
     """
+    W, taus, var, n, dt = tau_curve(t, x)
+    if W.size == 0:
+        return float("nan"), float("nan")
+    ok = W / dt >= c * taus
+    tau = float(taus[np.argmax(ok)] if ok.any() else taus[-1])
+    tau = max(tau, 0.5)
+    return tau * dt, float(np.sqrt(2 * tau * var / n))
+
+
+def tau_curve(t: np.ndarray, x: np.ndarray):
+    """Running integrated autocorrelation time tau(W) = 1/2 + sum_{k=1}^{W} rho_k.
+
+    tau_int is its limit for large W. A series that contains the time derivative of a
+    bounded quantity has a rho with negative lobes, and tau(W) then rises to a peak and
+    falls back; a plain correlated series levels off.
+
+    Parameters
+    ----------
+    t, x : numpy.ndarray
+        Sample times and values.
+
+    Returns
+    -------
+    W : numpy.ndarray
+        Window lengths, in time units (dt, 2 dt, ...).
+    taus : numpy.ndarray
+        tau(W) in samples (multiply by ``dt`` for time units).
+    var : float
+        Variance of the series.
+    n : int
+        Number of (uniform) samples.
+    dt : float
+        Sample spacing.
+    """
     xu, dt = _uniform(t, x)
     n = xu.size
     y = xu - xu.mean()
     var = float(y @ y / n)
     if n < 4 or var == 0:
-        return float("nan"), float("nan")
+        return np.array([]), np.array([]), var, n, dt
     f = np.fft.rfft(y, 2 * n)
     acf = np.fft.irfft(f * np.conj(f))[:n]
     acf /= acf[0]
-    taus = 0.5 + np.cumsum(acf[1:])                    # tau(W) in samples, W = 1, 2, ...
-    ok = np.arange(1, n) >= c * taus
-    tau = float(taus[np.argmax(ok)] if ok.any() else taus[-1])
-    tau = max(tau, 0.5)
-    return tau * dt, float(np.sqrt(2 * tau * var / n))
+    return np.arange(1, n, dtype=float) * dt, 0.5 + np.cumsum(acf[1:]), var, n, dt
+
+
+def n_blocks(T: float, tau: float) -> int:
+    """Number of batch-means blocks for a window of length ``T``.
+
+    Parameters
+    ----------
+    T : float
+        Window length.
+    tau : float
+        Integrated autocorrelation time (same units).
+
+    Returns
+    -------
+    int
+        floor(T / (BLOCK_TAU tau)), clipped to [N_BLOCKS_MIN, N_BLOCKS_MAX].
+    """
+    if not (np.isfinite(tau) and tau > 0):
+        return N_BLOCKS_MIN
+    return int(np.clip(np.floor(T / (BLOCK_TAU * tau)), N_BLOCKS_MIN, N_BLOCKS_MAX))
+
+
+def batch_means(t: np.ndarray, y: np.ndarray, n: int) -> tuple[float, np.ndarray, np.ndarray]:
+    """Standard error of the time mean from ``n`` equal-duration blocks.
+
+    If the blocks are much longer than the correlation time, their means are nearly
+    independent with variance S(0) / L, where S(0) is the spectral density of ``y`` at
+    zero frequency and L the block length, and std(block means) / sqrt(n) estimates the
+    standard error of the whole mean, sqrt(S(0) / T). A term that is the time derivative
+    of a bounded quantity B adds only ΔB / L to each block mean, so it barely counts.
+    The estimate itself is uncertain by about 1 / sqrt(2 (n - 1)).
+
+    Parameters
+    ----------
+    t, y : numpy.ndarray
+        Sample times and values.
+    n : int
+        Number of blocks.
+
+    Returns
+    -------
+    se : float
+        Standard error of the time mean.
+    means : numpy.ndarray
+        Block means.
+    centres : numpy.ndarray
+        Block mid-times.
+    """
+    bounds = section_bounds(t, n)
+    means = np.array([tmean(t, y, a, b) for a, b in bounds])
+    centres = np.array([0.5 * (t[a] + t[b]) for a, b in bounds])
+    return float(means.std(ddof=1) / np.sqrt(n)), means, centres
 
 
 def mser(t: np.ndarray, x: np.ndarray, batch: int = 5, max_frac: float = 0.5) -> float:
@@ -272,33 +368,37 @@ def plate_fluxes(run: Path, t0: float, t1: float) -> tuple[np.ndarray, np.ndarra
 
 def _stats(t: np.ndarray, y: np.ndarray, value: float, scale: float) -> dict:
     """Convergence statistics of one Nu (or Re) series ``y`` with mean ``value``;
-    relative quantities are relative to ``scale`` (Nu - 1 for Nu)."""
-    secs, blocks = section_bounds(t, N_SECTIONS), section_bounds(t, N_BLOCKS)
-    sec = np.array([tmean(t, y, a, b) for a, b in secs])
-    blk = np.array([tmean(t, y, a, b) for a, b in blocks])
-    se_b = float(blk.std(ddof=1) / np.sqrt(blk.size))
-    tau, se_t = autocorr_time(t, y)
-    T = t[-1] - t[0]
+    relative quantities are relative to ``scale`` (Nu - 1 for Nu). Every test uses the
+    batch-means standard error (:func:`batch_means`)."""
     from scipy.stats import chi2
-    se_ref = se_t if np.isfinite(se_t) and se_t > 0 else se_b
-    chi = float(np.sum((sec - sec.mean()) ** 2) / (N_SECTIONS * se_ref ** 2)) if se_ref > 0 else np.inf
-    tc = np.array([0.5 * (t[a] + t[b]) for a, b in blocks])
-    sb = se_ref * np.sqrt(N_BLOCKS)
-    A = np.vstack([tc - tc.mean(), np.ones_like(tc)]).T / sb
-    coef, *_ = np.linalg.lstsq(A, blk / sb, rcond=None)
-    slope_se = float(np.sqrt(np.linalg.inv(A.T @ A)[0, 0]))
+    T = t[-1] - t[0]
+    sec = np.array([tmean(t, y, a, b) for a, b in section_bounds(t, N_SECTIONS)])
+    tau, se_t = autocorr_time(t, y)
+    nb = n_blocks(T, tau)
+    se_b, blk, tc = batch_means(t, y, nb)
+    # each third has variance N_SECTIONS se^2 if the thirds are independent
+    chi = float(np.sum((sec - sec.mean()) ** 2) / (N_SECTIONS * se_b ** 2)) if se_b > 0 else np.inf
+    sb = se_b * np.sqrt(nb)                          # standard deviation of one block mean
+    if sb > 0:
+        A = np.vstack([tc - tc.mean(), np.ones_like(tc)]).T / sb
+        coef, *_ = np.linalg.lstsq(A, blk / sb, rcond=None)
+        slope, slope_se = float(coef[0]), float(np.sqrt(np.linalg.inv(A.T @ A)[0, 0]))
+    else:
+        slope, slope_se = 0.0, 0.0
     return dict(value=value, sections=sec.tolist(),
                 spread_pct=float(100 * np.ptp(sec) / scale),
-                se=se_b, se_tau=float(se_t), tau_int=float(tau),
+                se=se_b, n_blocks=nb, block_len=float(T / nb),
+                se_rel_uncertainty=float(1 / np.sqrt(2 * (nb - 1))),
+                se_tau=float(se_t), tau_int=float(tau),
                 n_eff=float(T / (2 * tau)) if tau > 0 else float("nan"),
-                rel_se=float(se_ref / scale),
+                rel_se=float(se_b / scale),
                 p_sections=float(chi2.sf(chi, N_SECTIONS - 1)),
-                drift_pct=float(100 * coef[0] * T / scale),
-                drift_z=float(coef[0] / slope_se) if slope_se > 0 else float("nan"))
+                drift_pct=float(100 * slope * T / scale),
+                drift_z=float(slope / slope_se) if slope_se > 0 else float("nan"))
 
 
 def _passes(s: dict) -> bool:
-    """Whether one series' statistics meet :data:`CRITERIA` (plates checked separately)."""
+    """Whether one series' statistics meet :data:`CRITERIA`."""
     c = CRITERIA
     return bool(s["rel_se"] <= c["rel_se"] and s["n_eff"] >= c["n_eff"]
                 and s["p_sections"] >= c["p_sections"] and abs(s["drift_z"]) < c["drift_z"])
@@ -343,7 +443,7 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
         t0 = t0_mser
     w = (t_all >= t0) & (t_all <= t1)
     t = t_all[w]
-    if t.size < 2 * N_BLOCKS:
+    if t.size < 2 * N_BLOCKS_MIN:
         raise ValueError(f"{run}: only {t.size} samples in [{t0}, {t1}]")
 
     res = dict(Ra=Ra, Pr=Pr, t_start=float(t_all[0]), t_end=float(t_all[-1]), t0=float(t[0]), t1=float(t[-1]),
@@ -377,22 +477,23 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
         res["vort_diff_pct"] = float(100 * (res["avg_vorticity_sq"]["Nu"] - res["Nu"]) / (res["Nu"] - 1))
     res["converged"] = bool(all(res[k]["spread_pct"] < 1.0 for k in CONVERGENCE_QOI))
 
-    ok_plates = True
-
-    """ David says no need to check plate fluxes
+    # plate fluxes: reported, not part of the convergence rule
     pf = plate_fluxes(run, t[0], t[-1])
     if pf is not None:
-        tp, nb, nt = pf
-        diff = nb - nt
-        _, se_d = autocorr_time(tp, diff)
+        tp, nbot, ntop = pf
+        diff = nbot - ntop
+        tau_d, _ = autocorr_time(tp, diff)
+        se_d, _, _ = batch_means(tp, diff, n_blocks(tp[-1] - tp[0], tau_d))
         imb = tmean(tp, diff)
-        res["plates"] = dict(Nu_bot=float(tmean(tp, nb)), Nu_top=float(tmean(tp, nt)),
+        res["plates"] = dict(Nu_bot=float(tmean(tp, nbot)), Nu_top=float(tmean(tp, ntop)),
                              imbalance_pct=float(100 * imb / (res["Nu"] - 1)),
                              imbalance_z=float(imb / se_d) if se_d > 0 else float("nan"))
-        ok_plates = abs(res["plates"]["imbalance_z"]) < CRITERIA["plate_z"]
-        series["plates"] = (tp, nb, nt)
-    """
-    res["converged_stat"] = bool(all(_passes(res[k]) for k in CONVERGENCE_QOI) and ok_plates)
+        series["plates"] = (tp, nbot, ntop)
+    res["converged_stat"] = bool(all(_passes(res[k]) for k in CONVERGENCE_QOI))
+    series["tau"] = {}
+    for k in CONVERGENCE_QOI:
+        W, taus, _, _, dtu = tau_curve(t, series[k][0])
+        series["tau"][k] = (W, taus * dtu)               # both in time units
     series["t0_scan"] = t0_scan(t_all, nu_all["avg_wT"], t1)
     return res, series
 
@@ -420,8 +521,8 @@ def t0_scan(t: np.ndarray, y: np.ndarray, t1: float = np.inf, n: int = 40) -> tu
     m = t <= t1
     t, y = t[m], y[m]
     starts = np.linspace(t[0], t[0] + 0.5 * (t[-1] - t[0]), n)
-    _, se_full = autocorr_time(t, y)
     T = t[-1] - t[0]
+    se_full, _, _ = batch_means(t, y, n_blocks(T, autocorr_time(t, y)[0]))
     means, ses = [], []
     for s in starts:
         k = t >= s
@@ -455,14 +556,16 @@ def write_info(res: dict, path: Path) -> None:
         L += [f"  section {i + 1}/{N_SECTIONS}: Nu = {v:.4f}" for i, v in enumerate(r["sections"])]
         L += [f"  max % difference of Nu-1 over sections: {r['spread_pct']:.4f}%",
               f"  Nu (full window): {r['Nu']:.6f}",
-              f"  standard error: {r['se']:.2g} (batch means), {r['se_tau']:.2g} (autocorrelation); "
-              f"{100 * r['rel_se']:.3f}% of Nu-1",
-              f"  tau_int = {r['tau_int']:.3g}, effective samples = {r['n_eff']:.0f}",
+              f"  standard error: {r['se']:.2g} = {100 * r['rel_se']:.3f}% of Nu-1 (batch means: "
+              f"{r['n_blocks']} blocks of {r['block_len']:.3g}, itself uncertain by "
+              f"{100 * r['se_rel_uncertainty']:.0f}%)",
+              f"  tau_int = {r['tau_int']:.3g}, effective samples = {r['n_eff']:.0f}; "
+              f"autocorrelation standard error {r['se_tau']:.2g} (for comparison, not used)",
               f"  sections consistent: p = {r['p_sections']:.3f}; "
               f"trend over window {r['drift_pct']:+.3f}% of Nu-1 ({r['drift_z']:+.1f} sigma)", "-" * 80]
     if "plates" in res:
         pl = res["plates"]
-        L += [f"Plate fluxes: Nu_bot = {pl['Nu_bot']:.6f}, Nu_top = {pl['Nu_top']:.6f}, "
+        L += [f"Plate fluxes (reported only): Nu_bot = {pl['Nu_bot']:.6f}, Nu_top = {pl['Nu_top']:.6f}, "
               f"imbalance {pl['imbalance_pct']:+.3f}% of Nu-1 ({pl['imbalance_z']:+.1f} sigma)"]
     L += [f"Percent difference in Nusselt-1, <wT> vs <|grad T|^2>: {res['qoi_spread_pct']:.4f}%"]
     if "vort_diff_pct" in res:
@@ -473,9 +576,9 @@ def write_info(res: dict, path: Path) -> None:
     L += ["-" * 80,
           "Convergence checks use <wT> and <|grad T|^2> only.",
           f"Converged (sections within 1%): {res['converged']}",
-          f"Converged (statistical rule: SE <= {100 * c['rel_se']:g}% of Nu-1, n_eff >= {c['n_eff']}, "
-          f"p_sections >= {c['p_sections']}, |drift| < {c['drift_z']} sigma, "
-          f"|plate imbalance| < {c['plate_z']} sigma): {res['converged_stat']}"]
+          f"Converged (statistical rule: batch-means SE <= {100 * c['rel_se']:g}% of Nu-1, "
+          f"n_eff >= {c['n_eff']}, p_sections >= {c['p_sections']}, |drift| < {c['drift_z']} sigma): "
+          f"{res['converged_stat']}"]
     path.write_text("\n".join(L) + "\n")
 
 
@@ -483,7 +586,9 @@ def plot(res: dict, s: dict, path: Path, max_pts: int = 20000) -> None:
     """Diagnostic figure ``outputs/info.pdf``.
 
     One row per identity (instantaneous Nu with section means | running mean), then
-    the kinetic energy and Re, the plate fluxes, and the window-start scan.
+    the kinetic energy and Re, the window-start scan, the error estimate (running
+    integrated autocorrelation time | the block means behind the standard error) and the
+    plate fluxes.
 
     Parameters
     ----------
@@ -498,11 +603,32 @@ def plot(res: dict, s: dict, path: Path, max_pts: int = 20000) -> None:
     from rbc import style
 
     style.use("diag")
-    rows = [k for k in list(QOI) + ["avg_K"] if k in s] + ["scan"] + (["plates"] if "plates" in s else [])
+    rows = [k for k in list(QOI) + ["avg_K"] if k in s] + ["scan", "tau"] + (["plates"] if "plates" in s else [])
     fig, axes = plt.subplots(len(rows), 2, figsize=(14, 2.6 * len(rows)))
     t = s["t"]
     k = max(1, t.size // max_pts)
     for ax, key in zip(axes, rows):
+        if key == "tau":
+            for c, q in enumerate(CONVERGENCE_QOI):
+                r = res[q]
+                W, taus = s["tau"][q]
+                keep = W <= max(40 * r["tau_int"], 2 * r["block_len"])
+                ax[0].plot(W[keep], taus[keep], color=f"C{c}", lw=0.9, label=QOI[q][1])
+                ax[0].axhline(r["tau_int"], color=f"C{c}", ls=":", lw=0.8)
+                ax[0].axvline(r["block_len"], color=f"C{c}", ls="--", lw=0.8)
+                _, blk, tc = batch_means(t, s[q][0], r["n_blocks"])
+                ax[1].plot(tc, (blk - 1) / (r["Nu"] - 1), "o-", ms=3, lw=0.7, color=f"C{c}",
+                           label=f"{QOI[q][1]}: se {100 * r['rel_se']:.2f}%")
+                ax[1].axhspan(1 - r["rel_se"], 1 + r["rel_se"], color=f"C{c}", alpha=0.12, lw=0)
+            ax[0].set_xlabel(r"window $W$")
+            ax[0].set_ylabel(r"$\tau(W)$")
+            ax[0].set_title(r"running $\tau_{\rm int}$ (dotted: Sokal estimate; dashed: block length)", fontsize=9)
+            ax[0].legend(fontsize=8)
+            ax[1].axhline(1, color="0.5", lw=0.8)
+            ax[1].set_ylabel(r"block mean of $(Nu-1)$ / mean")
+            ax[1].set_title("batch means (band: standard error of the whole mean)", fontsize=9)
+            ax[1].legend(fontsize=8)
+            continue
         if key == "scan":
             t0s, m, se = s["t0_scan"]
             ax[0].plot(s["t_all"][::k], s["nu_all"]["avg_wT"][::k], lw=0.5)
@@ -548,7 +674,7 @@ def plot(res: dict, s: dict, path: Path, max_pts: int = 20000) -> None:
             ax[0].set_title("reported only (not a convergence check)", fontsize=9)
         ax[1].plot(t[1::k], cumu[::k])
         ax[1].axhline(r["Nu"], color="C1", lw=0.8)
-        ax[1].set_title(f"$Nu = {r['Nu']:.5g} \\pm {r['se_tau']:.2g}$, sections {r['spread_pct']:.2f}%, "
+        ax[1].set_title(f"$Nu = {r['Nu']:.5g} \\pm {r['se']:.2g}$, sections {r['spread_pct']:.2f}%, "
                         f"$p={r['p_sections']:.2f}$")
     for a in axes[-1]:
         if not a.get_xlabel():

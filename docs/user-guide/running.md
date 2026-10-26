@@ -9,7 +9,8 @@ bash $SCRIPTS_PATH/shell/submit.sh                    # job script chosen from $
 bash $SCRIPTS_PATH/shell/submit.sh run_sim.sh --time=03:00:00   # explicit script, extra sbatch options
 ```
 
-`submit.sh` submits the job script, then `post.sh` with `--dependency=afterany:<job>`, so
+`submit.sh` makes the `jobs/` folder for the logs, submits the job script, then `post.sh`
+with `--dependency=afterany:<job>`, so
 post-processing starts when the simulation ends whether it finished, stopped early or
 failed. Plain `sbatch run_sim.sh` also works; the simulation job then tries to queue the
 post-processing itself, which Trillium does not allow ({doc}`clusters`).
@@ -24,14 +25,14 @@ post-processing itself, which Trillium does not allow ({doc}`clusters`).
 | `--time` | At most the cluster's limit. Longer jobs wait longer in the queue; every job ends with a checkpoint, so splitting a run into several jobs costs only the start-up time. |
 | `--job-name` | Something like `ra8pr-2.5`, to recognize it in `squeue`. |
 | `--account` | The allocation to charge. |
-| `--output` | `job_sim_%j.out`: one log per job, `%j` being the job number. |
+| `--output` | `jobs/job_sim_%j.out`: one log per job in `jobs/`, `%j` being the job number. Slurm does not create the folder, so submit with `submit.sh` (or `mkdir jobs` first). |
 
 ## Watching
 
 ```bash
 squeue -u $USER                       # state of your jobs (PD pending, R running)
 squeue -u $USER --start               # estimated start times
-tail -f job_sim_<jobid>.out           # the log
+tail -f jobs/job_sim_<jobid>.out      # the log
 sacct -j <jobid> --format=JobID,Elapsed,State,ExitCode   # after it ends
 ```
 

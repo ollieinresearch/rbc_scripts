@@ -13,8 +13,15 @@ _vast_preload() {
     [[ -f /scinet/vast/etc/vastpreload-openmpi.bash ]] && source /scinet/vast/etc/vastpreload-openmpi.bash
 }
 
+# Reinstall the rbc package (editable, no dependencies) only if it cannot be imported. An
+# editable install records the repository's absolute path, so moving or renaming the
+# folder breaks it while pip list still shows it.
 _check_rbc() {
-    python3 -c "import rbc" 2>/dev/null || echo "WARNING: rbc package not installed in $(which python3)"
+    python3 -c "import rbc" 2>/dev/null && return
+    echo "rbc not importable in $(which python3); reinstalling from ${SCRIPTS_PATH:?}"
+    pip install --no-index --no-deps -q -e "$SCRIPTS_PATH" \
+        && python3 -c "import rbc" 2>/dev/null \
+        || echo "WARNING: rbc package not installed in $(which python3)"
 }
 
 load_modules() {

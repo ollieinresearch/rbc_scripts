@@ -109,11 +109,11 @@ resolution figures, which need columns this file does not have.
 | `t0`, `t1`, `T_avg`, `n_samples` | averaging window and its length |
 | `Nu`, `Nu_se` | Nu from $\langle wT\rangle$ and its batch-means standard error |
 | `Nu_gradT`, `Nu_vort` | Nu from $\langle\lvert\nabla T\rvert^2\rangle$ and from $\langle\lvert\omega\rvert^2\rangle$ |
-| `Nu_plates`, `plate_imbalance_z` | mean of the two plate fluxes; their difference in standard errors |
+| `Nu_plates`, `plate_imbalance_z` | mean of the two plate fluxes; their difference in standard errors (reported, not a convergence check) |
 | `section_spread_pct`, `qoi_spread_pct` | largest spread of $Nu-1$ over thirds of the window, and between $\langle wT\rangle$ and $\langle\lvert\nabla T\rvert^2\rangle$ (%) |
 | `vort_diff_pct` | $Nu-1$ from the vorticity identity minus that from $\langle wT\rangle$, in % (resolution diagnostic, not a convergence check) |
 | `converged` | sections within 1% for $\langle wT\rangle$ and $\langle\lvert\nabla T\rvert^2\rangle$ (the original rule) |
-| `Nu_se_tau`, `tau_int`, `n_eff` | standard error from the autocorrelation time, the time itself, effective samples |
+| `Nu_se_tau`, `tau_int`, `n_eff` | standard error from the autocorrelation time (for comparison only, {ref}`why-batch-means`), the time itself, effective samples |
 | `p_sections`, `drift_z` | section test and trend over the window (worse of the two checked identities) |
 | `t0_mser` | MSER-5 estimate of the end of the transient |
 | `converged_stat` | the statistical rule ({doc}`../theory/convergence`) |

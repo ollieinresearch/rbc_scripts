@@ -4,7 +4,8 @@ Runs take many jobs. Each job ends with a {term}`checkpoint`, and the next start
 
 ## Continuing a run
 
-With `IC=1` (the template's setting), `determine_ic` calls {mod}`rbc.restart`, which:
+With `IC=1` (the template's setting) and a checkpoint to start from, `determine_ic`
+calls {mod}`rbc.restart`, which:
 
 1. lists `state/state_s*.h5` newest first;
 2. skips any set it cannot read: a job killed while writing leaves a set that exists but
@@ -18,9 +19,12 @@ The run then goes on to `restart time + SIM_TIME`. Continuity is exact: the chec
 holds the full state in coefficient space, and the first timestep is the one in use when
 it was written.
 
-The {term}`process mesh` may change between jobs. If it does, the fast loader in
-{mod}`rbc.vast` finds that the process files do not match the new decomposition and
-falls back to Dedalus' own loader, which redistributes the data; the log says so.
+The {term}`process mesh` may change between jobs. The loader in {mod}`rbc.vast` reads the
+checkpoint's map of which process file holds which block, and each rank opens only the
+files that overlap its own part of the domain: one when the mesh is unchanged, a few when
+it changed. The log says `Loaded state from process files (at most k per rank)`. It falls
+back to Dedalus' own loader, saying why, only for a plain (non-virtual) file such as a
+regridded restart, a change of resolution, or a gap in the map ({ref}`n2-opens`).
 
 ## Starting over
 
@@ -31,24 +35,35 @@ really start again.
 
 ## Starting from another run
 
-Set `RESTART_FROM` to another run directory, usually a lower resolution of the same (Ra,
-Pr), or a nearby (Ra, Pr) whose flow is a better initial condition than rest:
+`RESTART_FROM` seeds a new run directory with another run's checkpoint: usually a lower
+resolution of the same (Ra, Pr), or a nearby (Ra, Pr) whose flow is a better initial
+condition than rest:
 
 ```bash
 export IC=1
 export RESTART_FROM="$PWD/../64_Gam2_2"
 ```
 
-The newest checkpoint of that run is used. If its grid differs from this run's
-(`RES_HOR`, `RES_Z`), it is regridded into `restart/restart.h5` first.
+The newest checkpoint of that run is used (or the one nearest `START_TIME`). If its grid
+differs from this run's (`RES_HOR`, `RES_Z`), it is regridded into `restart/restart.h5`
+first.
+
+`RESTART_FROM` only matters while this run has no checkpoints of its own. From the second
+job on, the run continues from its own `state/` and the setting is ignored (the log says
+so), so it can stay in `params.conf`.
 
 ## Changing resolution
 
-To raise a run from 64 to 128 modes in place:
+A resolution change always makes a new run directory, named after its new $N_z$, seeded
+from the old run. To go from 64 to 128 modes:
 
 ```bash
+mkdir ../128_Gam2_2 && cd ../128_Gam2_2
+bash $SCRATCH/rbc_scripts/shell/sim_ready.sh
+# in params.conf:
 export RES_Z=128          # RES_HOR follows as 2 * RES_Z
 export IC=1
+export RESTART_FROM="$PWD/../64_Gam2_2"
 ```
 
 `determine_ic` passes the new shape to {mod}`rbc.restart`, which sees that the
@@ -57,6 +72,14 @@ Refining is exact (the same function, written with more coefficients), and coars
 removes only the highest modes; the proof is in {doc}`../theory/regridding`. Without
 this step Dedalus refuses to load a coefficient-space checkpoint of another size
 ("Cannot change global shape when loading coeff data").
+
+Changing `RES_Z` inside an existing run is refused, because the run's statistics and
+checkpoints would mix two resolutions:
+
+```text
+restart: checkpoint state_s12.h5 has shape (128, 128, 64) but RES_HOR/RES_Z give
+(256, 256, 128). Change resolution in a new run folder with RESTART_FROM=<this run>
+```
 
 After a resolution change the statistics need a short new transient (the small scales
 adjust within a few time units), so start the averaging window after it.

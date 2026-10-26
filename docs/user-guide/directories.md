@@ -60,8 +60,8 @@ that does not follow the pattern only affects sorting.
 108_Gam2_2/
 ├── params.conf               settings of this run
 ├── run_sim.sh                job script (run_sim_trillium.sh on Trillium)
-├── job_sim_<jobid>.out       log of each simulation job
-├── job_post_<jobid>.out      log of each post-processing job
+├── post.sh, submit.sh        post-processing job and submission (copied by sim_ready.sh)
+├── jobs/                     job_sim_<jobid>.out and job_post_<jobid>.out, one log per job
 ├── stop_reason.txt           why the last job stopped
 ├── state/                    checkpoints: state_s<N>.h5 (+ state_s<N>/ process files)
 ├── restart/restart.h5        link to (or regridded copy of) the checkpoint to restart from
@@ -78,8 +78,10 @@ that does not follow the pattern only affects sorting.
 `profiles.npz`, `profiles.pdf`, `spectra.json`, `spec_range.txt`, the spectra figures and
 `jobs.csv`; each is described in {doc}`../reference/files`.
 
-Run directories made with the earlier scripts also contain `plotting.sh`,
-`post_process.sh` and `sim_ready.sh`; they are no longer used.
+Run directories made with the earlier scripts also contain `plotting.sh` and
+`post_process.sh`, and their job logs at the top level; those scripts are no longer used.
+`sim_ready.sh` is current again, as the helper that copies the scripts into a run
+directory ({doc}`../getting-started/first-run`).
 
 ## Where copies live
 

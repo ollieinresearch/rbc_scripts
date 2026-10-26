@@ -33,23 +33,73 @@ to $s = t - t'$. For $T \gg \tau_\text{int}$ the factor $1 - s/T$ is 1 wherever 
 negligible, which leaves $2\sigma^2\tau_\text{int}/T$.
 ```
 
-Two estimates of the standard error are computed:
+Two estimates of the standard error are computed. **Batch means is the one every test
+uses**; the autocorrelation estimate sets the block length and is reported for comparison.
 
-**Batch means** (`Nu_se`). Split the window into 10 equal blocks; the standard deviation of
-the block means divided by $\sqrt{10}$. Simple and assumption-free, provided each block is
-much longer than $\tau_\text{int}$. With only 10 blocks the estimate itself is uncertain by
-about $1/\sqrt{2\cdot 9} \approx 24\%$.
+**Batch means** (`Nu_se`, `se` in `nusselt.json`). Cut the window into $n$ equal blocks of
+length $L = T/n$ and take the standard deviation of the block means divided by $\sqrt n$.
+If $L \gg \tau_\text{int}$ the block means are nearly independent, each with variance
+$S(0)/L$, where $S(0) = 2\tau_\text{int}\sigma^2$ is the spectral density at zero
+frequency, so this estimates $\sqrt{S(0)/T}$, the standard error of the whole mean. The
+blocks are made at least $10\,\tau_\text{int}$ long, with between 10 and 20 of them
+(`BLOCK_TAU`, `N_BLOCKS_MIN`, `N_BLOCKS_MAX`); the estimate is then itself uncertain by
+$1/\sqrt{2(n-1)}$, 16% with 20 blocks and 24% with 10, which `info.txt` prints.
 
 **Autocorrelation** (`Nu_se_tau`). Estimate $\rho$ from the series and sum it up to the
 smallest window $W$ with $W \ge 5\,\tau_\text{int}(W)$, the automatic windowing of
 [Sokal (1997)](#refs-convergence): stopping early would miss correlation, summing the noisy
-tail would add variance. This gives $\tau_\text{int}$ and $n_\text{eff}$ as well. On a test
-signal with a known autocorrelation time of 0.5 and record length 2000, the code returns
-$\tau_\text{int} = 0.495$ and the exact standard error to three digits.
+tail would add variance. This gives $\tau_\text{int}$ and $n_\text{eff}$, which set the
+block length and the record-length test. On a test signal with a known autocorrelation time
+of 0.5 and record length 2000, the code returns $\tau_\text{int} = 0.495$ and the exact
+standard error to three digits.
 
-The two agree when the window is long; when they disagree, the window is too short for
-either to be trusted. The same reasoning for turbulence statistics is set out in detail by
+The same reasoning for turbulence statistics is set out in detail by
 [Oliver et al. (2014)](#refs-convergence).
+
+(why-batch-means)=
+### Why not the autocorrelation estimate
+
+For $\langle wT\rangle$ the autocorrelation estimate can be far too large. The kinetic
+energy budget (free-fall units, no-slip plates, periodic sides) gives, at every instant,
+
+$$
+\frac{dK}{dt} = \langle wT\rangle - \sqrt{\frac{Pr}{Ra}}\,\langle|\boldsymbol\omega|^2\rangle,
+\qquad K = \tfrac12\langle|\boldsymbol u|^2\rangle,
+\qquad\text{so}\qquad
+Nu_{wT}(t) = Nu_\omega(t) + \sqrt{Ra\,Pr}\;\frac{dK}{dt}.
+$$
+
+The prefactor is large ($\sqrt{Ra\,Pr} \approx 3200$ at $Ra = 10^8$, $Pr = 0.1$) and $K$ is
+small, so $Nu_{wT}(t)$ fluctuates much more than the other identities, but the extra term is
+a time derivative: over a window it averages to $\sqrt{Ra\,Pr}\,\Delta K/T$, which falls
+like $1/T$, not $1/\sqrt T$. In spectral terms its density $(2\pi f)^2 S_K(f)$ vanishes at
+$f = 0$, so it adds nothing to $S(0)$; equivalently its autocorrelation integrates to zero,
+through negative lobes at longer lags that cancel the positive peak. Sokal's window stops
+summing about $5\,\tau_\text{int}$ in, includes the peak, cuts off the cancellation, and so
+overestimates $\tau_\text{int}$ and the standard error. A block mean contains only
+$\sqrt{Ra\,Pr}\,\Delta K/L$ of it, which is small for long blocks.
+
+```{dropdown} Evidence and a test
+:class-container: derivation
+
+All the identities, and the plate flux, differ from one another by time derivatives of
+bounded quantities ($K$ above, and stored heat for the others), so they share $S(0)$ and
+should have the same standard error. In a run at $Ra = 10^8$, $Pr = 0.1$ over 503 time
+units, batch means (10 blocks) gave 0.064 for both $\langle wT\rangle$ and
+$\langle|\nabla T|^2\rangle$; the autocorrelation estimate gave 0.061 for
+$\langle|\nabla T|^2\rangle$ but 0.146 for $\langle wT\rangle$, and the two means agreed to
+0.003, far closer than an independent error of 0.13 would allow. The running $\tau(W)$ in
+`info.pdf` shows the mechanism directly: for a series with a derivative term it rises to a
+peak and falls back as the negative lobes enter; for a plain correlated series it levels off.
+
+On synthetic series (a correlated base plus a large derivative term, 500 time units, 150
+realizations), the true scatter of the window mean was 0.056; batch means with 30 blocks gave
+a median of 0.071, and the autocorrelation estimate 0.101. Without the derivative term,
+batch means was within 3% of the truth for 10 to 30 blocks; with it, it overestimated by 7%,
+16% and 22% for 10, 20 and 30 blocks (the $\Delta K/L$ term), while its own scatter fell from
+26% to 15%. Twenty blocks is the compromise. The overestimate is conservative and shrinks as
+$1/L^2$.
+```
 
 ## How precise does Nu need to be?
 
@@ -157,13 +207,15 @@ idea and fixes the scale.
 
 | Test | Requirement | Purpose |
 |---|---|---|
-| precision | standard error ≤ 0.5% of $Nu - 1$ | precise enough for the exponents (table above) |
-| record length | $n_\text{eff} \ge 50$, i.e. $T \ge 100\,\tau_\text{int}$ | the standard error itself is trustworthy (to about 20%) |
+| precision | batch-means standard error ≤ 0.5% of $Nu - 1$ | precise enough for the exponents (table above) |
+| record length | $n_\text{eff} \ge 50$, i.e. $T \ge 100\,\tau_\text{int}$ | at least 10 blocks of $10\,\tau_\text{int}$, so the standard error is itself trustworthy |
 | sections | the thirds agree within their errors: $p \ge 0.01$ in a $\chi^2$ test | no step change within the window |
-| trend | linear trend over the window below 3 standard errors | no slow drift |
+| trend | linear trend of the block means below 3 standard errors | no slow drift |
 
-and the plate fluxes balance: $\overline{Nu_\text{bot} - Nu_\text{top}}$ below 3 standard
-errors. The thresholds are in `rbc.analysis.nusselt.CRITERIA`.
+All four use the batch-means standard error. The thresholds are in
+`rbc.analysis.nusselt.CRITERIA`. The plate imbalance $\overline{Nu_\text{bot} -
+Nu_\text{top}}$ is still computed and printed (in standard errors), but it is not part of
+the rule.
 
 ```{dropdown} Why 50 effective samples
 :class-container: derivation
@@ -171,8 +223,10 @@ errors. The thresholds are in `rbc.analysis.nusselt.CRITERIA`.
 The windowed estimate of $\tau_\text{int}$ has relative variance about $2(2W+1)/N$ for a
 window of $W$ samples out of $N$ (Sokal 1997). With $W = 5\tau_\text{int}$ in samples this
 is $20\,\tau_\text{int}/T$, which is 0.2 at $T = 100\,\tau_\text{int}$: $\tau_\text{int}$ is
-then known to about 45%, and the standard error, proportional to $\sqrt{\tau_\text{int}}$,
-to about 22%.
+then known to about 45%, good enough to set the block length. And $T \ge 100\,\tau_\text{int}$
+is exactly what lets the batch-means estimate have at least 10 blocks of at least
+$10\,\tau_\text{int}$, so that the block means are nearly independent and the standard error
+is itself known to about 24% or better.
 ```
 
 
@@ -187,7 +241,7 @@ once it has been checked against existing runs and agreed with David.
 (transient)=
 ## When is the transient over?
 
-Three checks, all automatic:
+Three checks, all automatic (the third is reported only):
 
 **MSER-5** ([White 1997](#refs-convergence)). Average the series in batches of five
 samples, and choose the start $d$ that minimizes
@@ -201,9 +255,10 @@ data once the remaining bias is below the noise, so the window start can sensibl
 within its band from the chosen start on.
 
 **Plate balance.** While the mean temperature is still adjusting, the bottom and top plates
-carry different fluxes ({doc}`nusselt`); the imbalance must be insignificant.
+carry different fluxes ({doc}`nusselt`). The imbalance is printed in `info.txt` for
+inspection; it is not part of `converged_stat`.
 
-The run's own signals add a fourth, visual check: the kinetic energy and Nu should
+The run's own signals add a further, visual check: the kinetic energy and Nu should
 fluctuate about a level, with no long climb or decay, before the window starts.
 
 ### A minimum averaging time?

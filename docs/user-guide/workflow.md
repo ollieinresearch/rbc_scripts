@@ -8,7 +8,8 @@ read.
 
 | File | Role |
 |---|---|
-| `shell/submit.sh` | Run on a login node in the run directory. Submits the job script for this cluster and queues `post.sh` after it. |
+| `shell/sim_ready.sh` | Run in a new run directory: copies the job script for this cluster, `post.sh`, `submit.sh` and (if absent) `params.conf` into it. |
+| `shell/submit.sh` | Run on a login node in the run directory. Makes `jobs/` for the logs, submits the job script for this cluster and queues `post.sh` after it. |
 | `shell/run_sim.sh` | Job script for Fir, Rorqual and Nibi ({term}`Lustre`): launches with `srun`. |
 | `shell/run_sim_trillium.sh` | Job script for Trillium ({term}`VAST`): launches with `mpirun`, ranks placed per {term}`L3 cache`. |
 | `shell/post.sh` | One-node post-processing job. |
@@ -34,10 +35,12 @@ Every job script starts the same way: `source params.conf`, then `setup.sh` and
   environment. Sets `OMP_NUM_THREADS` to `C`.
 
 `determine_ic`
-: Decides between a fresh start and a restart ({doc}`restarts`). For a restart it runs
-  {mod}`rbc.restart`, which finds the newest readable checkpoint (or the one nearest
-  `START_TIME`), links it as `restart/restart.h5` (or regrids it there), and prints its
-  index and time; the run then goes to that time plus `SIM_TIME`.
+: Decides between a fresh start and a restart ({doc}`restarts`): with `IC=1` it restarts
+  if this run, or the run named by `RESTART_FROM`, has a checkpoint. It runs
+  {mod}`rbc.restart`, which takes this run's own newest readable checkpoint (or the one
+  nearest `START_TIME`), or the other run's if this one has none yet, links it as
+  `restart/restart.h5` (or regrids it there), and prints its index and time; the run then
+  goes to that time plus `SIM_TIME`.
 
 `set_deadline`
 : Asks Slurm when the job ends and exports `RBC_DEADLINE`, `STOP_MARGIN` seconds earlier
@@ -77,10 +80,20 @@ row of `outputs/jobs.csv` when it ends.
 
 ## Other functions
 
-`verify_load`
+`verify_load`, `trill_verify_load`
 : Loads the newest checkpoint with both the fast loader and Dedalus' own, and reports the
   largest difference (should be 0). Run once at small scale after changing
-  {mod}`rbc.vast`.
+  {mod}`rbc.vast`. The Trillium version launches with `mpirun`, which the VAST preload
+  needs.
+
+`plot_slices`
+: A movie of horizontal slices of this run (temperature and vertical velocity at mid-height
+  and in the thermal boundary layer) into `visualization/`, with {mod}`rbc.vis.slices`.
+  Needs `SNAPSHOTS=1` and the visualization environment (`load_modules_plotting`).
+
+`plot_compare_slices RUN_A RUN_B ...`
+: The same for several runs side by side, one row each; without arguments, the
+  $Ra = 10^6$ runs at $Pr = 1$ and $Pr = 10^{-3.5}$.
 
 `test_parallel`, `reset_test`
 : Run the simulation for `TEST_SECONDS` with each file-handler mode and HDF5 locking

@@ -62,8 +62,9 @@ hung.
 `Ra`, `Pr`, the window (`t_start`, `t_end`, `t0`, `t1`, `T_avg`, `n_samples`), `t0_mser`,
 `criteria`, `convergence_qoi`; per identity (`avg_wT`, `avg_grad_T_sq`, and
 `avg_vorticity_sq` if it was written) and for `Re`:
-the value, `sections`, `spread_pct`, `se`, `se_tau`, `tau_int`, `n_eff`, `rel_se`,
-`p_sections`, `drift_pct`, `drift_z`; `plates` (`Nu_bot`, `Nu_top`, `imbalance_pct`,
+the value, `sections`, `spread_pct`, `se` (batch means), `n_blocks`, `block_len`,
+`se_rel_uncertainty`, `se_tau`, `tau_int`, `n_eff`, `rel_se`, `p_sections`, `drift_pct`,
+`drift_z`; `plates` (`Nu_bot`, `Nu_top`, `imbalance_pct`,
 `imbalance_z`); `Nu`, `Nu_se`, `qoi_spread_pct`, `vort_diff_pct`, `converged`,
 `converged_stat`.
 

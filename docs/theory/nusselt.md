@@ -133,8 +133,9 @@ $$
 $$
 
 so in a steady state the two plates carry the same mean flux, and a persistent difference
-means the mean temperature is still drifting. This is one of the transient checks in
-{doc}`convergence`.
+means the mean temperature is still drifting. `info.txt` prints the imbalance in standard
+errors as a check on the transient ({doc}`convergence`); it is not part of the convergence
+rule.
 
 ## Reynolds number and rms vorticity
 

@@ -12,9 +12,13 @@ Runs live under `$SCRATCH/ollie_rb_data/3d/ra<Ra>/pr<Pr>/<label>` (naming rules 
 ```bash
 RUN=$SCRATCH/ollie_rb_data/3d/ra1e5/pr1e0/48_Gam2_2
 mkdir -p $RUN && cd $RUN
-cp $SCRATCH/rbc_scripts/shell/params.conf .
-cp $SCRATCH/rbc_scripts/shell/run_sim.sh .            # on Trillium: run_sim_trillium.sh
+bash $SCRATCH/rbc_scripts/shell/sim_ready.sh
 ```
+
+`sim_ready.sh` copies the job script for this cluster (`run_sim.sh`, or
+`run_sim_trillium.sh` on Trillium), `post.sh` and `submit.sh` into the run directory, and
+`params.conf` too unless the directory already has one, so it is safe to rerun in an
+existing run to pick up newer scripts.
 
 ## 2. Set the parameters
 
@@ -40,7 +44,7 @@ and the `#SBATCH` lines at the top of the job script:
 
 ```{code-block} bash
 :emphasize-lines: 2,3,5
-#SBATCH --output=job_sim_%j.out
+#SBATCH --output=jobs/job_sim_%j.out
 #SBATCH --time=01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=192
@@ -80,7 +84,7 @@ simulation job 4123456 (run_sim.sh), post-processing job 4123457 (starts after 4
 
 ```bash
 squeue -u $USER                  # PD = pending, R = running
-tail -f job_sim_4123456.out      # the simulation's log
+tail -f jobs/job_sim_4123456.out # the simulation's log
 ```
 
 A healthy log shows, in order: the parameters, a disk-quota summary, `Starting

@@ -32,6 +32,16 @@ One row per run, one column per (field, height). Heights: `mid` ($z = 1/2$), `bl
 or a number. Side by side, $Pr = 1$ and $Pr = 0.01$ show how much finer the velocity is
 than the temperature at small Pr.
 
+Each plane is Fourier-interpolated to at least `--points` points per side (512 by
+default; 0 turns it off). The fields are Fourier series in $x$ and $y$, so zero-padding
+their coefficients gives the same function on a finer grid: nothing is invented, but a
+coarse run is drawn smoothly instead of as blocks (a run with $N_z = 64$ has only 128
+points across). Planes are drawn with antialiasing, so a fine run with more points than
+the panel has pixels is averaged rather than subsampled, which would make it look grainy.
+Movie frames are written at `--dpi` (300); at the default size a panel is then about 350
+pixels wide. In `workflow.sh`, `plot_slices` makes this movie for one run and
+`plot_compare_slices RUN_A RUN_B ...` for several.
+
 ## Joint PDF of w and θ
 
 ```bash

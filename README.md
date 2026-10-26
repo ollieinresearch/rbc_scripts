@@ -22,7 +22,7 @@ cd rbc_scripts && bash shell/install_envs.sh     # creates $SCRATCH/ded3 and $SC
 
 ```bash
 mkdir -p $SCRATCH/ollie_rb_data/3d/ra1e5/pr1e0/48_Gam2_2 && cd $_
-cp $SCRATCH/rbc_scripts/shell/{params.conf,run_sim.sh} .      # run_sim_trillium.sh on Trillium
+bash $SCRATCH/rbc_scripts/shell/sim_ready.sh     # copies params.conf and the job scripts
 # edit params.conf and the #SBATCH lines, then, from a login node:
 bash $SCRATCH/rbc_scripts/shell/submit.sh
 ```

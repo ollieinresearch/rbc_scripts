@@ -15,14 +15,16 @@ reads `analysis/` and writes `outputs/nusselt.json`, `outputs/info.txt` and
 - Nu from the three exact identities ({doc}`../theory/nusselt`) and from the plate
   fluxes;
 - Re;
-- for each, the statistics behind {doc}`../theory/convergence`: section means, standard
-  errors, autocorrelation time, effective samples, the section and trend tests, and the
-  plate balance;
+- for each, the statistics behind {doc}`../theory/convergence`: section means, the
+  batch-means standard error (and the autocorrelation one for comparison), autocorrelation
+  time, effective samples, and the section and trend tests;
+- the plate balance, reported but not part of the convergence rule;
 - `converged` (the original section rule) and `converged_stat` (the statistical rule).
 
 `--t0` is the start of the averaging window: a time, or `auto` for the MSER-5 estimate of
 the end of the initial transient. `info.pdf` shows the scan of the mean against the
-window start, which is the check that the choice does not matter.
+window start, which is the check that the choice does not matter, and the running
+autocorrelation time with the block means behind the standard error.
 
 ## Profiles and boundary layers
 

@@ -34,7 +34,7 @@ anything not covered here: [Fir](https://docs.alliancecan.ca/wiki/Fir),
 ```{code-block} bash
 :emphasize-lines: 5,14
 
-#SBATCH --output=job_sim_%j.out
+#SBATCH --output=jobs/job_sim_%j.out
 #SBATCH --time=11:59:00
 #SBATCH --nodes=27
 #SBATCH --ntasks-per-node=192
@@ -55,15 +55,16 @@ srun_sim                              # (2)
 :class-card: cluster-card cluster-trillium
 
 ```{code-block} bash
-:emphasize-lines: 5,10,11,12,15
+:emphasize-lines: 5,8,11,12,13,16
 
-#SBATCH --output=job_sim_%j.out
+#SBATCH --output=jobs/job_sim_%j.out
 #SBATCH --time=11:59:00
 #SBATCH --nodes=27
 #SBATCH --ntasks-per-node=192
 #SBATCH --cpus-per-task=1             # (1)
 #SBATCH --job-name=ra8pr-2.5
 #SBATCH --account=rrg-goluskin
+#SBATCH --mem=0                       # (1)
 
 source params.conf ...                # as on Fir
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
@@ -76,9 +77,10 @@ trill_run_sim                         # (2)
 :::
 ::::
 
-{bdg-primary}`1` **Memory and cores.** On Fir the job asks for all of each node's memory
-(`--mem=0`) rather than the default amount per core. Trillium schedules whole nodes (see
-its page), and the cores per task are stated so that OpenMP and the binding agree.
+{bdg-primary}`1` **Memory and cores.** Both scripts ask for all of each node's memory
+(`--mem=0`) rather than the default amount per core; Trillium schedules whole nodes anyway
+(see its page), so there it changes nothing. On Trillium the cores per task are also
+stated, so that OpenMP and the binding agree.
 
 {bdg-danger}`2` **Launcher.** Fir uses `srun`, which Slurm's own binding handles.
 Trillium's MPI is launched with `mpirun`, which needs the placement spelled out (next

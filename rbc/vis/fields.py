@@ -168,6 +168,32 @@ def plane(h, name, idx, z0, k=8):
     return BarycentricInterpolator(z[lo:hi], block, axis=-1)(z0)
 
 
+def fourier_resample(a, n):
+    """Interpolate a horizontal plane to at least ``n`` points per side, exactly.
+
+    The fields are Fourier series in x and y, so zero-padding their coefficients gives the
+    same function on a finer grid (band-limited interpolation): no detail is invented, the
+    resolved field is just drawn smoothly. Axes that already have ``n`` points or more
+    are left alone.
+
+    Parameters
+    ----------
+    a : numpy.ndarray
+        (nx, ny) values on the periodic grid.
+    n : int
+        Minimum number of points per side (0: no change).
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    from scipy.signal import resample
+    for axis in (0, 1):
+        if n and a.shape[axis] < n:
+            a = resample(a, n, axis=axis)
+    return a
+
+
 def volume(h, name, idx, dtype=np.float32):
     """A whole 3D field.
 

@@ -85,10 +85,14 @@ HDF5 must open every process file to learn its size. When every rank loads its o
 through the joint file, $N$ ranks open $N$ files each: for 5184 ranks, about
 $2.7\times10^7$ opens, which kept large runs in their restart load for a long time.
 
-**Fix** ({func}`rbc.vast.load_state`). Each rank opens only its own process file, after
-checking that it holds exactly the slab the current decomposition needs. If any rank's
-check fails (for example because the process mesh changed), every rank falls back to
-Dedalus' own loader together. `--verify_load` compares the two loaders on a small case.
+**Fix** ({func}`rbc.vast.load_state`). Rank 0 reads the joint file's virtual mapping,
+which records which block of the global array each process file holds, without opening any
+process file. Each rank then opens only the process files that overlap its own slab and
+assembles the slab from them: one file when the process mesh is unchanged, a few when it
+changed. Dedalus' own loader is used, on every rank together, only for a plain file (a
+regridded restart), a change of resolution, a mapping that leaves part of some rank's slab
+uncovered, or an error while reading; the log names the reason. `--verify_load` compares
+the two loaders on a small case.
 
 (fftw-deadlock)=
 ### The restart deadlock it once caused

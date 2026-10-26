@@ -12,14 +12,14 @@ other half of a run's settings; they must agree with `N` and `C` below
 
 | Variable | Template | Meaning |
 |---|---|---|
-| `RES_Z` | 384 | Chebyshev modes $N_z$ in the vertical. |
+| `RES_Z` | 192 | Chebyshev modes $N_z$ in the vertical. |
 | `RES_HOR` | `2 * RES_Z` | Fourier modes $N_x = N_y$; twice `RES_Z` keeps the same resolution per unit length in a Γ = 2 box. Must be even. |
-| `MESHX`, `MESHY` | 72, 72 | {term}`Process mesh`. Each should divide `RES_HOR`. |
+| `MESHX`, `MESHY` | 24, 24 | {term}`Process mesh`. Each should divide `RES_HOR`. |
 | `N` | `MESHX * MESHY` | Number of MPI ranks. |
 | `C` | 1 | Cores (OpenMP threads) per rank. |
-| `RA` | 8 | $\log_{10} Ra$. |
-| `PR` | -2.5 | $\log_{10} Pr$, on half-decades. |
-| `SIM_TIME` | 5 | Free-fall times to run: from 0 for a fresh start, added to the restart time otherwise. |
+| `RA` | 7 | $\log_{10} Ra$. |
+| `PR` | -2 | $\log_{10} Pr$, on half-decades. |
+| `SIM_TIME` | 55 | Free-fall times to run: from 0 for a fresh start, added to the restart time otherwise. |
 | `STEPPER` | `RK222` | Dedalus timestepper class ({ref}`timestepping`). |
 | `CFL` | 1 | Adaptive timestep; comment out for a fixed `DT`. |
 | `CFL_SAFETY` | 1/3 | Safety factor $C$ in $\Delta t \le C\,\Delta x/\lvert u\rvert$. |
@@ -39,7 +39,7 @@ other half of a run's settings; they must agree with `N` and `C` below
 | `STATE_FREQ` | 3600 | Wall-clock seconds between checkpoints. A final one is always written when the job ends cleanly. |
 | `STATE_LAYOUT` | `c` | Checkpoints in coefficient space (`c`: exact, and 3.4 = (3/2)³ times smaller than the dealiased grid) or grid space (`g`). |
 | `PARA` | `virtual` | Dedalus file-handler mode for checkpoints and snapshots: `virtual`, `mpio` or `gather` ({ref}`handler-modes`). |
-| `PAR_SMALL` | `gather` | Mode for the small `analysis` and `horizontal_analysis` output. |
+| `PAR_SMALL` | `virtual` | Mode for the small `analysis` and `horizontal_analysis` output. |
 | `NO_SPEC` | off | Set to 1 to skip the in-simulation spectra. |
 
 ## Restarts
@@ -48,7 +48,7 @@ other half of a run's settings; they must agree with `N` and `C` below
 |---|---|---|
 | `IC` | 1 | 1: restart from a checkpoint if there is one; 0: start fresh (from rest with small noise). |
 | `START_TIME` | 0 | Restart from the checkpoint nearest this time; 0 means the newest. |
-| `RESTART_FROM` | off | Another run directory to take the checkpoint from, e.g. a lower resolution of the same point; it is regridded if the sizes differ ({doc}`restarts`). |
+| `RESTART_FROM` | off | Another run directory whose checkpoint seeds this one, e.g. a lower resolution of the same point; it is regridded if the sizes differ. Used only while this run has no checkpoints of its own, so it can stay set ({doc}`restarts`). |
 
 ## Robustness
 
@@ -65,7 +65,7 @@ other half of a run's settings; they must agree with `N` and `C` below
 
 | Variable | Template | Meaning |
 |---|---|---|
-| `AVG_TIME` | 0 | Start of the averaging window, or `auto` for the MSER-5 estimate ({ref}`transient`). |
+| `AVG_TIME` | `auto` | Start of the averaging window, or `auto` for the MSER-5 estimate ({ref}`transient`). |
 | `FPS` | 30 | Frame rate of movies. |
 | `VIS_MODE` | `iso` | 3D render style: `iso` (isosurfaces) or `volume`. |
 | `VIS_JOBS` | 16 | Frames rendered in parallel. |
