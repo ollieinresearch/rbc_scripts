@@ -58,16 +58,16 @@ set_deadline() {
     echo "Graceful stop planned at $(date -d @"$RBC_DEADLINE") (${margin} s before the job's end)"
 }
 
-# Newest readable state write -> restart/restart.h5 (skips sets cut off mid-write).
-# RESTART_FROM=<other run dir> starts from that run's checkpoint; if RES_HOR/RES_Z differ
-# from it, the checkpoint is spectrally regridded (rbc.regrid) into restart/restart.h5.
+
+# A run restarts from its own state/ once it has checkpoints; RESTART_FROM only seeds
+# a new run folder (and may stay set afterwards).
 determine_ic() {
     local src=${RESTART_FROM:-$PWD}
-    if [[ $IC -eq 1 ]] && ls "$src"/state/state_s*.h5 >/dev/null 2>&1; then
-        rm -f "$src"/state/*.lock
+    if [[ $IC -eq 1 ]] && { compgen -G "$PWD/state/state_s*.h5" || compgen -G "$src/state/state_s*.h5"; } >/dev/null; then
+        rm -f "$PWD"/state/*.lock
         read -r IND T_IC _ < <(python3 -m rbc.restart "$PWD" --from "$src" --time "$START_TIME" \
             --shape "$RES_HOR" "$RES_HOR" "$RES_Z")
-        [[ -n $IND ]] || { echo "determine_ic: no usable restart in state/"; exit 1; }
+        [[ -n $IND ]] || { echo "determine_ic: no usable restart (see the message above)"; exit 1; }
         TOTAL_TIME=$(echo "$SIM_TIME + $T_IC" | bc -l)
         echo "Restarting from write $IND at t = $T_IC; running to t = $TOTAL_TIME"
     else
@@ -101,6 +101,14 @@ trill_run_sim() {
 verify_load() {
     rb_args
     srun -n "$N" -c "$C" python3 "$SIM_SCRIPT" "${RB_ARGS[@]}" --verify_load
+}
+
+# Trillium version of verify_load (the VAST preload needs mpirun).
+trill_verify_load() {
+    rb_args
+    mpirun -n "$N" --bind-to core --map-by "ppr:${RANKS_PER_L3CACHE}:l3cache:pe=${OMP_NUM_THREADS}" \
+        -x HDF5_USE_FILE_LOCKING -x OMP_NUM_THREADS \
+        python3 "$SIM_SCRIPT" "${RB_ARGS[@]}" --verify_load
 }
 
 # Post-processing runs as its own 1-node job after the sim job ends (any exit state).
@@ -138,9 +146,13 @@ plot_snapshots() {
 }
 
 # 2D slices movie (needs SNAPSHOTS and the vis env).
-plot_snapshots() {
+plott_snapshots() {
     python3 -m rbc.vis.slices "$PWD" --mode "${VIS_MODE:-iso}" --spectra --movie \
         --jobs "${VIS_JOBS:-16}" --stride "${VIS_STRIDE:-1}" --fps "$FPS"
+}
+
+plot_compare_slices() {
+    python3 -m rbc.vis.slices /scratch/ollie/ollie_rb_data/3d/ra1e6/pr1e0/64_Gam2_2 /scratch/ollie/ollie_rb_data/3d/ra1e6/pr3e-4/216_Gam2_2 --fields T w --heights mid bl --movie --jobs 16
 }
 
 # Spectra computed from saved snapshots (runs made before in-sim spectra existed).

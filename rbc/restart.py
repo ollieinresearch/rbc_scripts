@@ -6,8 +6,10 @@ example from a job killed mid-write) are skipped. Usage::
 
     python -m rbc.restart RUN_DIR [--time T]     # T = 0 -> latest write
     python -m rbc.restart RUN_DIR --from OTHER_RUN --shape NX NY NZ
-        restart from another run's checkpoint; if the shape differs from that
-        checkpoint's (coefficient space), it is regridded into restart/restart.h5
+        seed a new run from another run's checkpoint, regridded into
+        restart/restart.h5 if its (coefficient) shape differs. Once RUN_DIR has
+        checkpoints of its own, --from is ignored, so RESTART_FROM can stay set.
+        A change of resolution is refused within a run: make a new run folder.
     python -m rbc.restart RUN_DIR --keep 2 [--prune]
         print the 2 newest readable state sets (paths of set folder and .h5); with
         --prune, delete every older set. Nothing is deleted unless 'keep' readable
@@ -100,6 +102,22 @@ def choose(run: Path, time: float = 0.0):
     raise FileNotFoundError(f"no readable state files in {run / 'state'}")
 
 
+def has_checkpoint(run: Path) -> bool:
+    """Whether a run has at least one readable state set of its own.
+
+    Parameters
+    ----------
+    run : pathlib.Path
+        Run directory.
+
+    Returns
+    -------
+    bool
+    """
+    state = run / "state"
+    return state.is_dir() and any(readable(p) is not None for p in set_files(state, "state"))
+
+
 def keep_and_prune(run: Path, keep: int, prune: bool) -> list[Path]:
     """The newest readable state sets, optionally deleting all older ones.
 
@@ -165,27 +183,39 @@ def main(argv=None) -> None:
         Command-line arguments (default: ``sys.argv[1:]``).
     """
     a = get_parser().parse_args(argv)
+    run = a.run.resolve()
     if a.keep:
-        for p in keep_and_prune(a.run.resolve(), a.keep, a.prune):
+        for p in keep_and_prune(run, a.keep, a.prune):
             print(p.with_suffix(""))
             print(p)
         return
-    i, t, p = choose((a.src or a.run).resolve(), a.time)
-    link = a.run / "restart" / "restart.h5"
-    link.parent.mkdir(exist_ok=True)
-    if link.is_symlink() or link.exists():
-        link.unlink()
+    src = run
+    if a.src and a.src.resolve() != run:
+        if has_checkpoint(run):
+            print(f"restart: {run.name} has its own checkpoints; ignoring --from {a.src}", file=sys.stderr)
+        else:
+            src = a.src.resolve()
+    i, t, p = choose(src, a.time)
+    old = None
     if a.shape:
         from rbc import regrid
         old = regrid.coeff_shape(p)
-        if old is not None and old != tuple(a.shape):
-            print(f"restart: regridding {old} -> {tuple(a.shape)} from {p}", file=sys.stderr)
-            regrid.regrid(p, link, tuple(a.shape), i)
-            print(0, repr(t), link)
-            return
+    change = old is not None and old != tuple(a.shape)
+    if change and src == run:
+        sys.exit(f"restart: checkpoint {p.name} has shape {old} but RES_HOR/RES_Z give "
+                 f"{tuple(a.shape)}. Change resolution in a new run folder with "
+                 f"RESTART_FROM={run}")
+    link = run / "restart" / "restart.h5"
+    link.parent.mkdir(exist_ok=True)
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    if change:
+        print(f"restart: regridding {old} -> {tuple(a.shape)} from {p}", file=sys.stderr)
+        regrid.regrid(p, link, tuple(a.shape), i)
+        print(0, repr(t), link)
+        return
     link.symlink_to(p.resolve())
     print(i, repr(t), p)
-
 
 if __name__ == "__main__":
     main()

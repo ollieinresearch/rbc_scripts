@@ -22,6 +22,9 @@ export HDF5_USE_FILE_LOCKING=FALSE
 print_params
 load_modules
 determine_ic
+rm -f stop_reason.txt
 trill_run_sim
-echo "Simulation exited with $? ($(cat stop_reason.txt 2>/dev/null))"
+rc=$?
+reason=$(cat stop_reason.txt 2>/dev/null) || reason="no stop_reason.txt: crashed or watchdog, see watchdog/"
+echo "Simulation exited with $rc ($reason)"
 submit_post
