@@ -57,6 +57,8 @@ def main(argv=None) -> None:
             (scaling.main, ["--q", "Nu", "--norm", "law"] + res),
             (scaling.main, ["--q", "Nu-1"] + res),
             (fixed.main, ["--slopes"] + res),
+            (fixed.main, ["--slopes", "--norm", "comp", "--fit", "quadratic"] + res),
+            (fixed.main, ["--slopes", "--norm", "collapse", "--fit", "linear"] + res),
             (exponents.main, ["--surface", "2"] + res),
             (contour.main, [] + res),
         ]
@@ -68,6 +70,8 @@ def main(argv=None) -> None:
             (scaling.main, ["--q", "Nu", "--norm", "law"] + res),
             (scaling.main, ["--q", "Re"] + res),
             (fixed.main, ["--slopes"] + res),
+            (fixed.main, ["--slopes", "--norm", "comp", "--fit", "quadratic"] + res),
+            (fixed.main, ["--slopes", "--norm", "collapse", "--fit", "linear"] + res),
             (exponents.main, ["--surface", "2"] + res),
             (boundary_layers.main, ["ratio"] + res),
             (resolution.main, ["study"] + res),

@@ -110,8 +110,11 @@ one reported as `Nu`.
 
 Resolution enters differently: $\langle|\nabla T|^2\rangle$ and above all
 $\langle|\boldsymbol\omega|^2\rangle$ weight the smallest scales, so an under-resolved
-run overshoots in the vorticity form well before $\langle wT\rangle$ changes. The
-spread `qoi_spread_pct` is therefore a resolution check once the window is long.
+run overshoots in the vorticity form well before $\langle wT\rangle$ changes. That
+difference is reported as `vort_diff_pct` and is a resolution diagnostic; it is not part of
+the convergence checks, which use only $\langle wT\rangle$ and $\langle|\nabla T|^2\rangle$
+({ref}`which identities are checked <convergence-identities>`). Their spread `qoi_spread_pct` is likewise a check of
+resolution once the window is long.
 
 ## Plate fluxes
 

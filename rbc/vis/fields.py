@@ -63,6 +63,10 @@ def writes(run: Path, folder="snapshots") -> list[Write]:
 def _task(h, name):
     """Dataset and component index of a field, for current and older file layouts.
 
+    Velocity is found as its own task (``w``, as older runs saved it), as ``x``/``y`` for
+    u and v in the oldest layout, or as a component of the vector task ``u`` of shape
+    (t, 3, nx, ny, nz), in that order.
+
     Parameters
     ----------
     h : h5py.File
@@ -81,9 +85,18 @@ def _task(h, name):
     if name == "vort":
         return t["vorticity"], None
     comp = {"u": 0, "v": 1, "w": 2}[name]
+    # a component saved on its own, (t, nx, ny, nz): older runs saved only "w"
     if name in t and t[name].ndim == 4:
         return t[name], None
-    return t["u"], comp
+    if name == "u" and "x" in t and t["x"].ndim == 4:        # oldest layout: tasks x, y, w
+        return t["x"], None
+    if name == "v" and "y" in t and t["y"].ndim == 4:
+        return t["y"], None
+    # the whole velocity vector, (t, 3, nx, ny, nz)
+    if "u" in t and t["u"].ndim == 5:
+        return t["u"], comp
+    raise KeyError(f"{h.filename}: no {name!r} velocity component in tasks {sorted(t)} "
+                   "(older runs saved only 'w'; u and v cannot be plotted from them)")
 
 
 def grids(h, name="T", L=(2.0, 2.0)):
@@ -274,6 +287,14 @@ class RunInfo:
         return rf"$Ra={pow10(np.log10(self.Ra))}$, $Pr={pow10(np.log10(self.Pr))}$"
 
 
+def _ratio(a, r):
+    """a / r, with 0 wherever r is not positive (an rms at a plate, say) or not finite."""
+    r = np.asarray(r, dtype=float)
+    ok = np.isfinite(r) & (r > 0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(ok, a / np.where(ok, r, 1.0), 0.0)
+
+
 def normalized(info: RunInfo, name, data, z, keep_negative=False):
     """Apply the normalization described in the module docstring.
 
@@ -303,7 +324,7 @@ def normalized(info: RunInfo, name, data, z, keep_negative=False):
         theta = data - tbar
         if th_rms is None:
             th_rms = np.sqrt((theta ** 2).mean(axis=(0, 1)))
-        return theta / th_rms
+        return _ratio(theta, th_rms)
     if name in ("u", "v", "w"):
         key = "w_rms" if name == "w" else "uh_rms"
         r = info.profile(key, z)
@@ -311,7 +332,7 @@ def normalized(info: RunInfo, name, data, z, keep_negative=False):
             r = r / np.sqrt(2)
         if r is None:
             r = np.sqrt((data ** 2).mean(axis=(0, 1)))
-        return data / r
+        return _ratio(data, r)
     if name == "vort":
         d = data if keep_negative else np.maximum(data, 0)
         return np.sign(d) * np.sqrt(np.abs(d)) / info.omega_rms

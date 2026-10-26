@@ -57,13 +57,30 @@ python -m rbc.vis.render3d RUN --mode iso --spectra --movie --jobs 16
 
 `iso`: temperature isosurfaces at $\theta = \pm1.5\,\theta_\text{rms}$ (warm red, cool
 blue: plumes) beside vorticity isosurfaces at $3\,\omega_\text{rms}$ coloured by $w$
-(vortex tubes, and whether they sit in rising or sinking fluid). `volume`: volume
-renderings with fixed transfer functions. `--spectra` adds the spectra at the same instant
+(vortex tubes, and whether they sit in rising or sinking fluid).
+
+`volume`: the volume renderings of the original `plotting_v3.py`, with its transfer
+functions. Temperature $T$ on $[0, 1]$ is transparent within about $0.2$ of $1/2$ and
+opaque beyond about $0.25$, so only the hot and cold extremes (plumes and boundary layers)
+show; $|\omega|^2$, on an asinh scale over its range in each frame, is opaque only in the
+top fifth of that range, the strongest filaments. Both use `jet` (`--cmap-T`,
+`--cmap-omega`), and each colour bar has its opacity curve drawn across it. The Chebyshev
+points are resampled to a uniform $z$ grid; `--stretch-z` places them evenly as the
+original did, which makes the boundary layers look thicker. Because the vorticity range is
+taken frame by frame, its colours are relative to that frame. `--spectra` adds the spectra at the same instant
 below, so a burst of small-scale energy can be matched to what the flow is doing.
 `post.sh` makes this movie automatically when `SNAPSHOTS=1`.
 
 Movies are assembled with ffmpeg (loaded with the modules). Frames render in parallel
-(`--jobs`), each in its own process; `--stride 2` halves the horizontal resolution if
-memory runs short.
+(`--jobs`), in worker processes that are replaced every `--frames-per-process` frames;
+`--stride 2` halves the horizontal resolution if memory runs short. On a compute node
+without a display, one virtual X server (Xvfb) is started for the whole command and
+stopped at the end.
+
+Frames already in `visualization/frames_<mode>/` are kept, so an interrupted movie, or the
+next post-processing job after more snapshots, renders only the new ones; a frame that
+fails is retried (`--retries`), and the MP4 is made only once every frame exists. The
+spectra panel's time mean is the one at the moment each frame was rendered, so for a final
+movie re-render everything with `--redo`.
 
 Finished pictures and movies worth keeping go in the {doc}`../gallery/media`.

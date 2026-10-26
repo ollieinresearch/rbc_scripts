@@ -60,10 +60,12 @@ hung.
 
 `outputs/nusselt.json` (and the readable `info.txt`), from {func}`rbc.analysis.nusselt.compute`:
 `Ra`, `Pr`, the window (`t_start`, `t_end`, `t0`, `t1`, `T_avg`, `n_samples`), `t0_mser`,
-`criteria`; per identity (`avg_wT`, `avg_grad_T_sq`, `avg_vorticity_sq`) and for `Re`:
+`criteria`, `convergence_qoi`; per identity (`avg_wT`, `avg_grad_T_sq`, and
+`avg_vorticity_sq` if it was written) and for `Re`:
 the value, `sections`, `spread_pct`, `se`, `se_tau`, `tau_int`, `n_eff`, `rel_se`,
 `p_sections`, `drift_pct`, `drift_z`; `plates` (`Nu_bot`, `Nu_top`, `imbalance_pct`,
-`imbalance_z`); `Nu`, `Nu_se`, `qoi_spread_pct`, `converged`, `converged_stat`.
+`imbalance_z`); `Nu`, `Nu_se`, `qoi_spread_pct`, `vort_diff_pct`, `converged`,
+`converged_stat`.
 
 `outputs/profiles.npz`, from {func}`rbc.analysis.profiles.compute`: arrays `z` (centred,
 $-1/2 \dots 1/2$), `T`, `w_rms`, `uh_rms`, `u2`, `theta_rms`, `nu_z`.

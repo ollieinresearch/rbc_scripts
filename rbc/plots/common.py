@@ -100,6 +100,46 @@ def tidy_log_y(ax, max_decades=1.2):
         ax.yaxis.set_minor_formatter(ticker.NullFormatter())
 
 
+def plain_log_y(ax, max_decades=2.5):
+    """Plain-number ticks (0.02, 0.05, 3) on a log y axis spanning a few decades at most.
+
+    Below a decade the ticks are round mantissas (1-9, or 1, 2, 3, 5); up to
+    ``max_decades`` the decades are labelled as plain numbers and the 2s and 5s (or 3s)
+    between them too, instead of the ``4 x 10^0`` labels Matplotlib gives by default.
+    Very short axes fall back to :func:`tidy_log_y`.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes.
+    max_decades : float, optional
+        Leave the axis alone if it spans more decades than this.
+    """
+    from matplotlib import ticker
+    lo, hi = ax.get_ylim()
+    span = np.log10(hi / lo)
+    if span < 0.15:
+        tidy_log_y(ax, 1.0)
+        return
+    if span > max_decades:
+        return
+    if span < 1.0:          # round mantissas: 0.04, 0.05, 0.06 rather than 0.048, 0.056
+        subs = np.arange(1, 10) if span < 0.7 else (1, 2, 3, 5)
+        plain = ticker.FuncFormatter(lambda v, _: f"{v:g}")
+        ax.yaxis.set_major_locator(ticker.LogLocator(base=10, subs=subs))
+        ax.yaxis.set_major_formatter(plain)
+        ax.yaxis.set_minor_locator(ticker.LogLocator(base=10, subs=np.arange(1, 10, 0.5 if span < 0.5 else 1)))
+        ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+        return
+    plain = ticker.FuncFormatter(lambda v, _: f"{v:g}")
+    ax.yaxis.set_major_locator(ticker.LogLocator(base=10, subs=(1.0,)))
+    ax.yaxis.set_major_formatter(plain)
+    ax.yaxis.set_minor_locator(ticker.LogLocator(base=10, subs=np.arange(2, 10)))
+    keep = (2, 5) if span < 1.8 else (3,) if span < 2.2 else ()
+    ax.yaxis.set_minor_formatter(ticker.FuncFormatter(
+        lambda v, _: f"{v:g}" if round(v / 10 ** np.floor(np.log10(v) + 1e-9)) in keep else ""))
+
+
 def proxy(kw, ls="-"):
     """Legend handle showing a marker and a line.
 

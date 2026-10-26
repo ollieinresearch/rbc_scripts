@@ -7,29 +7,54 @@ optionally with the in-simulation spectra at the same time underneath (movie fra
     they sit in rising or sinking fluid). Thresholds are in rms units, so the same numbers
     mean the same thing at every Pr and in every frame.
 ``volume``
-    theta/theta_rms transparent within +-1 and opaque by +-3; log10 of the vorticity
-    magnitude over omega_rms transparent below 0 and opaque by 1.5. Values past the end of
-    a transfer function are drawn at its end colour, so a fixed range never rescales.
+    the transfer functions of the original ``plotting_v3.py``. Temperature T on [0, 1],
+    opacity 1 - exp(-1e8 (s - 1/2)^12) with s the position on that range: transparent
+    while T is within about 0.2 of 1/2 and opaque beyond about 0.25, so only the hot and
+    cold extremes (plumes and boundary layers) show. Vorticity: the saved ``|ω|²`` on an
+    asinh scale (linear width 1.5), mapped over its range in that frame, opacity
+    1 - exp(-3e11 s^22) with s from -1/2 to 1/2 and zero from 0 up to the middle: only
+    the top fifth of the range, the strongest filaments, is opaque. Colour map ``jet``
+    for both by default (``--cmap-T``, ``--cmap-omega``). The Chebyshev z points are
+    resampled to a uniform grid (``--stretch-z`` places them evenly instead, as the
+    original did, which thickens the boundary layers on screen).
 
 Usage::
 
     python -m rbc.vis.render3d RUN                       # last snapshot, iso
     python -m rbc.vis.render3d RUN --mode volume --spectra --movie --jobs 16
+    python -m rbc.vis.render3d RUN --movie --redo        # re-render every frame
+
+Headless nodes: unless ``DISPLAY`` is set, or ``VTK_DEFAULT_OPENGL_WINDOW`` asks for an
+EGL or OSMesa window (VTK 9.4 or later), one virtual X server (Xvfb) is started for the
+whole job on a free display, before any worker, and stopped at the end; its log is
+``xvfb.log`` in the output folder.
+
+Movies: each frame is written to a temporary name and renamed when complete, and frames
+already present are kept, so an interrupted movie (or the next post-processing job, with
+more snapshots) only renders what is missing. Workers are replaced every
+``--frames-per-process`` frames. If a worker dies (for instance when it loses its X
+connection) the pool is rebuilt, Xvfb restarted if it died, and the missing frames tried
+again, up to ``--retries`` times; the MP4 is only assembled when every frame exists.
 """
 from __future__ import annotations
 
 import argparse
+import multiprocessing as mp
 import os
+import select
 import shutil
 import subprocess
-from concurrent.futures import ProcessPoolExecutor
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize
+from matplotlib.colors import AsinhNorm, Normalize
+from matplotlib.ticker import FuncFormatter, NullLocator
 
 from rbc import style
 from rbc.vis import fields as fl
@@ -38,16 +63,123 @@ from rbc.vis import fields as fl
 CAMERA = [(4.0, 4.0, 0.5), (1.0, 1.0, 0.35), (0.0, 0.0, 1.0)]
 
 
-def _pv():
-    """Import pyvista, starting a virtual display on headless nodes if possible."""
-    import pyvista as pv
-    if not os.environ.get("DISPLAY") and shutil.which("Xvfb"):
+#: Render windows that need no X server (VTK 9.4+ selects them at run time).
+HEADLESS_WINDOWS = ("vtkEGLRenderWindow", "vtkOSOpenGLRenderWindow")
+
+
+class VirtualDisplay:
+    """One Xvfb for this process and every worker it starts.
+
+    ``pyvista.start_xvfb`` launches ``Xvfb :99`` from whichever process calls it and
+    leaves it running unowned; called from every worker of a pool, that is one race per
+    worker for the same display, and a server no process watches. Here the parent starts
+    a single server, lets Xvfb choose a free display (``-displayfd``), exports ``DISPLAY``
+    before any worker exists, and stops the server at the end.
+
+    Parameters
+    ----------
+    size : tuple of int
+        Screen size in pixels (width, height); renders are off screen, so this only needs
+        to be about the window size.
+    log : pathlib.Path, optional
+        File for the server's own messages.
+    """
+
+    def __init__(self, size=(1600, 900), log=None):
+        self.size, self.log, self.proc = size, log, None
+
+    @staticmethod
+    def needed() -> bool:
+        """True if there is no display and VTK was not asked for a headless window."""
+        return not os.environ.get("DISPLAY") and \
+            os.environ.get("VTK_DEFAULT_OPENGL_WINDOW", "") not in HEADLESS_WINDOWS
+
+    def alive(self) -> bool:
+        """True if the server this object started is still running."""
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self, timeout=20.0) -> None:
+        """Start Xvfb and set ``DISPLAY``; does nothing if one is not needed.
+
+        Raises
+        ------
+        RuntimeError
+            If Xvfb is not installed or does not report a display in ``timeout`` s.
+        """
+        if self.alive() or not (self.needed() or self.proc is not None):
+            return
+        if not shutil.which("Xvfb"):
+            raise RuntimeError("no DISPLAY and no Xvfb: run on a node with Xvfb, or set "
+                               "VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow with VTK 9.4+")
+        r, w = os.pipe()
+        err = open(self.log, "a") if self.log else subprocess.DEVNULL
+        self.proc = subprocess.Popen(
+            ["Xvfb", "-displayfd", str(w), "-screen", "0", f"{self.size[0]}x{self.size[1]}x24",
+             "-nolisten", "tcp", "+extension", "GLX"],
+            pass_fds=(w,), stdout=err, stderr=err, start_new_session=True)
+        os.close(w)
+        num = b""
         try:
-            pv.start_xvfb()
-        except Exception:
-            pass
+            while not num.endswith(b"\n"):
+                if not select.select([r], [], [], timeout)[0]:
+                    raise RuntimeError(f"Xvfb did not start within {timeout:g} s (see {self.log})")
+                chunk = os.read(r, 16)
+                if not chunk:
+                    raise RuntimeError(f"Xvfb exited at start (see {self.log})")
+                num += chunk
+        finally:
+            os.close(r)
+        os.environ["DISPLAY"] = f":{int(num)}"
+        print(f"Xvfb started on DISPLAY={os.environ['DISPLAY']} (pid {self.proc.pid})")
+
+    def ensure(self) -> None:
+        """Restart the server if this object started one and it has died."""
+        if self.proc is not None and not self.alive():
+            print(f"Xvfb (pid {self.proc.pid}) exited with code {self.proc.returncode}; restarting")
+            os.environ.pop("DISPLAY", None)
+            self.start()
+
+    def stop(self) -> None:
+        """Stop the server, if this object started one."""
+        if self.alive():
+            self.proc.terminate()
+            try:
+                self.proc.wait(5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
+
+
+def _pv():
+    """Import pyvista (the display is set up by :class:`VirtualDisplay` in the parent)."""
+    import pyvista as pv
     pv.global_theme.allow_empty_mesh = True
     return pv
+
+
+def probe() -> None:
+    """Render one tiny scene, so a broken OpenGL set-up fails here with a clear message.
+
+    Raises
+    ------
+    SystemExit
+        If rendering fails.
+    """
+    try:
+        pv = _pv()
+        p = pv.Plotter(off_screen=True, window_size=(64, 64))
+        p.add_mesh(pv.Sphere())
+        p.screenshot(return_img=True)
+        p.close()
+    except Exception as e:      # pragma: no cover - depends on the node
+        raise SystemExit(f"OpenGL rendering does not work here ({e!r}); DISPLAY="
+                         f"{os.environ.get('DISPLAY')!r}. See Troubleshooting in the docs.")
 
 
 def _uniform_z(a, z, nzu):
@@ -58,17 +190,61 @@ def _uniform_z(a, z, nzu):
     return a[..., j] * (1 - w) + a[..., j + 1] * w, zu
 
 
-def _set_opacity(vol, values, alpha):
-    """Opacity transfer function in data units, set on VTK directly (pyvista's
-    array convention has changed between versions: 0-1 vs 0-255)."""
-    from vtkmodules.vtkCommonDataModel import vtkPiecewiseFunction
-    f = vtkPiecewiseFunction()
-    for v, a in zip(values, alpha):
-        f.AddPoint(float(v), float(a))
-    vol.GetProperty().SetScalarOpacity(f)
+#: Linear width of the asinh scale applied to |ω|² in volume mode (as in plotting_v3.py).
+ASINH_WIDTH = 1.5
 
 
-def render(run, k, o) -> tuple[np.ndarray, float]:
+def asinh_scale(a, width=ASINH_WIDTH):
+    """``width * asinh(a / width)``: linear below ``width``, logarithmic above (as
+    :class:`matplotlib.scale.AsinhTransform`)."""
+    return width * np.arcsinh(np.asarray(a, dtype=np.float64) / width)
+
+
+def opacity_T(n=255):
+    """Temperature opacity of the original volume renders, sampled across T in [0, 1].
+
+    1 - exp(-1e8 (s - 1/2)^12): 0.5 where T is 0.21 from 1/2, 0.99 at 0.245.
+
+    Parameters
+    ----------
+    n : int, optional
+        Number of samples (pyvista interpolates them over its lookup table).
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    s = np.linspace(0, 1, n)
+    return 1.0 - np.exp(-1e8 * (s - 0.5) ** 12)
+
+
+def opacity_omega(lo, hi, n=255):
+    """Vorticity opacity of the original volume renders, sampled across [lo, hi].
+
+    1 - exp(-3e11 s^22) for s from -1/2 to 1/2 (0.5 at s = ±0.30, 0.99 at ±0.32), and
+    zero from the value 0 up to the middle, so only the top fifth of the range is opaque
+    (and the bottom fifth too, if negative values of ``|ω|²`` are kept).
+
+    Parameters
+    ----------
+    lo, hi : float
+        Range of the (asinh-scaled) data in this frame.
+    n : int, optional
+        Number of samples.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    s = np.linspace(-0.5, 0.5, n)
+    op = 1.0 - np.exp(-3e11 * s ** 22)
+    z0 = int(np.searchsorted(np.linspace(lo, hi, 256), 0))
+    if z0 < 125:
+        op[max(z0 - 1, 0):125] = 0.0
+    return op
+
+
+def render(run, k, o) -> tuple[np.ndarray, float, dict]:
     """Render one snapshot (temperature left, vorticity right) off screen.
 
     Parameters
@@ -86,6 +262,8 @@ def render(run, k, o) -> tuple[np.ndarray, float]:
         RGB screenshot.
     time : float
         Simulation time of the snapshot.
+    meta : dict
+        For the colour bars: ``omega_range``, the range of ``|ω|²`` in volume mode.
     """
     pv = _pv()
     info = fl.RunInfo.load(run)
@@ -97,15 +275,15 @@ def render(run, k, o) -> tuple[np.ndarray, float]:
         T = fl.volume(h, "T", wr.index)[::s, ::s]
         W = fl.volume(h, "w", wr.index)[::s, ::s]
         V = fl.volume(h, "vort", wr.index)[::s, ::s]
-    th = fl.normalized(info, "T", T, z).astype(np.float32)
-    wn = fl.normalized(info, "w", W, z).astype(np.float32)
-    om = fl.normalized(info, "vort", V, z, keep_negative=True).astype(np.float32)
-    neg = om < 0
-    om = np.maximum(om, 0)
+    meta = {}
+    neg = V < 0
 
     p = pv.Plotter(shape=(1, 2), off_screen=True, border=False, window_size=o.window)
     p.set_background("white")
     if o.mode == "iso":
+        th = fl.normalized(info, "T", T, z).astype(np.float32)
+        wn = fl.normalized(info, "w", W, z).astype(np.float32)
+        om = fl.normalized(info, "vort", V, z).astype(np.float32)
         g = pv.RectilinearGrid(x, y, z)
         g.point_data["theta"] = th.ravel(order="F")
         g.point_data["omega"] = om.ravel(order="F")
@@ -121,22 +299,39 @@ def render(run, k, o) -> tuple[np.ndarray, float]:
             tubes = tubes.sample(g) if "w" not in tubes.point_data else tubes
         p.add_mesh(tubes, scalars="w", cmap="PuOr_r", clim=[-3, 3], show_scalar_bar=False, smooth_shading=True)
     else:
-        nzu = o.nz_uniform or 2 * z.size
-        thu, zu = _uniform_z(th, z, nzu)
-        omu, _ = _uniform_z(np.log10(np.maximum(om, 1e-3)), z, nzu)
+        # Transfer functions go through pyvista's own ``opacity=`` (as in plotting_v3.py):
+        # pyvista 0.44 rescales the scalars to 0-255 before VTK sees them, so an opacity
+        # function set on VTK in data units would not line up with them.
+        Vr = V if o.keep_negative else np.maximum(V, 0)
+        if o.stretch_z:                     # Chebyshev points placed evenly, as originally
+            zu = np.linspace(0.0, 1.0, z.size)
+            Tu, Vu = T, Vr
+        else:
+            nzu = o.nz_uniform or 2 * z.size
+            Tu, zu = _uniform_z(T, z, nzu)
+            Vu, _ = _uniform_z(Vr, z, nzu)
+        A = asinh_scale(np.nan_to_num(Vu)).astype(np.float32)
+        lo, hi = float(A.min()), float(A.max())
+        hi = hi if hi > lo else lo + 1.0
+        meta["omega_range"] = (float(np.sinh(lo / ASINH_WIDTH) * ASINH_WIDTH),
+                               float(np.sinh(hi / ASINH_WIDTH) * ASINH_WIDTH))
         sp = (x[1] - x[0], y[1] - y[0], zu[1] - zu[0])
-        lin = np.linspace(-3, 3, 256)
-        lin_o = np.linspace(-1, 1.5, 256)
+        # pyvista's default opacity unit distance for the original full grid, so the same
+        # transfer function gives the same opacity whatever the stride or z resampling
+        box = (sp[0] * x.size, sp[1] * y.size, 1.0)
+        unit = float(np.linalg.norm(box) / (np.mean([x.size * s, y.size * s, z.size]) - 1))
         for col, (data, cmap, clim, op) in enumerate((
-                (thu, "RdBu_r", [-3, 3], np.clip((np.abs(lin) - 1) / 2, 0, 1) * 0.8),
-                (omu, "magma", [-1, 1.5], np.clip(lin_o / 1.5, 0, 1) * 0.8))):
+                (np.clip(np.nan_to_num(Tu, nan=0.5), 0.0, 1.0).astype(np.float32), o.cmap_T, [0.0, 1.0],
+                 opacity_T()),
+                (A, o.cmap_omega, [lo, hi], opacity_omega(lo, hi)))):
             img = pv.ImageData(dimensions=data.shape, spacing=sp, origin=(x[0], y[0], zu[0]))
             img.point_data["f"] = data.ravel(order="F")
             p.subplot(0, col)
             p.add_mesh(img.outline(), color="gray", line_width=1)
-            vol = p.add_volume(img, scalars="f", cmap=cmap, clim=clim, opacity="linear", show_scalar_bar=False)
-            _set_opacity(vol, np.linspace(*clim, op.size), op)
-    if o.keep_negative and neg.any():
+            vol = p.add_volume(img, scalars="f", cmap=cmap, clim=clim, opacity=op, opacity_unit_distance=unit,
+                               show_scalar_bar=False)
+            vol.mapper.interpolate_before_map = False
+    if o.mode == "iso" and o.keep_negative and neg.any():
         idx = np.argwhere(neg)
         pts = np.c_[x[idx[:, 0]], y[idx[:, 1]], z[idx[:, 2]]]
         p.subplot(0, 1)
@@ -148,7 +343,7 @@ def render(run, k, o) -> tuple[np.ndarray, float]:
         p.camera.zoom(o.zoom)
     img = p.screenshot(return_img=True)
     p.close()
-    return img, wr.time
+    return img, wr.time, meta
 
 
 def spectra_at(run, t):
@@ -201,7 +396,7 @@ def compose(run, k, o, path):
     pathlib.Path
     """
     info = fl.RunInfo.load(run)
-    img, t = render(run, k, o)
+    img, t, meta = render(run, k, o)
     rows = 2 if o.spectra else 1
     w_in = 7.0
     fig = plt.figure(figsize=(w_in, w_in * img.shape[0] / img.shape[1] + (2.0 if o.spectra else 0) + 0.5),
@@ -212,16 +407,30 @@ def compose(run, k, o, path):
     ax.axis("off")
     ax.set_title(f"{info.label()},  $t = {t:.3f}$", fontsize=9)
     if o.mode == "iso":
-        bars = [(r"$\theta/\theta_{\rm rms}$ (surfaces at $\pm" + f"{o.iso_T:g}" + "$)", "RdBu_r", (-3, 3)),
-                (r"$w/w_{\rm rms}$ on $|\omega|/\omega_{\rm rms}=" + f"{o.iso_omega:g}" + "$", "PuOr_r", (-3, 3))]
+        bars = [(r"$\theta/\theta_{\rm rms}$ (surfaces at $\pm" + f"{o.iso_T:g}" + "$)", "RdBu_r",
+                 Normalize(-3, 3), None),
+                (r"$w/w_{\rm rms}$ on $|\omega|/\omega_{\rm rms}=" + f"{o.iso_omega:g}" + "$", "PuOr_r",
+                 Normalize(-3, 3), None)]
     else:
-        bars = [(r"$\theta/\theta_{\rm rms}$", "RdBu_r", (-3, 3)),
-                (r"$\log_{10}|\omega|/\omega_{\rm rms}$", "magma", (-1, 1.5))]
-    for side, (lab, cmap, lim) in zip(("left", "right"), bars):
+        lo, hi = meta["omega_range"]
+        bars = [(r"$T$", o.cmap_T, Normalize(0, 1), opacity_T()),
+                (r"$|\omega|^2$ (asinh scale)", o.cmap_omega, AsinhNorm(ASINH_WIDTH, lo, hi),
+                 opacity_omega(*asinh_scale([lo, hi])))]
+    for side, (lab, cmap, norm, op) in zip(("left", "right"), bars):
         cax = ax.inset_axes([0.08 if side == "left" else 0.58, 0.07, 0.34, 0.025])
-        cb = fig.colorbar(ScalarMappable(Normalize(*lim), cmap), cax=cax, orientation="horizontal")
-        cb.set_label(lab, fontsize=7)
+        cb = fig.colorbar(ScalarMappable(norm, cmap), cax=cax, orientation="horizontal")
+        cb.set_label(lab + (" (line: opacity)" if op is not None else ""), fontsize=7)
         cb.ax.tick_params(labelsize=6)
+        if isinstance(norm, AsinhNorm):     # 0 and whole decades only (the default crowds near 0)
+            top = int(np.floor(np.log10(max(abs(norm.vmin), abs(norm.vmax), 1.0))))
+            ticks = [v for k in range(top + 1) for v in (-10.0 ** k, 10.0 ** k)] + [0.0]
+            cb.set_ticks(sorted(v for v in ticks if norm.vmin <= v <= norm.vmax))
+            cb.ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}" if abs(v) < 1e4 else f"{v:.0e}"))
+            cb.ax.xaxis.set_minor_locator(NullLocator())
+        if op is not None:          # the opacity transfer function, drawn across the bar
+            u = np.linspace(0, 1, op.size)
+            cax.plot(norm.inverse(u), 0.05 + 0.9 * op, color="k", lw=0.7)
+            cax.set_ylim(0, 1)
     if o.spectra:
         sp = spectra_at(info.path, t)
         if sp is not None:
@@ -237,14 +446,71 @@ def compose(run, k, o, path):
                 a.tick_params(labelsize=6)
                 if j == 0:
                     a.legend(fontsize=6)
-    fig.savefig(path, dpi=o.dpi)
+    tmp = path.with_name(path.stem + ".part.png")     # renamed when complete
+    fig.savefig(tmp, dpi=o.dpi)
     plt.close(fig)
+    os.replace(tmp, path)
     return path
 
 
 def _job(args):
-    """Worker for the movie: one frame."""
+    """Worker for the movie: one frame (workers are fresh interpreters, so set the style)."""
+    style.use("diag")
     return compose(*args)
+
+
+def render_frames(run, o, fdir, n, display) -> list[int]:
+    """Render every missing frame of a movie, rebuilding the pool after a crash.
+
+    Parameters
+    ----------
+    run : pathlib.Path
+        Run directory.
+    o : argparse.Namespace
+        Options (``jobs``, ``retries``, ``frames_per_process`` and the render options).
+    fdir : pathlib.Path
+        Frame folder; ``frame_00000.png`` and so on.
+    n : int
+        Number of snapshots.
+    display : VirtualDisplay
+        Restarted between rounds if it has died.
+
+    Returns
+    -------
+    list of int
+        Frames still missing after the last round (empty on success).
+    """
+    def frame(k):
+        return fdir / f"frame_{k:05d}.png"
+
+    def missing():
+        return [k for k in range(n) if not frame(k).exists()]
+
+    kw = dict(mp_context=mp.get_context("spawn"))    # fresh interpreters: no inherited GL/X state
+    if sys.version_info >= (3, 11):
+        kw["max_tasks_per_child"] = o.frames_per_process
+    for attempt in range(o.retries + 1):
+        todo = missing()
+        if not todo:
+            break
+        if attempt:
+            print(f"round {attempt + 1}: {len(todo)} frames still missing")
+            display.ensure()
+        else:
+            print(f"rendering {len(todo)} of {n} frames ({n - len(todo)} already done)")
+        try:
+            with ProcessPoolExecutor(min(o.jobs, len(todo)), **kw) as ex:
+                futs = {ex.submit(_job, (run, k, o, frame(k))): k for k in todo}
+                for f in as_completed(futs):
+                    try:
+                        f.result()
+                    except BrokenProcessPool:
+                        raise
+                    except Exception as e:
+                        print(f"frame {futs[f]}: {e!r}")
+        except BrokenProcessPool as e:
+            print(f"a render process died ({e}); rebuilding the pool")
+    return missing()
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -259,13 +525,23 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=("iso", "volume"), default="iso", help="isosurfaces or volume rendering")
     p.add_argument("--iso-T", type=float, default=1.5, help="temperature isosurfaces at +- this many theta_rms")
     p.add_argument("--iso-omega", type=float, default=3.0, help="vorticity isosurface level in omega_rms")
-    p.add_argument("--keep-negative", action="store_true", help="mark points where the squared vorticity is negative (aliasing)")
+    p.add_argument("--keep-negative", action="store_true",
+                   help="keep points where the squared vorticity is negative (aliasing): marked in iso mode, "
+                        "and opaque at the low end in volume mode, as originally")
     p.add_argument("--spectra", action="store_true", help="add the spectra at the same time underneath")
     p.add_argument("--write", type=int, default=-1, help="snapshot index (-1 = last)")
     p.add_argument("--movie", action="store_true", help="render every snapshot and assemble an MP4 (needs ffmpeg)")
     p.add_argument("--jobs", type=int, default=4, help="parallel processes")
+    p.add_argument("--redo", action="store_true", help="re-render frames that already exist")
+    p.add_argument("--retries", type=int, default=2, help="extra rounds for frames that failed")
+    p.add_argument("--frames-per-process", type=int, default=4,
+                   help="frames each worker renders before it is replaced (Python 3.11+)")
     p.add_argument("--stride", type=int, default=1, help="horizontal subsampling (memory/speed)")
     p.add_argument("--nz-uniform", type=int, default=0, help="volume mode z resample (default 2 nz)")
+    p.add_argument("--stretch-z", action="store_true",
+                   help="volume mode: place the Chebyshev z points evenly, as the original script did")
+    p.add_argument("--cmap-T", default="jet", help="volume mode colour map of T")
+    p.add_argument("--cmap-omega", default="jet", help="volume mode colour map of the squared vorticity")
     p.add_argument("--window", type=int, nargs=2, default=[1600, 700], help="render size in pixels (width height)")
     p.add_argument("--zoom", type=float, default=1.0, help="camera zoom")
     p.add_argument("--dpi", type=int, default=200, help="output resolution")
@@ -288,14 +564,27 @@ def main(argv=None) -> None:
     out = a.out or run / "visualization"
     out.mkdir(parents=True, exist_ok=True)
     tag = f"{a.mode}{'_spectra' if a.spectra else ''}"
-    if not a.movie:
-        print(compose(run, a.write, a, out / f"render_{tag}.png"))
-        return
-    fdir = out / f"frames_{tag}"
-    fdir.mkdir(exist_ok=True)
-    n = len(fl.writes(run))
-    with ProcessPoolExecutor(a.jobs) as ex:
-        list(ex.map(_job, [(run, k, a, fdir / f"frame_{k:05d}.png") for k in range(n)]))
+    w, h = a.window
+    with VirtualDisplay((max(w, 1024), max(h, 768)), out / "xvfb.log") as display:
+        probe()
+        if not a.movie:
+            print(compose(run, a.write, a, out / f"render_{tag}.png"))
+            return
+        fdir = out / f"frames_{tag}"
+        fdir.mkdir(exist_ok=True)
+        for stale in fdir.glob("*.part.png"):
+            stale.unlink()
+        if a.redo:
+            for old in fdir.glob("frame_*.png"):
+                old.unlink()
+        n = len(fl.writes(run))
+        for extra in fdir.glob("frame_*.png"):     # frames of snapshots that no longer exist
+            if int(extra.stem.split("_")[1]) >= n:
+                extra.unlink()
+        lost = render_frames(run, a, fdir, n, display)
+    if lost:
+        raise SystemExit(f"{len(lost)} of {n} frames failed (first: {lost[:10]}); no movie assembled. "
+                         "Rerun the same command to render only those.")
     if shutil.which("ffmpeg"):
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-r", str(a.fps), "-i", str(fdir / "frame_%05d.png"),
                         "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p",

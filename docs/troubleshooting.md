@@ -131,6 +131,36 @@ where it is small; widespread negative values indicate aliasing from under-resol
 visualizations clip them unless `--keep-negative`.
 :::
 
+## Visualization
+
+:::{dropdown} `XIO: fatal IO error 22 (Invalid argument) on X server ":99"` from `plot_snapshots`
+A render process lost its connection to the virtual X server and was killed by Xlib; in a
+process pool that stops every frame still pending. Display `:99` is the one
+`pyvista.start_xvfb` always uses: older versions of {mod}`rbc.vis.render3d` called it from
+every worker, so each of the `VIS_JOBS` workers raced to start `Xvfb :99`, and all of them
+then depended on one server that no process watched.
+
+The current version starts a single Xvfb in the parent on a free display (its messages go
+to `visualization/xvfb.log`), checks that rendering works before starting workers, and
+replaces each worker every few frames. If a worker still dies, the pool is rebuilt, Xvfb
+restarted if it died, and the missing frames tried again (`--retries`). Frames already
+written are kept, so running the same command again, or the next post-processing job,
+renders only what is missing. If the server keeps dying, look in `xvfb.log`, and try
+fewer `--jobs` or `--stride 2` (memory).
+:::
+
+:::{dropdown} `vtkOpenGLVolume...Table: ... does not support the required texture size of 32768`
+From `--mode volume`. VTK sizes the colour and opacity lookup textures from the range
+the transfer functions and the data cover, relative to the spacing of their points; when
+they cover very different ranges it asks for more than OpenGL allows and falls back to a
+coarser table. One version of {mod}`rbc.vis.render3d` did exactly that: pyvista 0.44
+rescales volume scalars to 0–255 before VTK sees them, and that version then set an
+opacity function in data units (−3 to 3) on VTK directly, so the two did not line up,
+nearly every voxel got the largest opacity, and the boxes rendered solid. The volume
+mode now passes its transfer functions through pyvista, as the original
+`plotting_v3.py` did, and neither problem occurs.
+:::
+
 ## MPI binding
 
 :::{dropdown} Runs much slower than expected with `mpirun`

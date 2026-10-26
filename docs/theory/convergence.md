@@ -84,9 +84,20 @@ at $x_i$ has variance $\sigma_L^2/\sum(x_i - \bar x)^2$, and for $x = 0, 1, 2, 3
 
 ## The original rule: thirds within 1%
 
-The group's rule so far: split the window into thirds; the run is converged if, for all
-three identities, the largest difference of $Nu - 1$ between the thirds is under 1%
-(`converged`, `section_spread_pct`).
+The group's rule so far: split the window into thirds; the run is converged if, for
+$\langle wT\rangle$ and $\langle|\nabla T|^2\rangle$, the largest difference of $Nu - 1$
+between the thirds is under 1% (`converged`, `section_spread_pct`).
+
+(convergence-identities)=
+:::{note}
+Only those two identities are checked, in both rules. The vorticity form
+$1 + Pr\,\langle|\boldsymbol\omega|^2\rangle$ is still computed and reported, but it
+weights the smallest scales, and a run can be under-resolved in vorticity while the
+velocity and temperature spectra fall off far enough that the heat transport is not
+affected; that is one of the points of this project. Its difference from
+$\langle wT\rangle$, `vort_diff_pct`, is a resolution diagnostic
+({doc}`resolution`), not a convergence test.
+:::
 
 It answers the right question (would a different stretch of the run give a different
 answer?) but with a fixed threshold rather than one tied to the noise, and with only three
@@ -142,7 +153,7 @@ idea and fixes the scale.
 
 ## Proposed rule
 
-`converged_stat` is true when, for each of the three identities:
+`converged_stat` is true when, for $\langle wT\rangle$ and $\langle|\nabla T|^2\rangle$:
 
 | Test | Requirement | Purpose |
 |---|---|---|
@@ -182,7 +193,7 @@ Three checks, all automatic:
 samples, and choose the start $d$ that minimizes
 $\sum_{i \ge d}(x_i - \bar x_d)^2/(n - d)^2$, the squared standard error of the
 remaining mean: discarding transient data lowers it, discarding steady data raises it.
-`t0_mser` is the latest over the three identities. MSER is a minimum: it stops removing
+`t0_mser` is the later of the two checked identities. MSER is a minimum: it stops removing
 data once the remaining bias is below the noise, so the window start can sensibly be later.
 `AVG_TIME=auto` uses it.
 

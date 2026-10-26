@@ -59,7 +59,10 @@ def _load_velocity(f, ti):
         return [np.asarray(d[ti, i]) for i in range(3)], d
     if "x" in tasks:
         return [np.asarray(tasks[k][ti]) for k in ("x", "y", "w")], tasks["x"]
-    return [np.asarray(tasks[k][ti]) for k in ("u", "v", "w")], tasks["u"]
+    if all(k in tasks for k in ("u", "v", "w")):
+        return [np.asarray(tasks[k][ti]) for k in ("u", "v", "w")], tasks["u"]
+    raise ValueError(f"{f.filename}: the velocity spectrum needs all three components, but the "
+                     f"snapshot tasks are {sorted(tasks)} (older runs saved only 'w')")
 
 
 def _task_scales(dset):

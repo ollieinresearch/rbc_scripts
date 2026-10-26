@@ -63,6 +63,41 @@ scp fir:/path/to/rbc_scripts/data/results.csv results_fir.csv     # from Trilliu
 python -m rbc.collect --merge results_fir.csv
 ```
 
+(simple-results)=
+### A simple `Ra,Pr,Nusselt` file
+
+Every Nu figure can also be made from a three-column file, bypassing the run tree and
+`rbc.collect`:
+
+```text
+Ra,Pr,Nusselt
+1e5,1,4.47
+1e5,0.003,3.20
+1e6,0.003,6.10
+```
+
+Pass it wherever a figure takes `--results`; the format is detected automatically
+({func}`rbc.cases.read_simple_results`):
+
+```bash
+python -m rbc.plots.all --results nusselt.csv --png
+python -m rbc.plots.scaling --q Nu --norm law --results nusselt.csv
+```
+
+- The columns are Ra, Pr and Nu in that order; the header line is optional.
+- Values are the numbers themselves. If every Ra is below 100, all values are read as
+  log10 instead (convection needs Ra > 1708, so this cannot be confused).
+- Ra and Pr within 0.05 decades of a half-decade are snapped to it, so `0.003` and
+  `0.00316` both mean $10^{-2.5}$; points off the grid are kept and listed.
+- Every point counts as a finished production run, `cases.csv` is not used (the parameter
+  map is drawn from the file's points), and there are no standard errors, so fits are
+  unweighted.
+- A point given twice is an error, listing the duplicates.
+
+`rbc.plots.all` then makes the parameter map, the compensated Nu and $Nu - 1$ plots, the
+fixed-parameter plot, the exponents and the contours, and skips the Re, boundary-layer and
+resolution figures, which need columns this file does not have.
+
 (results-columns)=
 ### Columns
 
@@ -75,10 +110,11 @@ python -m rbc.collect --merge results_fir.csv
 | `Nu`, `Nu_se` | Nu from $\langle wT\rangle$ and its batch-means standard error |
 | `Nu_gradT`, `Nu_vort` | Nu from $\langle\lvert\nabla T\rvert^2\rangle$ and from $\langle\lvert\omega\rvert^2\rangle$ |
 | `Nu_plates`, `plate_imbalance_z` | mean of the two plate fluxes; their difference in standard errors |
-| `section_spread_pct`, `qoi_spread_pct` | largest spread of $Nu-1$ over thirds of the window, and over the three identities (%) |
-| `converged` | sections within 1% for all three identities (the original rule) |
+| `section_spread_pct`, `qoi_spread_pct` | largest spread of $Nu-1$ over thirds of the window, and between $\langle wT\rangle$ and $\langle\lvert\nabla T\rvert^2\rangle$ (%) |
+| `vort_diff_pct` | $Nu-1$ from the vorticity identity minus that from $\langle wT\rangle$, in % (resolution diagnostic, not a convergence check) |
+| `converged` | sections within 1% for $\langle wT\rangle$ and $\langle\lvert\nabla T\rvert^2\rangle$ (the original rule) |
 | `Nu_se_tau`, `tau_int`, `n_eff` | standard error from the autocorrelation time, the time itself, effective samples |
-| `p_sections`, `drift_z` | section test and trend over the window (worst of the three identities) |
+| `p_sections`, `drift_z` | section test and trend over the window (worse of the two checked identities) |
 | `t0_mser` | MSER-5 estimate of the end of the transient |
 | `converged_stat` | the statistical rule ({doc}`../theory/convergence`) |
 | `Re`, `Re_se`, `Re_rms` | Reynolds number from the volume average and from the profiles |
