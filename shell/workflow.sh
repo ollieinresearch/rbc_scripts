@@ -142,22 +142,22 @@ post_process() {
 # 3D render movie with the spectra panel underneath (needs SNAPSHOTS and the vis env).
 plot_snapshots() {
     python3 -m rbc.vis.render3d "$PWD" --mode "${VIS_MODE:-iso}" --spectra --movie \
-        --jobs "${VIS_JOBS:-16}" --stride "${VIS_STRIDE:-1}" --fps "$FPS"
+        --jobs "${VIS_JOBS:-0}" --stride "${VIS_STRIDE:-1}" --fps "$FPS"
 }
 
 # Movie of horizontal slices of this run (needs SNAPSHOTS and the vis env).
 plot_slices() {
     python3 -m rbc.vis.slices "$PWD" --fields T w --heights mid bl --movie \
-        --jobs "${VIS_JOBS:-16}" --fps "${FPS:-30}" --out "$PWD/visualization"
+        --jobs "${VIS_JOBS:-0}" --fps "${FPS:-30}" --out "$PWD/visualization"
 }
 
-# Slices of several runs side by side, as a movie: plot_compare_slices RUN_A RUN_B ...
+# Slices of any number of runs side by side, as a movie: plot_compare_slices RUN_A RUN_B RUN_C ...
 # (without arguments, the Ra = 1e6 pair at Pr = 1 and Pr = 10^-3.5).
 plot_compare_slices() {
     local runs=("$@")
     (( ${#runs[@]} )) || runs=("$SCRATCH/ollie_rb_data/3d/ra1e6/pr1e0/64_Gam2_2"
                                  "$SCRATCH/ollie_rb_data/3d/ra1e6/pr3e-4/216_Gam2_2")
-    python3 -m rbc.vis.slices "${runs[@]}" --fields T w --heights mid bl --movie --jobs "${VIS_JOBS:-16}"
+    python3 -m rbc.vis.slices "${runs[@]}" --fields T w --heights mid bl --movie --jobs "${VIS_JOBS:-0}"
 }
 
 # Spectra computed from saved snapshots (runs made before in-sim spectra existed).

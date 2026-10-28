@@ -91,8 +91,8 @@ row of `outputs/jobs.csv` when it ends.
   and in the thermal boundary layer) into `visualization/`, with {mod}`rbc.vis.slices`.
   Needs `SNAPSHOTS=1` and the visualization environment (`load_modules_plotting`).
 
-`plot_compare_slices RUN_A RUN_B ...`
-: The same for several runs side by side, one row each; without arguments, the
+`plot_compare_slices RUN_A RUN_B RUN_C ...`
+: The same for any number of runs side by side, one row each; without arguments, the
   $Ra = 10^6$ runs at $Pr = 1$ and $Pr = 10^{-3.5}$.
 
 `test_parallel`, `reset_test`

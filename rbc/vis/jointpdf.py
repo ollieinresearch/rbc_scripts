@@ -10,7 +10,10 @@
 
 Usage::
 
-    python -m rbc.vis.jointpdf RUN_PR1 RUN_PR001 --height mid --last 20 --jobs 8
+    python -m rbc.vis.jointpdf RUN_A RUN_B RUN_C --height mid --last 20
+
+Any number of runs, one panel each. The snapshots of all runs are processed by one pool of
+workers, as many as the cores and memory allow (``--jobs 0``, see :mod:`rbc.vis.parallel`).
 """
 from __future__ import annotations
 
@@ -24,17 +27,23 @@ import numpy as np
 
 from rbc import style
 from rbc.vis import fields as fl
+from rbc.vis import parallel
+
+#: Peak memory of one snapshot: a fixed part, and bytes per horizontal grid point (the
+#: 8-level plane reads and 16-level chunks of T and w for C(z), in float64, with copies).
+TASK_BASE = 0.4 * parallel.GB
+BYTES_PER_HPOINT = 1000
 
 
-def one_write(run, k, height, bins, lim, zchunk=16):
+def one_write(info, wr, height, bins, lim, zchunk=16):
     """Histogram and correlation profile of one snapshot.
 
     Parameters
     ----------
-    run : pathlib.Path
-        Run directory.
-    k : int
-        Snapshot index.
+    info : rbc.vis.fields.RunInfo
+        The run.
+    wr : rbc.vis.fields.Write
+        The snapshot write.
     height : str or float
         Plane for the histogram.
     bins : int
@@ -53,8 +62,6 @@ def one_write(run, k, height, bins, lim, zchunk=16):
     C : numpy.ndarray
         Correlation coefficient at each height.
     """
-    info = fl.RunInfo.load(run)
-    wr = fl.writes(info.path)[k]
     with h5py.File(wr.file, "r") as h:
         z0 = info.height(height)
         th = fl.normalized(info, "T", fl.plane(h, "T", wr.index, z0), z0)
@@ -73,35 +80,52 @@ def one_write(run, k, height, bins, lim, zchunk=16):
     return H, z, C
 
 
-def accumulate(run, height, last, bins, lim, jobs):
-    """Joint PDF and mean C(z) over many snapshots, in parallel.
+def _one(args):
+    """Worker: :func:`one_write` on a tuple of arguments."""
+    return one_write(*args)
+
+
+def accumulate(infos, height, last, bins, lim, jobs):
+    """Joint PDF and mean C(z) of every run, over many snapshots, in one pool.
 
     Parameters
     ----------
-    run : pathlib.Path
-        Run directory.
+    infos : list of rbc.vis.fields.RunInfo
+        The runs.
     height : str or float
         Plane for the PDF.
     last : int
-        Use the last N snapshots (0: all).
+        Use the last N snapshots of each run (0: all).
     bins : int
         Bins per axis.
     lim : float
         Range in rms units.
     jobs : int
-        Parallel processes.
+        Parallel processes (0: as many as cores and memory allow).
 
     Returns
     -------
-    tuple
-        ``(P, z, C, n)``: normalized histogram, heights, mean C(z), snapshots used.
+    list of tuple
+        Per run ``(P, z, C, n)``: normalized histogram, heights, mean C(z), snapshots used.
     """
-    n = len(fl.writes(Path(run).resolve()))
-    ks = range(max(0, n - last), n) if last else range(n)
+    tasks, owner = [], []
+    for i, info in enumerate(infos):
+        ws = fl.writes(info.path)
+        if not ws:
+            raise SystemExit(f"{info.path}: no snapshots")
+        for wr in (ws[-last:] if last else ws):
+            tasks.append((info, wr, height, bins, lim))
+            owner.append(i)
+    hpoints = max(np.prod(fl.grid_shape(t[1])[:2]) for t in tasks)
+    jobs = parallel.auto_jobs(len(tasks), TASK_BASE + BYTES_PER_HPOINT * hpoints, jobs, what="snapshots")
     with ProcessPoolExecutor(jobs) as ex:
-        res = list(ex.map(one_write, *zip(*[(run, k, height, bins, lim) for k in ks])))
-    H = sum(r[0] for r in res)
-    return H / H.sum(), res[0][1], np.mean([r[2] for r in res], axis=0), len(res)
+        res = list(ex.map(_one, tasks, chunksize=max(1, len(tasks) // (4 * jobs))))
+    out = []
+    for i in range(len(infos)):
+        r = [x for x, o in zip(res, owner) if o == i]
+        H = sum(x[0] for x in r)
+        out.append((H / H.sum(), r[0][1], np.mean([x[2] for x in r], axis=0), len(r)))
+    return out
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -112,12 +136,14 @@ def get_parser() -> argparse.ArgumentParser:
     argparse.ArgumentParser
     """
     p = argparse.ArgumentParser(prog="python -m rbc.vis.jointpdf", description=__doc__.split("\n")[0])
-    p.add_argument("runs", type=Path, nargs="+", help="run directories (one panel each)")
+    p.add_argument("runs", type=Path, nargs="+", help="run directories, any number (one panel each)")
     p.add_argument("--height", default="mid", help="mid, bl (1/(4 Nu)), bl-edge (1/(2 Nu)) or a number")
     p.add_argument("--last", type=int, default=0, help="use the last N snapshots (0 = all)")
     p.add_argument("--bins", type=int, default=121, help="histogram bins per axis")
     p.add_argument("--lim", type=float, default=4.0, help="axis limits in rms units")
-    p.add_argument("--jobs", type=int, default=4, help="parallel processes")
+    p.add_argument("--labels", nargs="+", help="panel labels, one per run (default: Ra, Pr and, if needed, N_z)")
+    p.add_argument("--columns", type=int, default=3, help="PDF panels per row (more runs wrap onto further rows)")
+    p.add_argument("--jobs", type=int, default=0, help="parallel processes (0 = as many as cores and memory allow)")
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
@@ -132,43 +158,56 @@ def main(argv=None) -> None:
     argv : list of str, optional
         Command-line arguments (default: ``sys.argv[1:]``).
     """
+    from matplotlib import colormaps
+    from rbc.vis.slices import row_labels
+
     a = get_parser().parse_args(argv)
     style.use("paper", usetex=False if a.no_tex else None)
+    infos = [fl.RunInfo.load(r) for r in a.runs]
+    labels = row_labels(infos, a.labels)
+    results = accumulate(infos, a.height, a.last, a.bins, a.lim, a.jobs)
 
-    n = len(a.runs)
-    fig = plt.figure(figsize=style.figsize(1.0, 0.42 if n <= 2 else 0.34))
-    gs = fig.add_gridspec(1, n + 1, width_ratios=[1] * n + [1.1])
-    axc = fig.add_subplot(gs[0, n])
-    from matplotlib import colormaps
+    n = len(infos)
+    ncol = min(n, a.columns)
+    nrow = -(-n // ncol)
+    w_in, _ = style.figsize(1.0)
+    panel = w_in / (ncol + 1.3)
+    fig = plt.figure(figsize=(w_in, nrow * (panel * 1.25 + 0.15) + 0.55), layout="constrained")
+    gs = fig.add_gridspec(nrow, ncol + 1, width_ratios=[1] * ncol + [1.2])
+    axc = fig.add_subplot(gs[:, ncol])
     cm = colormaps["viridis"]
     edges = np.linspace(-a.lim, a.lim, a.bins + 1)
     mid = 0.5 * (edges[1:] + edges[:-1])
     levels = np.arange(-5, 0.01, 0.5)
-    for i, run in enumerate(a.runs):
-        info = fl.RunInfo.load(run)
-        P, z, C, nw = accumulate(run, a.height, a.last, a.bins, a.lim, a.jobs)
+    t = [-int(a.lim) + 1, 0, int(a.lim) - 1]
+    pdf_axes = []
+    for i, (info, label, (P, z, C, nw)) in enumerate(zip(infos, labels, results)):
         dens = P / np.diff(edges)[0] ** 2
-        ax = fig.add_subplot(gs[0, i])
+        ax = fig.add_subplot(gs[i // ncol, i % ncol])
+        pdf_axes.append(ax)
         with np.errstate(divide="ignore"):
             cf = ax.contourf(mid, mid, np.log10(dens).T, levels=levels, cmap="Greys", extend="min")
         ax.plot([-a.lim, a.lim], [-a.lim, a.lim], color="0.5", lw=0.5, ls="--")
         z0 = info.height(a.height)
         Cz = np.interp(z0, z, C)
-        t = [-int(a.lim) + 1, 0, int(a.lim) - 1]
-        ax.set(xlabel=r"$w/w_{\rm rms}$", aspect="equal", xticks=t, yticks=t,
-               title=f"{info.label()}\n$C={Cz:.2f}$ ({nw} snapshots)")
-        ax.title.set_fontsize(7)
-        if i == 0:
-            ax.set_ylabel(r"$\theta/\theta_{\rm rms}$")
-        col = cm(0.85 * i / max(n - 1, 1))
-        axc.plot(C, z, color=col, label=info.label())
+        col = cm(0.75 * i / max(n - 1, 1))         # the light end of viridis is hard to read
+        ax.set(aspect="equal", xticks=t, yticks=t)
+        ax.set_title(f"{label}\n$C={Cz:.2f}$, {nw} snapshots", fontsize=6, color=col if n > 1 else "k")
+        ax.tick_params(labelsize=6)
+        if i % ncol == 0:
+            ax.set_ylabel(r"$\theta/\theta_{\rm rms}$", fontsize=7)
+        if i >= n - ncol:
+            ax.set_xlabel(r"$w/w_{\rm rms}$", fontsize=7)
+        axc.plot(C, z, color=col, label=label.replace("\n", ", "))
         axc.plot([Cz], [z0], "o", color=col, ms=3)
-    pdf_axes = [ax for ax in fig.axes if ax is not axc]
-    cb = fig.colorbar(cf, ax=pdf_axes, location="right", shrink=0.8, pad=0.02, aspect=20)
+    cb = fig.colorbar(cf, ax=pdf_axes, location="bottom", shrink=0.6, aspect=30)
     cb.set_label(r"$\log_{10}$ PDF", fontsize=7)
     cb.ax.tick_params(labelsize=6)
-    axc.set(xlabel=r"$C(z)$", ylabel=r"$z$", xlim=(0, 1), ylim=(0, 1))
-    axc.legend(fontsize=6)
+    axc.set(xlim=(0, 1), ylim=(0, 1))
+    axc.set_xlabel(r"$C(z)$", fontsize=7)
+    axc.set_ylabel(r"$z$", fontsize=7)
+    axc.tick_params(labelsize=6)
+    axc.legend(fontsize=5, loc="upper center", bbox_to_anchor=(0.5, -0.3), frameon=False)
     print(style.save(fig, a.out / f"jointpdf_{a.height}", png=a.png))
 
 

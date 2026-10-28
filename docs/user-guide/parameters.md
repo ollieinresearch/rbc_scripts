@@ -68,7 +68,7 @@ other half of a run's settings; they must agree with `N` and `C` below
 | `AVG_TIME` | `auto` | Start of the averaging window, or `auto` for the MSER-5 estimate ({ref}`transient`). |
 | `FPS` | 30 | Frame rate of movies. |
 | `VIS_MODE` | `iso` | 3D render style: `iso` (isosurfaces) or `volume`. |
-| `VIS_JOBS` | 16 | Frames rendered in parallel. |
+| `VIS_JOBS` | 0 | Frames rendered in parallel; 0 chooses from the cores and memory ({ref}`vis-workers`). |
 | `VIS_STRIDE` | 1 | Horizontal subsampling for renders (2 uses a quarter of the memory). |
 
 ## Storage

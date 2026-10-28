@@ -168,6 +168,25 @@ def plane(h, name, idx, z0, k=8):
     return BarycentricInterpolator(z[lo:hi], block, axis=-1)(z0)
 
 
+def grid_shape(wr: Write, name: str = "T") -> tuple[int, int, int]:
+    """(nx, ny, nz) of a field in a snapshot write, read from the dataset's shape only.
+
+    Parameters
+    ----------
+    wr : Write
+        A snapshot write (from :func:`writes`).
+    name : str, optional
+        Field.
+
+    Returns
+    -------
+    tuple of int
+    """
+    with h5py.File(wr.file, "r") as h:
+        d, _ = _task(h, name)
+        return tuple(int(n) for n in d.shape[-3:])
+
+
 def fourier_resample(a, n):
     """Interpolate a horizontal plane to at least ``n`` points per side, exactly.
 

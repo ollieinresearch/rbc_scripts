@@ -21,7 +21,7 @@ optionally with the in-simulation spectra at the same time underneath (movie fra
 Usage::
 
     python -m rbc.vis.render3d RUN                       # last snapshot, iso
-    python -m rbc.vis.render3d RUN --mode volume --spectra --movie --jobs 16
+    python -m rbc.vis.render3d RUN --mode volume --spectra --movie
     python -m rbc.vis.render3d RUN --movie --redo        # re-render every frame
 
 Headless nodes: unless ``DISPLAY`` is set, or ``VTK_DEFAULT_OPENGL_WINDOW`` asks for an
@@ -31,7 +31,12 @@ whole job on a free display, before any worker, and stopped at the end; its log 
 
 Movies: each frame is written to a temporary name and renamed when complete, and frames
 already present are kept, so an interrupted movie (or the next post-processing job, with
-more snapshots) only renders what is missing. Workers are replaced every
+more snapshots) only renders what is missing. Frames render in parallel, as many at once
+as the cores and memory allow (``--jobs 0``, see :mod:`rbc.vis.parallel`): a frame needs
+about 0.6 GB plus 100 (volume) to 150 (iso) bytes per grid point, so memory, not cores,
+limits large runs; the cores left over go to each worker's software OpenGL threads
+(``LP_NUM_THREADS``). The snapshot list and the spectra are read once, in the parent, and
+each worker gets only what its frame needs. Workers are replaced every
 ``--frames-per-process`` frames. If a worker dies (for instance when it loses its X
 connection) the pool is rebuilt, Xvfb restarted if it died, and the missing frames tried
 again, up to ``--retries`` times; the MP4 is only assembled when every frame exists.
@@ -39,14 +44,10 @@ again, up to ``--retries`` times; the MP4 is only assembled when every frame exi
 from __future__ import annotations
 
 import argparse
-import multiprocessing as mp
 import os
 import select
 import shutil
 import subprocess
-import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 import h5py
@@ -58,6 +59,13 @@ from matplotlib.ticker import FuncFormatter, NullLocator
 
 from rbc import style
 from rbc.vis import fields as fl
+from rbc.vis import parallel
+
+#: Peak memory of one frame: fixed part (Python, VTK, Matplotlib) and bytes per grid point
+#: by mode, measured on 72^2 x 36 and 288^2 x 36 grids (0.5 GB + 95 and 58 B/point) and
+#: rounded up, since isosurfaces of a turbulent field have many more triangles.
+FRAME_BASE = 0.6 * parallel.GB
+BYTES_PER_POINT = {"iso": 150, "volume": 100}
 
 #: Camera position, focal point and up vector (view direction only; the box is refitted).
 CAMERA = [(4.0, 4.0, 0.5), (1.0, 1.0, 0.35), (0.0, 0.0, 1.0)]
@@ -244,15 +252,15 @@ def opacity_omega(lo, hi, n=255):
     return op
 
 
-def render(run, k, o) -> tuple[np.ndarray, float, dict]:
+def render(info, wr, o) -> tuple[np.ndarray, float, dict]:
     """Render one snapshot (temperature left, vorticity right) off screen.
 
     Parameters
     ----------
-    run : pathlib.Path
-        Run directory.
-    k : int
-        Snapshot index.
+    info : rbc.vis.fields.RunInfo
+        The run.
+    wr : rbc.vis.fields.Write
+        The snapshot write.
     o : argparse.Namespace
         Options (mode, thresholds, stride, window, zoom, keep_negative, nz_uniform).
 
@@ -266,8 +274,6 @@ def render(run, k, o) -> tuple[np.ndarray, float, dict]:
         For the colour bars: ``omega_range``, the range of ``|ω|²`` in volume mode.
     """
     pv = _pv()
-    info = fl.RunInfo.load(run)
-    wr = fl.writes(info.path)[k]
     s = o.stride
     with h5py.File(wr.file, "r") as h:
         x, y, z = fl.grids(h)
@@ -346,57 +352,71 @@ def render(run, k, o) -> tuple[np.ndarray, float, dict]:
     return img, wr.time, meta
 
 
-def spectra_at(run, t):
-    """In-simulation spectra nearest a time, with their time means.
+class Spectra:
+    """The in-simulation spectra of a run, read once, for the panels under each frame.
 
     Parameters
     ----------
     run : pathlib.Path
         Run directory.
-    t : float
-        Simulation time.
-
-    Returns
-    -------
-    tuple or None
-        ``(spectra, time)``: ``spectra[(field, panel)] = (n, E(t), mean E)`` for the
-        ``nz`` and ``h`` panels; None if the run has no spectra.
     """
-    from rbc.spectra import core as cs
-    files = cs.spectra_files(run)
-    if not files:
-        return None
-    time, modes, data, attrs = cs.load_spectra(files)
-    i = int(np.argmin(np.abs(time - t)))
-    out = {}
-    for fld in cs.FIELDS:
-        series = cs.panel_series(modes, data[fld], attrs)
-        for key in ("nz", "h"):
-            n, E = series[key]
-            out[(fld, key)] = (n, E[i], cs.time_average(time, E))
-    return out, time[i]
+
+    def __init__(self, run):
+        from rbc.spectra import core as cs
+        self.time, self.series, self.mean = None, {}, {}
+        files = cs.spectra_files(run)
+        if not files:
+            return
+        time, modes, data, attrs = cs.load_spectra(files)
+        self.time = time
+        for fld in cs.FIELDS:
+            series = cs.panel_series(modes, data[fld], attrs)
+            for key in ("nz", "h"):
+                n, E = series[key]
+                self.series[(fld, key)] = (n, E)
+                self.mean[(fld, key)] = cs.time_average(time, E)
+
+    def at(self, t):
+        """Spectra nearest time ``t``, with the time means.
+
+        Parameters
+        ----------
+        t : float
+            Simulation time.
+
+        Returns
+        -------
+        tuple or None
+            ``(spectra, time)``: ``spectra[(field, panel)] = (n, E(t), mean E)`` for the
+            ``nz`` and ``h`` panels; None if the run has no spectra.
+        """
+        if self.time is None:
+            return None
+        i = int(np.argmin(np.abs(self.time - t)))
+        return {k: (n, E[i], self.mean[k]) for k, (n, E) in self.series.items()}, float(self.time[i])
 
 
-def compose(run, k, o, path):
+def compose(info, wr, o, path, spec=None):
     """Render, add colour bars (and spectra), and save one frame.
 
     Parameters
     ----------
-    run : pathlib.Path
-        Run directory.
-    k : int
-        Snapshot index.
+    info : rbc.vis.fields.RunInfo
+        The run.
+    wr : rbc.vis.fields.Write
+        The snapshot write.
     o : argparse.Namespace
         Options.
     path : pathlib.Path
         PNG to write.
+    spec : tuple, optional
+        This frame's spectra (:meth:`Spectra.at`); drawn underneath with ``o.spectra``.
 
     Returns
     -------
     pathlib.Path
     """
-    info = fl.RunInfo.load(run)
-    img, t, meta = render(run, k, o)
+    img, t, meta = render(info, wr, o)
     rows = 2 if o.spectra else 1
     w_in = 7.0
     fig = plt.figure(figsize=(w_in, w_in * img.shape[0] / img.shape[1] + (2.0 if o.spectra else 0) + 0.5),
@@ -432,9 +452,8 @@ def compose(run, k, o, path):
             cax.plot(norm.inverse(u), 0.05 + 0.9 * op, color="k", lw=0.7)
             cax.set_ylim(0, 1)
     if o.spectra:
-        sp = spectra_at(info.path, t)
-        if sp is not None:
-            spec, ts = sp
+        if spec is not None:
+            spec, ts = spec
             for j, (fld, key) in enumerate([("vel", "nz"), ("vel", "h"), ("temp", "nz"), ("temp", "h")]):
                 a = fig.add_subplot(gs[1, j])
                 n, E, Em = spec[(fld, key)]
@@ -459,60 +478,6 @@ def _job(args):
     return compose(*args)
 
 
-def render_frames(run, o, fdir, n, display) -> list[int]:
-    """Render every missing frame of a movie, rebuilding the pool after a crash.
-
-    Parameters
-    ----------
-    run : pathlib.Path
-        Run directory.
-    o : argparse.Namespace
-        Options (``jobs``, ``retries``, ``frames_per_process`` and the render options).
-    fdir : pathlib.Path
-        Frame folder; ``frame_00000.png`` and so on.
-    n : int
-        Number of snapshots.
-    display : VirtualDisplay
-        Restarted between rounds if it has died.
-
-    Returns
-    -------
-    list of int
-        Frames still missing after the last round (empty on success).
-    """
-    def frame(k):
-        return fdir / f"frame_{k:05d}.png"
-
-    def missing():
-        return [k for k in range(n) if not frame(k).exists()]
-
-    kw = dict(mp_context=mp.get_context("spawn"))    # fresh interpreters: no inherited GL/X state
-    if sys.version_info >= (3, 11):
-        kw["max_tasks_per_child"] = o.frames_per_process
-    for attempt in range(o.retries + 1):
-        todo = missing()
-        if not todo:
-            break
-        if attempt:
-            print(f"round {attempt + 1}: {len(todo)} frames still missing")
-            display.ensure()
-        else:
-            print(f"rendering {len(todo)} of {n} frames ({n - len(todo)} already done)")
-        try:
-            with ProcessPoolExecutor(min(o.jobs, len(todo)), **kw) as ex:
-                futs = {ex.submit(_job, (run, k, o, frame(k))): k for k in todo}
-                for f in as_completed(futs):
-                    try:
-                        f.result()
-                    except BrokenProcessPool:
-                        raise
-                    except Exception as e:
-                        print(f"frame {futs[f]}: {e!r}")
-        except BrokenProcessPool as e:
-            print(f"a render process died ({e}); rebuilding the pool")
-    return missing()
-
-
 def get_parser() -> argparse.ArgumentParser:
     """Command-line options (see the module docstring).
 
@@ -531,7 +496,7 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--spectra", action="store_true", help="add the spectra at the same time underneath")
     p.add_argument("--write", type=int, default=-1, help="snapshot index (-1 = last)")
     p.add_argument("--movie", action="store_true", help="render every snapshot and assemble an MP4 (needs ffmpeg)")
-    p.add_argument("--jobs", type=int, default=4, help="parallel processes")
+    p.add_argument("--jobs", type=int, default=0, help="parallel processes (0 = as many as cores and memory allow)")
     p.add_argument("--redo", action="store_true", help="re-render frames that already exist")
     p.add_argument("--retries", type=int, default=2, help="extra rounds for frames that failed")
     p.add_argument("--frames-per-process", type=int, default=4,
@@ -565,31 +530,40 @@ def main(argv=None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     tag = f"{a.mode}{'_spectra' if a.spectra else ''}"
     w, h = a.window
+    info = fl.RunInfo.load(run)
+    writes = fl.writes(run)                              # listed once, not in every frame
+    if not writes:
+        raise SystemExit(f"{run}: no snapshots")
+    spectra = Spectra(run) if a.spectra else None
+
+    def spec(wr):
+        return spectra.at(wr.time) if spectra is not None else None
+
     with VirtualDisplay((max(w, 1024), max(h, 768)), out / "xvfb.log") as display:
         probe()
         if not a.movie:
-            print(compose(run, a.write, a, out / f"render_{tag}.png"))
+            wr = writes[a.write]
+            print(compose(info, wr, a, out / f"render_{tag}.png", spec(wr)))
             return
         fdir = out / f"frames_{tag}"
-        fdir.mkdir(exist_ok=True)
-        for stale in fdir.glob("*.part.png"):
-            stale.unlink()
-        if a.redo:
-            for old in fdir.glob("frame_*.png"):
-                old.unlink()
-        n = len(fl.writes(run))
-        for extra in fdir.glob("frame_*.png"):     # frames of snapshots that no longer exist
-            if int(extra.stem.split("_")[1]) >= n:
-                extra.unlink()
-        lost = render_frames(run, a, fdir, n, display)
+        n = len(writes)
+        skip = {"run", "movie", "jobs", "redo", "retries", "frames_per_process", "fps", "out"}
+        parallel.prepare_frames(fdir, {k: v for k, v in vars(a).items() if k not in skip}, n, a.redo)
+        items = [(fdir / f"frame_{k:05d}.png", (info, wr, a, fdir / f"frame_{k:05d}.png", spec(wr)))
+                 for k, wr in enumerate(writes)]
+        nx, ny, nz = fl.grid_shape(writes[0])
+        points = (nx // a.stride) * (ny // a.stride) * nz
+        jobs = parallel.auto_jobs(n, FRAME_BASE + BYTES_PER_POINT[a.mode] * points, a.jobs)
+        # software OpenGL (llvmpipe) would otherwise start one thread per core in every worker
+        os.environ.setdefault("LP_NUM_THREADS", str(parallel.worker_threads(jobs)))
+        lost = parallel.render_all(_job, items, jobs, retries=a.retries, spawn=True,
+                                   tasks_per_child=a.frames_per_process, before_retry=display.ensure)
     if lost:
-        raise SystemExit(f"{len(lost)} of {n} frames failed (first: {lost[:10]}); no movie assembled. "
+        raise SystemExit(f"{len(lost)} of {n} frames failed (first: {lost[0].name}); no movie assembled. "
                          "Rerun the same command to render only those.")
-    if shutil.which("ffmpeg"):
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-r", str(a.fps), "-i", str(fdir / "frame_%05d.png"),
-                        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p",
-                        str(out / f"movie_{tag}.mp4")], check=True)
-        print(out / f"movie_{tag}.mp4")
+    movie = parallel.make_movie(fdir, "frame_%05d.png", out / f"movie_{tag}.mp4", a.fps)
+    if movie:
+        print(movie)
 
 
 if __name__ == "__main__":
