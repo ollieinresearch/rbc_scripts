@@ -197,6 +197,7 @@ families on $x = Ra/Pr$, which is the consistent choice if "how far into the reg
 meant as a Reynolds number. Agree the variable with David before using it in the paper.
 ```
 
+(exponents-flatness)=
 ## Testing for constant exponents
 
 In each panel of the figure, the estimates of one exponent are fitted two ways against the
@@ -205,6 +206,8 @@ log of one parameter ({func}`rbc.analysis.exponents.flatness`):
 - a constant, giving the weighted mean and $\chi^2_\nu$; $\chi^2_\nu \approx 1$ means the
   scatter is what the errors predict;
 - a line, giving the trend per decade with its error.
+
+Both are printed by {mod}`rbc.plots.exponents`; the figure shows only the mean.
 
 A trend several standard errors from zero, together with $\chi^2_\nu \gg 1$ for the
 constant, is evidence that the exponent changes with that parameter. Because the errors of

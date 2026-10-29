@@ -2,9 +2,12 @@
 (see rbc.analysis.exponents), plotted against Ra and Pr.
 
 Panels: alpha vs Ra | alpha vs Pr  /  beta vs Ra | beta vs Pr. Colour is the other
-parameter. A weighted line exponent = c0 + c1 log10(param) is fitted in each panel;
-c1 ~ 0 with chi2_nu(flat) ~ 1 means the exponent is constant there. Dotted lines mark
-the reference values (default 1/2 and 1/3). Usage::
+parameter; an estimate that sits between two rows of the grid (a two-point secant across
+rows, or a cell centre) has both rows' colours, as a two-coloured marker and a two-coloured
+dashed line. Dotted lines mark the reference values (default 1/2 and 1/3), and each panel
+is titled with the mean of its estimates. A weighted line exponent = c0 + c1 log10(param)
+is fitted in each panel and printed (not drawn): c1 ~ 0 with chi2_nu(flat) ~ 1 means the
+exponent is constant there. Usage::
 
     python -m rbc.plots.exponents                       # Q = Nu - 1, two-point secants + cells
     python -m rbc.plots.exponents --method lines        # one regression per row/column
@@ -78,15 +81,78 @@ def gather(d, method, use_cells):
     return pd.concat(parts, ignore_index=True)
 
 
-def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=None, lmin=-np.inf,
-          ref_labels=True):
+def tones(o, levels, ckind):
+    """Colours of a value of the colouring parameter: its own, or its two neighbours'.
+
+    Parameters
+    ----------
+    o : float
+        log10 of the parameter.
+    levels : numpy.ndarray
+        Sorted values the runs take.
+    ckind : {"ra", "pr"}
+        Which parameter (:func:`rbc.style.expense_colour`).
+
+    Returns
+    -------
+    tuple of str
+        ``(lower, upper)``: the colours of the nearest run values below and above ``o``
+        (the same colour twice when a run has that value).
+    """
+    if np.isclose(levels, o).any() or o <= levels[0] or o >= levels[-1]:
+        c = style.expense_colour(o, ckind)
+        return c, c
+    return (style.expense_colour(levels[levels < o].max(), ckind),
+            style.expense_colour(levels[levels > o].min(), ckind))
+
+
+def two_tone_line(lo, hi) -> dict:
+    """Line keywords for a row between two colours: dashes of one with gaps of the other.
+
+    Parameters
+    ----------
+    lo, hi : str
+        Colours.
+
+    Returns
+    -------
+    dict
+    """
+    if lo == hi:
+        return style.line_kw(lo)
+    kw = dict(color=lo, gapcolor=hi, ls=(0, (2.5, 2.5)))
+    pale = [c for c in (lo, hi) if style.is_pale(c)]
+    if pale:
+        kw["path_effects"] = style.line_kw(pale[0])["path_effects"]
+    return kw
+
+
+def two_tone_marker(lo, hi) -> dict:
+    """Marker keywords: one colour filled, or the left half in ``lo`` and the right in ``hi``.
+
+    Parameters
+    ----------
+    lo, hi : str
+        Colours.
+
+    Returns
+    -------
+    dict
+    """
+    if lo == hi:
+        return dict(style.marker_kw(lo), ecolor=lo)
+    return dict(color=lo, mfc=lo, markerfacecoloralt=hi, fillstyle="left", mec="0.25", ecolor="0.45")
+
+
+def panel(ax, est, kind, coord, ckind, refs, fit_source, grid, surf=None, lmin=-np.inf, ref_labels=True):
     """One exponent against one parameter, coloured by the other.
 
     Two-point estimates along the same row (same value of the other parameter) are
     joined by a thin line in that row's colour, so each row's trend can be followed;
-    cell-centre estimates are open diamonds. Estimates involving a run with
-    log10 Q < ``lmin`` are drawn as grey crosses and left out of the trend fit and of
-    the y range.
+    cell-centre estimates are diamonds. An estimate whose row lies between two rows of
+    runs is drawn in both their colours (left half: the smaller value, as on the colour
+    bar). Estimates involving a run with log10 Q < ``lmin`` are drawn as grey crosses
+    and left out of the flatness fit and of the y range.
 
     Parameters
     ----------
@@ -98,18 +164,16 @@ def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=No
         Exponent.
     coord : {"x", "y"}
         Against log10 Ra or log10 Pr.
-    cmap : matplotlib.colors.Colormap
-        Colour map for the other parameter.
-    norm : matplotlib.colors.Normalize
-        Its normalization.
+    ckind : {"ra", "pr"}
+        The colouring parameter.
     refs : list of float
         Reference values drawn as dotted lines.
     fit_source : {"edge", "line", "cell"}
-        Estimates used for the trend fit.
+        Estimates used for the flatness fit.
+    grid : pandas.DataFrame
+        The data points (output of :func:`rbc.analysis.exponents.prepare`).
     surf : rbc.analysis.exponents.Surface, optional
         Surface fit whose exponents are drawn along each row or column (within the data).
-    grid : pandas.DataFrame, optional
-        The data points (needed with ``surf``).
     lmin : float, optional
         Smallest log10 Q of the runs an estimate may use.
     ref_labels : bool, optional
@@ -122,6 +186,7 @@ def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=No
         if too few).
     """
     other = "y" if coord == "x" else "x"
+    levels = np.sort(grid[other].unique())
     e = est[est.kind == kind]
     ok = e["Lmin"] >= lmin if "Lmin" in e else pd.Series(True, index=e.index)
     for v in refs:
@@ -138,20 +203,19 @@ def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=No
             t = np.linspace(near.min(), near.max(), 40)
             xx, yy = (t, np.full_like(t, o)) if coord == "x" else (np.full_like(t, o), t)
             val, _ = surf.exponent(xx, yy, kind)
-            ax.plot(10 ** t, val, color=cmap(norm(o)), lw=0.6, ls="--", alpha=0.7, zorder=1)
+            ax.plot(10 ** t, val, lw=0.6, ls="--", alpha=0.7, zorder=1, **style.line_kw(style.expense_colour(o, ckind)))
     for src in ("edge", "line"):     # one thin line per row through its kept estimates
         g = e[(e.source == src) & ok]
         for o, r in g.groupby(other):
             r = r.sort_values(coord)
             if len(r) > 1:
-                ax.plot(10 ** r[coord], r["value"], color=cmap(norm(o)), lw=0.7, alpha=0.8, zorder=2)
-    for src, mk, ms, fill in (("edge", "o", 3.2, True), ("line", "o", 3.6, True), ("cell", "D", 2.4, False)):
+                ax.plot(10 ** r[coord], r["value"], lw=0.7, zorder=2, **two_tone_line(*tones(o, levels, ckind)))
+    for src, mk, ms in (("edge", "o", 3.4), ("line", "o", 3.6), ("cell", "D", 3.0)):
         g = e[(e.source == src) & ok]
         for _, r in g.iterrows():
-            col = cmap(norm(r[other]))
             ax.errorbar(10 ** r[coord], r["value"], yerr=r["err"] if np.isfinite(r["err"]) else None,
-                        fmt=mk, ms=ms, color=col, mfc=col if fill else "white", mew=0.7, elinewidth=0.6,
-                        capsize=1.2, zorder=3)
+                        fmt=mk, ms=ms, mew=0.6, elinewidth=0.6, capsize=1.2, zorder=3,
+                        **two_tone_marker(*tones(r[other], levels, ckind)))
     bad = e[~ok]
     if len(bad):
         ax.plot(10 ** bad[coord], bad["value"], ls="none", marker="x", ms=3, mew=0.6, color="0.6", zorder=2)
@@ -164,10 +228,7 @@ def panel(ax, est, kind, coord, cmap, norm, refs, fit_source, surf=None, grid=No
     fs = e[(e.source == fit_source) & ok]
     stats = ex.flatness(fs[coord], fs["value"], fs["err"]) if len(fs) > 2 else {}
     if stats:
-        t = np.linspace(fs[coord].min(), fs[coord].max(), 50)
-        ax.plot(10 ** t, stats["slope"] * t + stats["intercept"], color="k", lw=0.9, zorder=4)
-        ax.set_title(rf"trend ${stats['slope']:+.3f}\pm{stats['slope_err']:.3f}$ per decade, "
-                     rf"mean ${stats['mean']:.3f}$", fontsize=7, pad=3)
+        ax.set_title(rf"mean ${SYMB[kind]} = {stats['mean']:.3f}\pm{stats['mean_err']:.3f}$", fontsize=7, pad=3)
     ax.set_xscale("log")
     decade_ticks(ax, "x")
     ax.set_xlabel(style.SYM[COORD[coord]])
@@ -240,23 +301,25 @@ def main(argv=None) -> None:
     w, _ = style.figsize(1.0)
     fig, axes = plt.subplots(2, 2, figsize=(w, 0.88 * w), sharey="row", sharex="col")
     # points against Ra are coloured by their Pr, points against Pr by their Ra, both from red
-    # (cheap) to violet (expensive), with the same colour for a value as in every figure
-    scales = {"x": style.expense_norm("pr"), "y": style.expense_norm("ra")}
+    # (cheap) to purple (expensive), with the same colour for a value as in every figure
+    ckinds = {"x": "pr", "y": "ra"}
     lmin = np.log10(a.min_q) if a.min_q > 0 else -np.inf
     summary = []
     for i, kind in enumerate(("alpha", "beta")):
         for j, coord in enumerate(("x", "y")):
-            st = panel(axes[i, j], est, kind, coord, *scales[coord], a.refs, fit_source,
-                       surf if a.draw_surface else None, d, lmin, ref_labels=(j == 1))
+            st = panel(axes[i, j], est, kind, coord, ckinds[coord], a.refs, fit_source, d,
+                       surf if a.draw_surface else None, lmin, ref_labels=(j == 1))
             summary.append(dict(kind=kind, vs=COORD[coord], **st))
         lims = [ax.get_ylim() for ax in axes[i]]
         axes[i, 0].set_ylim(min(l[0] for l in lims), max(l[1] for l in lims))
     for ax in axes[0]:
         ax.set_xlabel("")
+    for ax in axes[:, 1]:          # the same estimates as on the left, so the same mean
+        ax.set_title("")
     for j, coord in enumerate(("x", "y")):
         other = "Pr" if coord == "x" else "Ra"
         vals = np.sort(d["y" if coord == "x" else "x"].unique())
-        cmap, norm = scales[coord]
+        cmap, norm = style.expense_norm(ckinds[coord], vals)
         cb = fig.colorbar(ScalarMappable(norm, cmap), ax=axes[:, j], location="top", shrink=0.85,
                           aspect=32, pad=0.02, ticks=vals[::2] if len(vals) > 7 else vals)
         cb.set_label(rf"colour: $\log_{{10}}{other}$", fontsize=7)
@@ -264,8 +327,10 @@ def main(argv=None) -> None:
     from matplotlib.lines import Line2D
     handles = [Line2D([], [], marker="o", ls="-", lw=0.7, ms=3, color="0.3", label="two-point, joined by row"
                       if a.method == "pairs" else "row/column fit"),
-               Line2D([], [], marker="D", ls="none", ms=2.6, mfc="white", color="0.3", label="cell centre"),
-               Line2D([], [], color="k", lw=0.9, label="weighted trend" if d["sL"].notna().all() else "trend (unweighted)")]
+               Line2D([], [], marker="D", ls="none", ms=3, mfc="0.3", markerfacecoloralt="0.75", fillstyle="left",
+                      mec="0.25", label="cell centre"),
+               Line2D([], [], color="0.3", gapcolor="0.75", ls=(0, (2.5, 2.5)), lw=0.7,
+                      label="between two rows: both colours")]
     if np.isfinite(lmin):
         handles.append(Line2D([], [], marker="x", ls="none", ms=3, color="0.6",
                               label=rf"left out: ${'Nu-1' if a.q == 'Nu-1' else a.q} < {a.min_q:g}$"))

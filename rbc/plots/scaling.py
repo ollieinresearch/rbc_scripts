@@ -180,10 +180,10 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
         done = allpts["status"] == "finished" if not include_running else np.ones(len(allpts), bool)
         ax.errorbar(xs, y / scale, yerr=None if sy is None else sy / scale, capsize=2, **kw)
         if (~done).any():
-            ax.plot(xvals(allpts)[~done], (y_all / scale)[~done], **dict(kw, mfc="none"), alpha=0.6)
+            ax.plot(xvals(allpts)[~done], (y_all / scale)[~done], **dict(kw, **style.marker_kw(kw["color"], filled=False)), alpha=0.6)
         xx = np.logspace(np.log10(xs.min()), np.log10(xs.max()), 100)
         for i, (kind, f) in enumerate(zip(fit_kinds, fits)):
-            ax.plot(xx, f["predict"](xx) / scale, color=kw["color"], ls=["-", ":"][i], lw=1)
+            ax.plot(xx, f["predict"](xx) / scale, ls=["-", ":"][i], lw=1, **style.line_kw(kw["color"]))
             rows.append(dict(q=q, a=a, c=c, kind=kind, slice_exponent=g, n=len(s), slope=f["coef"][-2],
                              slope_err=f["err"][-2], chi2_dof=f["chi2_dof"], aic=f["aic"], scale=scale,
                              **({"q2": f["coef"][0]} if kind == "quadratic" else {})))
@@ -192,7 +192,7 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
         if legend_items is not None:
             legend_items.append((handles[-1], labels[-1]))
         if norm == "none":
-            ax.axhline(y.iloc[0], color=kw["color"], lw=0.5, ls=(0, (1, 2)))
+            ax.axhline(y.iloc[0], lw=0.5, ls=(0, (1, 2)), **style.line_kw(kw["color"]))
     if norm in ("first", "ref", "common"):
         ax.axhline(1, color="0.4", lw=0.6, ls="--")
     if norm == "ref" and p is None:

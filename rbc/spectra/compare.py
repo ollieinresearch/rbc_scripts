@@ -101,7 +101,7 @@ def plot_overlay(specs: dict[str, dict], panels, path: Path, title=""):
             for lab in labels:
                 n, E, D = specs[lab][(fld, key)]
                 m = (n >= 1) & (E > 0)
-                ax.loglog(n[m], E[m], color=colors[lab], label=f"{lab}  ($D={D:.1f}$)")
+                ax.loglog(n[m], E[m], label=f"{lab}  ($D={D:.1f}$)", **style.line_kw(colors[lab]))
                 arrays.append(E[m])
             cs.setup_yaxis(ax, *cs.auto_ylim(*arrays))
             ax.set_xlabel(PANEL_LABEL[key])

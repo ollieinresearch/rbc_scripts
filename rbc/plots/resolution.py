@@ -133,7 +133,7 @@ def decades_fig(g, targets, out, png, lra, lpr):
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=style.figsize(1.0, 0.42))
     chosen = sorted(dict.fromkeys(pick), key=lambda i: g.iloc[i]["nz"])
-    colours = style.ranked_colours(len(chosen))      # coarse (cheap) red to fine violet
+    colours = style.ranked_colours(len(chosen))      # coarse (cheap) red to fine purple
     arrays = []
     for k, i in enumerate(chosen):
         r = g.iloc[i]
@@ -142,7 +142,7 @@ def decades_fig(g, targets, out, png, lra, lpr):
             continue
         n, E, Dv = sp[("vel", "nz")]
         msk = (n >= 1) & (E > 0)
-        a1.loglog(n[msk], E[msk], color=colours[k],
+        a1.loglog(n[msk], E[msk], **style.line_kw(colours[k]),
                   label=rf"$N_z={int(r['nz'])}$, $D={r['D_run']:.1f}$")
         arrays.append(E[msk])
     a1.set(xlabel=r"Chebyshev degree $n_z$", ylabel=r"$E_u(n_z)$")

@@ -146,7 +146,7 @@ def proxy(kw, ls="-"):
     Parameters
     ----------
     kw : dict
-        Marker keywords (``color``, ``marker``, ``mfc``, ``mec``).
+        Marker keywords (``color``, ``marker``, ``mfc``, ``mec``, ``path_effects``).
     ls : str, optional
         Line style.
 
@@ -156,7 +156,7 @@ def proxy(kw, ls="-"):
     """
     from matplotlib.lines import Line2D
     return Line2D([], [], color=kw["color"], marker=kw.get("marker"), mfc=kw.get("mfc"),
-                  mec=kw.get("mec"), ls=ls, lw=1)
+                  mec=kw.get("mec"), ls=ls, lw=1, path_effects=kw.get("path_effects", []))
 
 
 def decade_ticks(ax, axis="x"):

@@ -199,7 +199,7 @@ def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_
         if r["fit"] is not None:
             q2, m, _ = r["fit"]["coef"]
             xx = np.logspace(np.log10(r["x"][0]), np.log10(r["x"][-1]), 60)
-            axg.plot(xx, m + 2 * q2 * np.log10(xx), color=line["color"], lw=0.6, ls=":")
+            axg.plot(xx, m + 2 * q2 * np.log10(xx), lw=0.6, ls=":", **style.line_kw(line["color"]))
         for f in fits:     # the straight-line fit's exponent in x, over the slice's range
             if f["c"] == c and f["kind"] == "linear":
                 axg.plot([r["x"][0], r["x"][-1]], [f["slope"] + f["slice_exponent"]] * 2, color=line["color"],

@@ -17,18 +17,44 @@ width. Text is typeset with LaTeX where it is installed (`--no-tex` turns this o
 Each figure below links to its example in the {doc}`../gallery/index`.
 
 (expense-colours)=
-## Colours: cheap red to expensive violet
+## Colours: cheap red to expensive purple
 
 Every figure that colours runs, curves or slices by a parameter uses one ordering
-({mod}`rbc.style`): the visible spectrum, red, orange, yellow, green, blue, indigo, violet,
-from the cheapest runs to the most expensive, as photon energy rises. Higher Ra, lower Pr
-and, along a slice family, lower $Pr_0$ are more expensive. Each value has a fixed colour,
-the same in every figure (for example $Ra = 10^5$ red and $10^9$ violet; $Pr = 1$ red and
-$10^{-3.5}$ violet), set by `rbc.style.EXPENSE_RANGE`; each slice family spans the whole
-spectrum on its own. Things ranked only within one figure, such as the resolutions of one
-point or the runs of a joint PDF, run from red to violet in order of cost. Markers change
-with the value too, so colour is never the only cue. Continuous fields, such as the
-contours, keep an ordinary colormap.
+({mod}`rbc.style`): the spectrum, red, orange, yellow, green, blue, purple, from the
+cheapest runs to the most expensive. Higher Ra, lower Pr and, along a slice family, lower
+$Pr_0$ are more expensive. Each value has a fixed colour, the same in every figure
+(`rbc.style.EXPENSE_LEVELS`):
+
+| Parameter | Levels, cheapest first | Colours |
+|---|---|---|
+| $Ra$ | $10^5, 10^6, \dots, 10^9$ | red, yellow, green, blue, purple |
+| $Pr$ | $1, 10^{-0.5}, \dots, 10^{-3.5}$ | red, orange, yellow, pale green, green, light blue, blue, purple |
+| $Pr_0$, $Pr \propto Ra^{-1/2}$ | $10^1, \dots, 10^{-3}$ | dark red, then as for $Pr$ |
+| $Pr_0$, $Pr \propto Ra^{-1}$ | $10^2, \dots, 10^{-1.5}$ | as for $Pr$ |
+
+Things ranked only within one figure, such as the resolutions of one point or the runs of
+a joint PDF, take Tol's set for that many colours, red first. Markers change with the value
+too, so colour is never the only cue. Continuous fields, such as the contours, keep an
+ordinary colormap.
+
+The colours are Paul Tol's discrete rainbow (Tol 2021, *Colour schemes*, SRON technical
+note SRON/EPS/TN/09-002, figure 22), used as given rather than interpolated. A rainbow
+interpolated through evenly spaced hues, as an earlier version did, has neighbours of
+nearly the same lightness, and red–orange and yellow–green then differ only by a small
+change of hue, which is hard to see and, for the 1 in 12 men with red–green colour
+blindness, invisible: the worst pair of neighbours was 1 unit apart in CAM02-UCS under
+simulated deuteranopia, about the smallest difference anyone can see. Tol picked his
+colours at equal steps along a curve in a perceptually uniform space, alternating light
+and dark, so neighbours differ in lightness as well as hue; the closest pair of neighbours
+in the $Pr$ set is about 16 units apart under simulated deuteranopia or protanopia, and 18
+with normal vision. Crameri, Shephard & Heron (2020, *Nat. Commun.* 11, 5444) explain why
+lightness, not hue, has to carry the order.
+
+Two of Tol's colours, yellow and pale green, are too light for a thin line on white, so
+markers have an edge in a dark shade of their colour, and pale lines and open markers get
+a thin dark outline ({func}`rbc.style.line_kw`, {func}`rbc.style.marker_kw`).
+Transparency would not help: it moves every colour towards the white page, making
+neighbours more alike, and overlapping points mix into colours that are in no legend.
 
 ## Parameter map
 
@@ -155,8 +181,10 @@ python -m rbc.plots.reduced --pr-power -1 --norm common
 
 The local exponents α and β of $Nu - 1 \sim Pr^\alpha Ra^\beta$, each against Ra and
 against Pr. Two-point estimates from the same row (constant Pr, or constant Ra) are joined,
-so each row's trend can be followed; the black line and the panel title give the trend
-over all estimates. `--surface 2` prints the comparison of surface fits (`--draw-surface`
+so each row's trend can be followed. An estimate between two rows of runs (a secant across
+rows, or a cell centre) has both rows' colours: a marker half in each, a line dashed in one
+with gaps in the other. The panel title is the mean of the estimates; the flatness fits
+({ref}`below <exponents-flatness>`) are printed. `--surface 2` prints the comparison of surface fits (`--draw-surface`
 also draws one); `--min-q 1` leaves out estimates that use a run with $Nu - 1 < 1$, where
 local exponents stop meaning much. Method and interpretation:
 {doc}`../theory/exponents`.

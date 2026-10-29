@@ -58,7 +58,7 @@ def ratio_fig(df, out, png):
         g = g.sort_values("Ra")
         kw = dict(ms=3.5, lw=0.6, **style.category_kw(lpr, "pr"))
         a2.plot(g["Ra"], g["n_delta_T"], ls="-", **kw, label=rf"$Pr={style.pow10(lpr)}$")
-        a2.plot(g["Ra"], g["n_delta_u_slope"], ls="--", mfc="none", **kw)
+        a2.plot(g["Ra"], g["n_delta_u_slope"], ls="--", **dict(kw, **style.marker_kw(kw["color"], filled=False)))
     a2.set(xscale="log", xlabel=style.SYM["Ra"], ylabel="Chebyshev nodes in layer")
     decade_ticks(a2, "x")
     a2.plot([], [], "k-", label=r"in $\delta_T$")

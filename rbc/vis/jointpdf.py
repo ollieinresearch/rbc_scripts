@@ -195,14 +195,15 @@ def main(argv=None) -> None:
         Cz = np.interp(z0, z, C)
         col = colour[i]
         ax.set(aspect="equal", xticks=t, yticks=t)
-        ax.set_title(f"{label}\n$C={Cz:.2f}$, {nw} snapshots", fontsize=6, color=col if n > 1 else "k")
+        tcol = "k" if n == 1 else style.edge_colour(col) if style.is_pale(col) else col     # pale text is unreadable
+        ax.set_title(f"{label}\n$C={Cz:.2f}$, {nw} snapshots", fontsize=6, color=tcol)
         ax.tick_params(labelsize=6)
         if i % ncol == 0:
             ax.set_ylabel(r"$\theta/\theta_{\rm rms}$", fontsize=7)
         if i >= n - ncol:
             ax.set_xlabel(r"$w/w_{\rm rms}$", fontsize=7)
-        axc.plot(C, z, color=col, label=label.replace("\n", ", "))
-        axc.plot([Cz], [z0], "o", color=col, ms=3)
+        axc.plot(C, z, label=label.replace("\n", ", "), **style.line_kw(col))
+        axc.plot([Cz], [z0], "o", ms=3, **style.marker_kw(col))
     cb = fig.colorbar(cf, ax=pdf_axes, location="bottom", shrink=0.6, aspect=30)
     cb.set_label(r"$\log_{10}$ PDF", fontsize=7)
     cb.ax.tick_params(labelsize=6)

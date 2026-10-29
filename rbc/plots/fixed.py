@@ -227,7 +227,6 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
         if len(g) < 2:
             continue
         ckw = style.category_kw(v, pkind)
-        col = ckw["color"]
         y, err = qcol(g, q)
         div = divisor(g, along, norm, alpha, beta)
         if norm == "common":
@@ -247,11 +246,10 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
         if slopes:      # value first, so the numbers line up in the legend column
             lab = rf"${sym} = {f['coef'][-2]:+.3f}$ at {lab}" if departure else \
                 rf"${sym} = {f['coef'][-2]:.3f}$ at {lab}"
-        ax.errorbar(g[x], y, yerr=err, color=col, marker=ckw["marker"], ms=3, lw=0 if fit else 0.9,
-                    capsize=1.5, label=lab)
+        ax.errorbar(g[x], y, yerr=err, ms=3, lw=0 if fit else 0.9, capsize=1.5, label=lab, **ckw)
         if fit:
             xx = np.logspace(np.log10(g[x].min()), np.log10(g[x].max()), 60)
-            ax.plot(xx, f["predict"](xx / xc), color=col, lw=0.9)
+            ax.plot(xx, f["predict"](xx / xc), lw=0.9, **style.line_kw(ckw["color"]))
     if lit is not None:
         for i, (src, g) in enumerate(lit.groupby("source")):
             if q == "Nu-1" and "Nu" not in g or q != "Nu-1" and q not in g:
