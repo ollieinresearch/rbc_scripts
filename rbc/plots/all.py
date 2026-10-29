@@ -19,7 +19,8 @@ import argparse
 import traceback
 
 from rbc import cases as rc
-from rbc.plots import boundary_layers, contour, exponents, fixed, param_grid, resolution, scaling
+from rbc.plots import (boundary_layers, contour, exponents, fixed, param_grid, pr_decay, reduced, resolution,
+                       scaling)
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -59,6 +60,8 @@ def main(argv=None) -> None:
             (fixed.main, ["--slopes"] + res),
             (fixed.main, ["--slopes", "--norm", "comp", "--fit", "quadratic"] + res),
             (fixed.main, ["--slopes", "--norm", "collapse", "--fit", "linear"] + res),
+            (pr_decay.main, [] + res),
+            (reduced.main, [] + res),
             (exponents.main, ["--surface", "2"] + res),
             (contour.main, [] + res),
         ]
@@ -72,6 +75,8 @@ def main(argv=None) -> None:
             (fixed.main, ["--slopes"] + res),
             (fixed.main, ["--slopes", "--norm", "comp", "--fit", "quadratic"] + res),
             (fixed.main, ["--slopes", "--norm", "collapse", "--fit", "linear"] + res),
+            (pr_decay.main, [] + res),
+            (reduced.main, [] + res),
             (exponents.main, ["--surface", "2"] + res),
             (boundary_layers.main, ["ratio"] + res),
             (resolution.main, ["study"] + res),

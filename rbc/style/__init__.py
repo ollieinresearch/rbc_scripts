@@ -37,6 +37,8 @@ SYM = {
 #: every figure (grid map, Nu/Re fits, contours, spectra comparisons). The palette was
 #: checked for distinguishability under the common colour-vision deficiencies.
 SLICE_STYLE = {
+    2.0:  dict(color="#393b79", marker="*"),
+    1.5:  dict(color="#8c564b", marker="p"),
     1.0:  dict(color="#17becf", marker="h"),
     0.5:  dict(color="#c49c2c", marker="d"),
     0.0:  dict(color="#1f77b4", marker="o"),

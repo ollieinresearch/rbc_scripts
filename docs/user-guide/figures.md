@@ -83,6 +83,44 @@ python -m rbc.plots.fixed --slopes --norm comp --fit quadratic
 python -m rbc.plots.fixed --slopes --norm collapse --fit linear --ref sl
 ```
 
+## How Nu − 1 decays with Pr
+
+{mod}`rbc.plots.pr_decay` ({ref}`example <sphx_glr_gallery_auto_examples_plot_pr_decay.py>`)
+
+Top, $(Nu-1)/(Nu-1)_{Pr=1}$ against Pr, one curve per Ra: every curve ends at (1, 1), so
+only the shape of the Pr dependence is compared and Ra drops out. Bottom, the local exponent
+$\alpha = d\log(Nu-1)/d\log Pr$ from neighbouring Pr at each Ra, with the Pr exponents of
+the low-Pr Grossmann–Lohse regimes as guides: $\text{I}_l$ (1/8), $\text{II}_l$ (1/5) and
+$\text{IV}_l$ (1/2, the same as the low-Pr ultimate law). A curve whose local exponent
+climbs past all of them as Pr falls is leaving those turbulent regimes: Nu − 1 is heading
+towards 0 as convection weakens. A Ra with no run at the reference Pr (`--ref-pr`, log10,
+default 0) is left out and listed, never extrapolated. The local exponents are also written
+to a CSV.
+
+```bash
+python -m rbc.plots.pr_decay
+python -m rbc.plots.pr_decay --ref-pr -0.5 --guides 0.2 0.5
+```
+
+## Nu − 1 against Ra Pr^a along slices
+
+{mod}`rbc.plots.reduced` ({ref}`example <sphx_glr_gallery_auto_examples_plot_reduced.py>`)
+
+One column per slice family (`--family`, default $-1/2$ and $-1$). Top, Nu − 1 of every
+slice with at least three points (`--min-points`) against $x = Ra\,Pr^{a}$:
+$Ra\,Pr^{-1/2}$ for $Pr \propto Ra^{-1/2}$, and $Ra/Pr = Re_\text{ff}^2$ for $Pr \propto
+Ra^{-1}$ (`--pr-power` sets the power of Pr for every family). Bottom, the local exponent
+$\gamma$ of $Nu - 1 \sim c\,x^\gamma$: two-point secants (markers) and, for slices of four
+points or more, the derivative of a quadratic fit (dotted). The dashed line is the value the
+Shishkina–Lohse low-Pr ultimate law gives, the dash-dotted one the value from one power law
+fitted to all points. `--min-q 1` leaves out weakly convecting points. What γ measures, and
+what it cannot, is derived in {ref}`reduced-exponent`.
+
+```bash
+python -m rbc.plots.reduced
+python -m rbc.plots.reduced --family -1 --pr-power -1
+```
+
 ## Local exponents
 
 {mod}`rbc.plots.exponents` ({ref}`example <sphx_glr_gallery_auto_examples_plot_exponents.py>`)
