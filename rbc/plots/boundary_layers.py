@@ -19,7 +19,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps
 
 from rbc import cases as rc
 from rbc import style
@@ -43,13 +42,10 @@ def ratio_fig(df, out, png):
         Also write a PNG.
     """
     fig, (a1, a2) = plt.subplots(1, 2, figsize=style.figsize(1.0, 0.42))
-    cmap = colormaps["viridis"]
-    lo, hi = df["log_ra"].min(), df["log_ra"].max()
     for lra, g in df.groupby("log_ra"):
-        col = cmap(0.9 * (lra - lo) / max(hi - lo, 1e-9))
         g = g.sort_values("Pr")
-        a1.plot(g["Pr"], g["delta_u_slope"] / g["delta_T"], "o", color=col, ms=3.5,
-                label=rf"$Ra={style.pow10(lra)}$")
+        a1.plot(g["Pr"], g["delta_u_slope"] / g["delta_T"], ls="none", ms=3.5, label=rf"$Ra={style.pow10(lra)}$",
+                **style.category_kw(lra, "ra"))
     pr = np.logspace(np.log10(df["Pr"].min()) - 0.3, np.log10(df["Pr"].max()) + 0.3, 200)
     lowm, highm = pr < 3 * PR_STAR, pr > PR_STAR / 3
     a1.plot(pr[lowm], pr[lowm] ** 0.5 / 0.588, "k--", lw=0.8, label=r"PB, $Pr\ll Pr^*$")
@@ -58,12 +54,11 @@ def ratio_fig(df, out, png):
     decade_ticks(a1, "x")
     a1.legend(fontsize=6.5)
 
-    for (lpr, g), mk in zip(df.groupby("log_pr"), "os^vDP<>X"):
+    for lpr, g in df.groupby("log_pr"):
         g = g.sort_values("Ra")
-        kw = dict(marker=mk, ms=3.5, lw=0.6)
-        col = colormaps["plasma"](0.85 * (lpr - df["log_pr"].min()) / max(np.ptp(df["log_pr"]), 1e-9))
-        a2.plot(g["Ra"], g["n_delta_T"], color=col, ls="-", **kw, label=rf"$Pr={style.pow10(lpr)}$")
-        a2.plot(g["Ra"], g["n_delta_u_slope"], color=col, ls="--", mfc="none", **kw)
+        kw = dict(ms=3.5, lw=0.6, **style.category_kw(lpr, "pr"))
+        a2.plot(g["Ra"], g["n_delta_T"], ls="-", **kw, label=rf"$Pr={style.pow10(lpr)}$")
+        a2.plot(g["Ra"], g["n_delta_u_slope"], ls="--", mfc="none", **kw)
     a2.set(xscale="log", xlabel=style.SYM["Ra"], ylabel="Chebyshev nodes in layer")
     decade_ticks(a2, "x")
     a2.plot([], [], "k-", label=r"in $\delta_T$")
@@ -96,7 +91,7 @@ def grid_fig(df, points, out, png, span=3.0):
             raise SystemExit(f"no production run at Ra=1e{lra}, Pr=1e{lpr}")
         rows.append(r.iloc[0])
     fig, axes = plt.subplots(1, len(rows), figsize=style.figsize(1.0, 0.5), squeeze=False)
-    cT, cu = style.SLICE_STYLE[-1.0]["color"], style.SLICE_STYLE[0.0]["color"]
+    cT, cu = "#d62728", "#1f77b4"            # temperature and velocity, as in the other profiles
     for ax, r in zip(axes[0], rows):
         prof = np.load(Path(r["path"]) / "outputs" / "profiles.npz")
         z = prof["z"] + 0.5                      # distance from the bottom wall

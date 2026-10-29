@@ -158,7 +158,6 @@ def main(argv=None) -> None:
     argv : list of str, optional
         Command-line arguments (default: ``sys.argv[1:]``).
     """
-    from matplotlib import colormaps
     from rbc.vis.slices import row_labels
 
     a = get_parser().parse_args(argv)
@@ -175,7 +174,11 @@ def main(argv=None) -> None:
     fig = plt.figure(figsize=(w_in, nrow * (panel * 1.25 + 0.15) + 0.55), layout="constrained")
     gs = fig.add_gridspec(nrow, ncol + 1, width_ratios=[1] * ncol + [1.2])
     axc = fig.add_subplot(gs[:, ncol])
-    cm = colormaps["viridis"]
+    # runs ranked by expense: free-fall Reynolds number squared Ra/Pr, then N_z
+    order = sorted(range(len(infos)), key=lambda i: (infos[i].Ra / infos[i].Pr,
+                                                      (fl.parse_run_path(infos[i].path) or {}).get("nz") or 0))
+    ranked = style.ranked_colours(len(infos))
+    colour = {i: ranked[k] for k, i in enumerate(order)}
     edges = np.linspace(-a.lim, a.lim, a.bins + 1)
     mid = 0.5 * (edges[1:] + edges[:-1])
     levels = np.arange(-5, 0.01, 0.5)
@@ -190,7 +193,7 @@ def main(argv=None) -> None:
         ax.plot([-a.lim, a.lim], [-a.lim, a.lim], color="0.5", lw=0.5, ls="--")
         z0 = info.height(a.height)
         Cz = np.interp(z0, z, C)
-        col = cm(0.75 * i / max(n - 1, 1))         # the light end of viridis is hard to read
+        col = colour[i]
         ax.set(aspect="equal", xticks=t, yticks=t)
         ax.set_title(f"{label}\n$C={Cz:.2f}$, {nw} snapshots", fontsize=6, color=col if n > 1 else "k")
         ax.tick_params(labelsize=6)

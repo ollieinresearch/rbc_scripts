@@ -24,9 +24,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib import colormaps
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize
 
 from rbc import cases as rc
 from rbc import style
@@ -241,13 +239,14 @@ def main(argv=None) -> None:
 
     w, _ = style.figsize(1.0)
     fig, axes = plt.subplots(2, 2, figsize=(w, 0.88 * w), sharey="row", sharex="col")
-    cmap = colormaps["viridis"]
-    norms = {"x": Normalize(d["y"].min(), d["y"].max()), "y": Normalize(d["x"].min(), d["x"].max())}
+    # points against Ra are coloured by their Pr, points against Pr by their Ra, both from red
+    # (cheap) to violet (expensive), with the same colour for a value as in every figure
+    scales = {"x": style.expense_norm("pr"), "y": style.expense_norm("ra")}
     lmin = np.log10(a.min_q) if a.min_q > 0 else -np.inf
     summary = []
     for i, kind in enumerate(("alpha", "beta")):
         for j, coord in enumerate(("x", "y")):
-            st = panel(axes[i, j], est, kind, coord, cmap, norms[coord], a.refs, fit_source,
+            st = panel(axes[i, j], est, kind, coord, *scales[coord], a.refs, fit_source,
                        surf if a.draw_surface else None, d, lmin, ref_labels=(j == 1))
             summary.append(dict(kind=kind, vs=COORD[coord], **st))
         lims = [ax.get_ylim() for ax in axes[i]]
@@ -257,7 +256,8 @@ def main(argv=None) -> None:
     for j, coord in enumerate(("x", "y")):
         other = "Pr" if coord == "x" else "Ra"
         vals = np.sort(d["y" if coord == "x" else "x"].unique())
-        cb = fig.colorbar(ScalarMappable(norms[coord], cmap), ax=axes[:, j], location="top", shrink=0.85,
+        cmap, norm = scales[coord]
+        cb = fig.colorbar(ScalarMappable(norm, cmap), ax=axes[:, j], location="top", shrink=0.85,
                           aspect=32, pad=0.02, ticks=vals[::2] if len(vals) > 7 else vals)
         cb.set_label(rf"colour: $\log_{{10}}{other}$", fontsize=7)
         cb.ax.tick_params(labelsize=6)

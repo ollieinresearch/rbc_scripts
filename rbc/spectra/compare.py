@@ -90,11 +90,8 @@ def plot_overlay(specs: dict[str, dict], panels, path: Path, title=""):
         Figure title.
     """
     import matplotlib.pyplot as plt
-    from matplotlib import colormaps
-
-    labels = list(specs)
-    cmap = colormaps["viridis"]
-    colors = {lab: cmap(i / max(len(labels) - 1, 1) * 0.9) for i, lab in enumerate(labels)}
+    labels = list(specs)                       # ordered by N_z (runs_in)
+    colors = dict(zip(labels, style.ranked_colours(len(labels))))
     fig, axes = plt.subplots(len(cs.FIELDS), len(panels), figsize=(5.2 * len(panels), 4.2 * len(cs.FIELDS)),
                              squeeze=False)
     for i, fld in enumerate(cs.FIELDS):

@@ -132,17 +132,17 @@ def decades_fig(g, targets, out, png, lra, lpr):
         pick.append(i)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=style.figsize(1.0, 0.42))
-    from matplotlib import colormaps
-    cm = colormaps["viridis"]
+    chosen = sorted(dict.fromkeys(pick), key=lambda i: g.iloc[i]["nz"])
+    colours = style.ranked_colours(len(chosen))      # coarse (cheap) red to fine violet
     arrays = []
-    for k, i in enumerate(dict.fromkeys(pick)):
+    for k, i in enumerate(chosen):
         r = g.iloc[i]
         sp = compare.mean_spectra(Path(r["path"]), r.get("t0"))
         if sp is None:
             continue
         n, E, Dv = sp[("vel", "nz")]
         msk = (n >= 1) & (E > 0)
-        a1.loglog(n[msk], E[msk], color=cm(0.85 * k / max(len(pick) - 1, 1)),
+        a1.loglog(n[msk], E[msk], color=colours[k],
                   label=rf"$N_z={int(r['nz'])}$, $D={r['D_run']:.1f}$")
         arrays.append(E[msk])
     a1.set(xlabel=r"Chebyshev degree $n_z$", ylabel=r"$E_u(n_z)$")

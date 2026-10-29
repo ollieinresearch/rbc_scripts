@@ -14,8 +14,21 @@ Every figure takes `--results`, which may also be a simple three-column file
 Figures are made at the size they will be printed, for inclusion at 100% in LaTeX: widths
 are fractions of `rbc.style.TEXTWIDTH_IN`, the one number to match to the journal's text
 width. Text is typeset with LaTeX where it is installed (`--no-tex` turns this off).
-Colours and markers of slices are fixed in {mod}`rbc.style`, so a slice looks the same
-in every figure. Each figure below links to its example in the {doc}`../gallery/index`.
+Each figure below links to its example in the {doc}`../gallery/index`.
+
+(expense-colours)=
+## Colours: cheap red to expensive violet
+
+Every figure that colours runs, curves or slices by a parameter uses one ordering
+({mod}`rbc.style`): the visible spectrum, red, orange, yellow, green, blue, indigo, violet,
+from the cheapest runs to the most expensive, as photon energy rises. Higher Ra, lower Pr
+and, along a slice family, lower $Pr_0$ are more expensive. Each value has a fixed colour,
+the same in every figure (for example $Ra = 10^5$ red and $10^9$ violet; $Pr = 1$ red and
+$10^{-3.5}$ violet), set by `rbc.style.EXPENSE_RANGE`; each slice family spans the whole
+spectrum on its own. Things ranked only within one figure, such as the resolutions of one
+point or the runs of a joint PDF, run from red to violet in order of cost. Markers change
+with the value too, so colour is never the only cue. Continuous fields, such as the
+contours, keep an ordinary colormap.
 
 ## Parameter map
 
@@ -106,19 +119,34 @@ python -m rbc.plots.pr_decay --ref-pr -0.5 --guides 0.2 0.5
 
 {mod}`rbc.plots.reduced` ({ref}`example <sphx_glr_gallery_auto_examples_plot_reduced.py>`)
 
-One column per slice family (`--family`, default $-1/2$ and $-1$). Top, Nu − 1 of every
-slice with at least three points (`--min-points`) against $x = Ra\,Pr^{a}$:
-$Ra\,Pr^{-1/2}$ for $Pr \propto Ra^{-1/2}$, and $Ra/Pr = Re_\text{ff}^2$ for $Pr \propto
-Ra^{-1}$ (`--pr-power` sets the power of Pr for every family). Bottom, the local exponent
-$\gamma$ of $Nu - 1 \sim c\,x^\gamma$: two-point secants (markers) and, for slices of four
-points or more, the derivative of a quadratic fit (dotted). The dashed line is the value the
-Shishkina–Lohse low-Pr ultimate law gives, the dash-dotted one the value from one power law
-fitted to all points. `--min-q 1` leaves out weakly convecting points. What γ measures, and
-what it cannot, is derived in {ref}`reduced-exponent`.
+One column per slice family (`--family`, default $-1/2$ and $-1$), slices with at least
+three points (`--min-points`), against $x = Ra\,Pr^{a}$: $Ra\,Pr^{-1/2}$ for
+$Pr \propto Ra^{-1/2}$, and $Ra/Pr = Re_\text{ff}^2$ for $Pr \propto Ra^{-1}$
+(`--pr-power` sets the power of Pr for every family).
+
+The top row is the compensated scaling plot of {mod}`rbc.plots.scaling` with $x$ in place
+of Ra: the same straight-line fits (`--fit linear quadratic`), normalizations (`--norm`)
+and legend of fitted slopes. Nu − 1 is divided by the power of $x$ the reference law
+$Nu - 1 \propto Pr^\alpha Ra^\beta$ predicts along the slice (`--alpha`, `--beta`; default
+the Shishkina–Lohse values 1/2, 1/2), so the prediction is a horizontal line. Along a slice
+$\log x = (1 + a^2)\log Ra + \text{const}$, so that power is $(\beta + a\alpha)/(1 + a^2)$:
+$x^{1/5}$ for $Pr \propto Ra^{-1/2}$ (the same compensation as $Ra^{1/4}$ in the scaling plot,
+up to a constant per slice), and $x^0$ for $Pr \propto Ra^{-1}$, along which the reference law
+predicts a constant. A slope fitted against $x$ is the one against Ra divided by
+$1 + a^2$ (−0.021 against −0.026 for one slice, say).
+
+The bottom row is the local exponent $\gamma$ of $Nu - 1 \sim c\,x^\gamma$: two-point
+secants (markers), for slices of four points or more the derivative of a quadratic fit
+(dotted), and each straight-line fit of the top row as a pale band over its slice. The
+dashed line is the reference law's value, the dash-dotted one the value from one power law
+fitted to all points. `--min-q 1` leaves out weakly convecting points. The fitted slopes
+are also written to a CSV. What γ measures, and what it cannot, is derived in
+{ref}`reduced-exponent`.
 
 ```bash
 python -m rbc.plots.reduced
-python -m rbc.plots.reduced --family -1 --pr-power -1
+python -m rbc.plots.reduced --family -1 --fit linear quadratic
+python -m rbc.plots.reduced --pr-power -1 --norm common
 ```
 
 ## Local exponents

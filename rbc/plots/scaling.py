@@ -66,6 +66,8 @@ def exponent_tex(g: float) -> str:
     """
     from fractions import Fraction
     f = Fraction(g).limit_denominator(12)
+    if abs(float(f) - g) > 1e-9:                    # not a simple fraction: show the number
+        return f"{g:.3g}"
     return str(f.numerator) if f.denominator == 1 else rf"{f.numerator}/{f.denominator}"
 
 
@@ -90,8 +92,13 @@ def qvals(df, q):
     return v, e
 
 
-def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, include_running):
+def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, include_running, p=None,
+          legend=True, legend_items=None):
     """One family of compensated slices on one axes.
+
+    Against Ra by default; with ``p``, against x = Ra Pr^p (:mod:`rbc.plots.reduced`).
+    Along a slice log x = (1 + p a) log Ra + const, so the reference law's exponent in x
+    is (beta + alpha a) / (1 + p a), and that is the power of x divided out.
 
     Parameters
     ----------
@@ -116,20 +123,31 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
         Fewest finished points for a slice.
     include_running : bool
         Fit running points too.
+    p : float, optional
+        Plot against x = Ra Pr^p instead of Ra.
+    legend : bool, optional
+        Draw the legend under the axes (otherwise only ``legend_items`` is filled).
+    legend_items : list, optional
+        Receives ``(handle, label)`` of every slice.
 
     Returns
     -------
     list of dict
         One row per (slice, fit) for the fits CSV.
     """
-    g = beta + alpha * a
+    span = 1.0 if p is None else 1 + p * a              # d log x / d log Ra along a slice
+    g = (beta + alpha * a) / span
     use = df if include_running else df[df["status"] == "finished"]
     slices = rc.slices(use, a, min_points)
+
+    def xvals(frame):
+        """The horizontal coordinate of some rows: Ra, or Ra Pr^p."""
+        return frame["Ra"] if p is None else frame["Ra"] * frame["Pr"] ** p
 
     def comp(frame):
         """Compensated values (and errors) of some rows."""
         v, e = qvals(frame, q)
-        div = frame["Pr"] ** alpha * frame["Ra"] ** beta if norm == "law" else frame["Ra"] ** g
+        div = frame["Pr"] ** alpha * frame["Ra"] ** beta if norm == "law" else xvals(frame) ** g
         return v / div, (None if e is None else e / div)
 
     common = None
@@ -145,54 +163,62 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
         allpts = df[np.isclose(rc.slice_c(df["log_ra"], df["log_pr"], a), c)].sort_values("log_ra")
         y, sy = comp(s)
         y_all, _ = comp(allpts)
-        fits = [fit_loglog(s["Ra"].values, y.values, None if sy is None else sy.values, k) for k in fit_kinds]
+        xs = xvals(s)
+        fits = [fit_loglog(xs.values, y.values, None if sy is None else sy.values, k) for k in fit_kinds]
         if norm == "first":
             scale = y.iloc[0]
         elif norm == "ref":
             hit = np.isclose(s["log_ra"], ref_ra)
-            scale = y[hit].iloc[0] if hit.any() else float(fits[0]["predict"](10.0 ** ref_ra))
+            pr_ref = 10.0 ** (c + a * (ref_ra - rc.RA_REF))     # Pr where this slice crosses Ra = 10^ref_ra
+            x_ref = 10.0 ** ref_ra * (1.0 if p is None else pr_ref ** p)
+            scale = y[hit].iloc[0] if hit.any() else float(fits[0]["predict"](x_ref))
         elif norm == "common":
             scale = 10 ** np.mean(np.log10(y[s["log_ra"].isin(common)]))
         else:
             scale = 1.0
         kw = style.slice_kw(c, a)
         done = allpts["status"] == "finished" if not include_running else np.ones(len(allpts), bool)
-        ax.errorbar(s["Ra"], y / scale, yerr=None if sy is None else sy / scale, capsize=2, **kw)
+        ax.errorbar(xs, y / scale, yerr=None if sy is None else sy / scale, capsize=2, **kw)
         if (~done).any():
-            ax.plot(allpts["Ra"][~done], (y_all / scale)[~done], **dict(kw, mfc="none"), alpha=0.6)
-        xx = np.logspace(s["log_ra"].min(), s["log_ra"].max(), 100)
+            ax.plot(xvals(allpts)[~done], (y_all / scale)[~done], **dict(kw, mfc="none"), alpha=0.6)
+        xx = np.logspace(np.log10(xs.min()), np.log10(xs.max()), 100)
         for i, (kind, f) in enumerate(zip(fit_kinds, fits)):
             ax.plot(xx, f["predict"](xx) / scale, color=kw["color"], ls=["-", ":"][i], lw=1)
             rows.append(dict(q=q, a=a, c=c, kind=kind, slice_exponent=g, n=len(s), slope=f["coef"][-2],
                              slope_err=f["err"][-2], chi2_dof=f["chi2_dof"], aic=f["aic"], scale=scale,
                              **({"q2": f["coef"][0]} if kind == "quadratic" else {})))
-        handles.append(proxy(kw))
+        handles.append(proxy(kw, style.slice_kw(c, a, line=True)["ls"]))
         labels.append(f"${style.pow10(c)}$: {slope_text(fits[0])}")
+        if legend_items is not None:
+            legend_items.append((handles[-1], labels[-1]))
         if norm == "none":
             ax.axhline(y.iloc[0], color=kw["color"], lw=0.5, ls=(0, (1, 2)))
     if norm in ("first", "ref", "common"):
         ax.axhline(1, color="0.4", lw=0.6, ls="--")
-    if norm == "ref":
+    if norm == "ref" and p is None:
         ax.axvline(10 ** ref_ra, color="0.7", lw=0.6, ls=":")
-    if norm == "common" and common:
+    if norm == "common" and common and p is None:
         ax.axvspan(10 ** min(common), 10 ** max(common), color="0.92", zorder=0, lw=0)
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel(style.SYM["Ra"])
+    xsym = "Ra" if p is None else "x"
+    ax.set_xlabel(style.SYM["Ra"] if p is None else rf"$x = Ra\,Pr^{{{exponent_tex(p)}}}$")
     qtex = "Nu-1" if q == "Nu-1" else q
     if norm == "law":
         ylab = rf"${qtex}\,/\,(Pr^{{{exponent_tex(alpha)}}}Ra^{{{exponent_tex(beta)}}})$"
     else:
-        ylab = rf"${qtex}\,/\,Ra^{{{exponent_tex(g)}}}$" if g else rf"${qtex}$"
+        qb = f"({qtex})" if q == "Nu-1" else qtex
+        ylab = rf"${qb}\,/\,{xsym}^{{{exponent_tex(g)}}}$" if g else rf"${qtex}$"
         ylab += {"first": " / first point", "ref": rf" / value at $Ra=10^{{{ref_ra:g}}}$",
                  "common": " / shared-Ra mean"}.get(norm, "")
     ax.set_ylabel(ylab)
     ax.set_title(FAMILY_TITLE.get(a, rf"$Pr\propto Ra^{{{a:g}}}$"))
     tidy_log_y(ax)
     decade_ticks(ax, "x")
-    ax.legend(handles, labels, title=r"$Pr_0$: fitted slope $m$ of compensated data", loc="upper left",
-              bbox_to_anchor=(0.0, -0.2), ncol=1, fontsize=7, title_fontsize=7, alignment="left")
+    if legend:
+        ax.legend(handles, labels, title=r"$Pr_0$: fitted slope $m$ of compensated data", loc="upper left",
+                  bbox_to_anchor=(0.0, -0.2), ncol=1, fontsize=7, title_fontsize=7, alignment="left")
     return rows
 
 

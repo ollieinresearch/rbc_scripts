@@ -120,7 +120,8 @@ noisy.
 (reduced-exponent)=
 ## The exponent against a combined variable
 
-{mod}`rbc.plots.reduced` places every point of the slices $Pr \propto Ra^{a}$ at
+{mod}`rbc.plots.reduced` draws the compensated scaling plot of the slices against a
+combined variable instead of Ra. It places every point of the slices $Pr \propto Ra^{a}$ at
 $x = Ra\,Pr^{p}$ (by default $p = a$: $Ra\,Pr^{-1/2}$ for $a = -1/2$, and
 $Ra\,Pr^{-1} = Ra/Pr = Re_\text{ff}^2$, the free-fall Reynolds number squared, for $a = -1$)
 and measures the local exponent of $Nu - 1 \sim c\,x^{\gamma}$,

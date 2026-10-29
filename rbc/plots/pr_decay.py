@@ -28,7 +28,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib import colormaps
 
 from rbc import cases as rc
 from rbc import style
@@ -126,16 +125,12 @@ def plot(ax, axl, rows, q, ref_pr, guides):
     guides : list of float
         Exponents drawn as horizontal guides on ``axl``.
     """
-    cmap = colormaps["viridis"]
-    ras = [r["log_ra"] for r in rows]
-    lo, hi = min(ras), max(ras)
     for r in rows:
-        col = cmap(0.9 * (r["log_ra"] - lo) / max(hi - lo, 1e-9))
+        kw = style.category_kw(r["log_ra"], "ra")
         lab = rf"$Ra={style.pow10(r['log_ra'])}$"
-        ax.errorbar(r["Pr"], r["r"], yerr=r["sr"], color=col, marker="o", ms=3, lw=0.9, capsize=1.5, label=lab)
+        ax.errorbar(r["Pr"], r["r"], yerr=r["sr"], ms=3, lw=0.9, capsize=1.5, label=lab, **kw)
         if axl is not None:
-            axl.errorbar(r["Pr_mid"], r["alpha"], yerr=r["alpha_err"], color=col, marker="o", ms=3, lw=0.9,
-                         capsize=1.5)
+            axl.errorbar(r["Pr_mid"], r["alpha"], yerr=r["alpha_err"], ms=3, lw=0.9, capsize=1.5, **kw)
     qt = "Nu-1" if q == "Nu-1" else "Nu"
     ref_tex = style.pow10(ref_pr)
     ax.axhline(1, color="0.6", lw=0.6, ls=":")

@@ -1,35 +1,36 @@
-"""Nu - 1 along slices against one combined variable x = Ra Pr^p, and its local exponent.
+"""The scaling plot of the slices against x = Ra Pr^p instead of Ra, with its local exponent.
 
 For slices Pr ∝ Ra^a (``--family``), every point is placed at x = Ra Pr^p, by default
 with p = a: x = Ra Pr^-1/2 for the slices Pr ∝ Ra^-1/2, and x = Ra Pr^-1 = Ra/Pr = Re_ff^2
 (the free-fall Reynolds number squared) for Pr ∝ Ra^-1. ``--pr-power`` sets p for every
-family. Top row: Nu - 1 against x, one curve per slice. Bottom row: the local exponent of
-Nu - 1 ~ c x^gamma,
+family.
 
-    gamma = d log(Nu-1) / d log x,
+Top row: exactly :mod:`rbc.plots.scaling` against x. Nu - 1 is divided by the power of x
+the reference law Nu - 1 ∝ Pr^alpha Ra^beta predicts along the slice (default the low-Pr
+ultimate law of Shishkina & Lohse, alpha = beta = 1/2; ``--alpha``, ``--beta``), so the
+prediction is a horizontal line, with the same straight-line (and ``--fit quadratic``)
+fits and the same vertical normalizations (``--norm``). Along a slice
+log x = (1 + p a) log Ra + const, so that power is (beta + a alpha) / (1 + p a): x^(1/5)
+for the Pr ∝ Ra^-1/2 slices, and x^0 (no compensation) for Pr ∝ Ra^-1, where the
+reference law predicts a constant because it depends on Ra Pr only.
 
-from two-point secants between neighbouring points of each slice (drawn at the geometric
-mean of their x), and for slices of four points or more the derivative of a quadratic fit
-of log(Nu-1) against log x.
+Bottom row: the local exponent of Nu - 1 ~ c x^gamma, gamma = d log(Nu-1) / d log x, from
+two-point secants between neighbouring points of each slice (drawn at the geometric mean of
+their x), the derivative of a quadratic fit for slices of four points or more (dotted), and
+each straight-line fit of the top row as a band (its slope plus the compensating power).
 
-What gamma is. Along a slice log x = (1 + p a) log Ra + const, so gamma is the slice
-exponent m = d log(Nu-1) / d log Ra (the slope in :mod:`rbc.plots.scaling`) divided by
-(1 + p a): 5/4 for p = a = -1/2, and 2 for p = a = -1. In terms of the local exponents of
-Nu - 1 ~ Pr^alpha Ra^beta, gamma = (beta + a alpha) / (1 + p a). What the combined variable
-adds is a common horizontal axis for every slice: if the gamma(x) of all slices fall on
-one curve, x is what organizes the approach to the asymptotic exponent; if they stay
-ordered by slice, it is not. Nu - 1 itself does not collapse unless alpha = p beta.
-
-Reference lines: the exponent the low-Pr ultimate law of Shishkina & Lohse (Nu ~ Pr^1/2
-Ra^1/2, also Grossmann & Lohse's IV_l) gives, (1 + a) / (2 (1 + p a)), which is 0 for
-a = -1 because that law depends on Ra Pr only, which is fixed along those slices; and
-the one from a single power law fitted to all points (``--no-fit-line`` leaves it out).
+What gamma is: along a slice it is the slice exponent d log(Nu-1)/d log Ra divided by
+(1 + p a), i.e. (beta + a alpha) / (1 + p a) in terms of the local exponents of
+Nu - 1 ~ Pr^alpha Ra^beta. What the combined variable adds is a common horizontal axis:
+if the gamma(x) of all slices fall on one curve, x organizes the approach to the
+asymptotic exponent. Nu - 1 itself collapses only if alpha = p beta.
 
 Usage::
 
     python -m rbc.plots.reduced                                  # both families
-    python -m rbc.plots.reduced --family -1 --min-points 3
+    python -m rbc.plots.reduced --family -1 --fit linear quadratic
     python -m rbc.plots.reduced --pr-power -1                    # x = Ra/Pr for every family
+    python -m rbc.plots.reduced --norm common
 """
 from __future__ import annotations
 
@@ -42,7 +43,7 @@ import pandas as pd
 
 from rbc import cases as rc
 from rbc import style
-from rbc.plots.common import fit_loglog, plain_log_y, proxy
+from rbc.plots.common import fit_loglog
 
 LN10 = np.log(10.0)
 FAMILY_TITLE = {-0.5: r"$Pr\propto Ra^{-1/2}$", -1.0: r"$Pr\propto Ra^{-1}$"}
@@ -145,69 +146,83 @@ def global_exponents(df):
     return float(s.exponent(0, 0, "alpha")[0]), float(s.exponent(0, 0, "beta")[0])
 
 
-def family(ax, axg, df, a, p, min_points, min_q, ref_lines):
-    """One family of slices: Nu - 1 against x (``ax``) and gamma against x (``axg``).
+def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_running, ref_lines):
+    """One family of slices: the compensated scaling plot against x (``ax``) and the local
+    exponent gamma against x (``axg``).
 
     Parameters
     ----------
     ax, axg : matplotlib.axes.Axes
-        Axes for Nu - 1 and for the local exponent.
+        Axes for compensated Nu - 1 and for the local exponent.
     df : pandas.DataFrame
-        Results rows (finished).
+        Results rows.
     a : float
         Slice slope (Pr ∝ Ra^a).
     p : float
         Power of Pr in x = Ra Pr^p.
+    ref : tuple of float
+        (alpha, beta) of the reference law Nu - 1 ∝ Pr^alpha Ra^beta used to compensate.
+    fit_kinds : list of str
+        ``"linear"`` and/or ``"quadratic"`` fits of each slice, as in :mod:`rbc.plots.scaling`.
+    norm : str
+        Vertical normalization of the top panel (:data:`rbc.plots.scaling.NORMS`).
+    ref_ra : float
+        log10 Ra for ``norm="ref"``.
     min_points : int
         Fewest points for a slice.
-    min_q : float
-        Leave out points with Nu - 1 below this.
+    include_running : bool
+        Also use points whose status is not 'finished'.
     ref_lines : dict
         Label -> gamma, drawn as horizontal lines on ``axg``.
 
     Returns
     -------
-    list of dict
-        One row per secant, for the CSV.
+    fits : list of dict
+        One row per (slice, fit) of the top panel, slopes against x.
+    secants : list of dict
+        One row per secant of the lower panel.
     """
-    rows, handles, labels, xs = [], [], [], []
-    for c, s in rc.slices(df, a, min_points).items():
-        r = slice_exponents(s, p, min_q)
-        if len(r["x"]) < 2:
-            continue
+    from rbc.plots import scaling
+
+    items = []
+    fits = scaling.panel(ax, df, "Nu-1", a, ref[0], ref[1], fit_kinds, norm, ref_ra, min_points, include_running,
+                         p=p, legend=False, legend_items=items)
+    use = df if include_running else df[df["status"] == "finished"]
+    secants, xs = [], []
+    for c, s in rc.slices(use, a, min_points).items():
+        r = slice_exponents(s, p)
         xs += list(r["x"])
         kw = style.slice_kw(c, a)
         line = style.slice_kw(c, a, line=True)
-        ax.errorbar(r["x"], r["y"], yerr=r["sy"], capsize=1.5, **kw)
-        ax.plot(r["x"], r["y"], lw=0.8, **line)
         axg.errorbar(r["x_mid"], r["gamma"], yerr=r["gamma_err"], capsize=1.5, **kw)
         axg.plot(r["x_mid"], r["gamma"], lw=0.8, **line)
         if r["fit"] is not None:
             q2, m, _ = r["fit"]["coef"]
             xx = np.logspace(np.log10(r["x"][0]), np.log10(r["x"][-1]), 60)
             axg.plot(xx, m + 2 * q2 * np.log10(xx), color=line["color"], lw=0.6, ls=":")
-        handles.append(proxy(kw, line["ls"]))
-        labels.append(f"${style.pow10(c)}$ ({len(r['x'])})")
-        rows += [dict(a=a, p=p, c=c, x_mid=xm, gamma=g, gamma_err=np.nan if r["gamma_err"] is None else ge)
-                 for xm, g, ge in zip(r["x_mid"], r["gamma"],
-                                      r["gamma"] * np.nan if r["gamma_err"] is None else r["gamma_err"])]
+        for f in fits:     # the straight-line fit's exponent in x, over the slice's range
+            if f["c"] == c and f["kind"] == "linear":
+                axg.plot([r["x"][0], r["x"][-1]], [f["slope"] + f["slice_exponent"]] * 2, color=line["color"],
+                         lw=2.2, alpha=0.3, solid_capstyle="butt", zorder=1)
+        secants += [dict(a=a, p=p, c=c, x_mid=xm, gamma=g, gamma_err=np.nan if r["gamma_err"] is None else ge)
+                    for xm, g, ge in zip(r["x_mid"], r["gamma"],
+                                         r["gamma"] * np.nan if r["gamma_err"] is None else r["gamma_err"])]
     for (lab, gv), ls in zip(ref_lines.items(), ("--", "-.", ":")):
         axg.axhline(gv, color="0.45", lw=0.8, ls=ls, zorder=0, label=lab)
-    for axis in (ax, axg):
-        axis.set_xscale("log")
+    axg.set_xscale("log")
     if xs:
         sparse_decades(axg, min(xs), max(xs))
-    ax.set_yscale("log")
-    plain_log_y(ax)
-    ax.set_ylabel(r"$Nu-1$")
-    ax.set_title(FAMILY_TITLE.get(a, rf"$Pr\propto Ra^{{{a:g}}}$"), fontsize=9)
     axg.set_xlabel(x_label(p))
     axg.set_ylabel(r"local $\gamma = d\log(Nu-1)/d\log x$", fontsize=8)
     ref_h, ref_l = axg.get_legend_handles_labels()
-    axg.legend(handles + ref_h, labels + ref_l,
-               title=r"slice $Pr_0$ (points); reference lines", fontsize=6, title_fontsize=6, loc="upper center",
-               bbox_to_anchor=(0.5, -0.3), ncol=2, handlelength=2.2, alignment="left")
-    return rows
+    from matplotlib.lines import Line2D
+    band = Line2D([], [], color="0.5", lw=2.2, alpha=0.3)
+    handles = [h for h, _ in items] + [band] + ref_h
+    labels = [lab for _, lab in items] + ["straight-line fit, as an exponent in $x$"] + ref_l
+    axg.legend(handles, labels, title=r"slice $Pr_0$: fitted slope $m$ of the compensated data against $x$",
+               fontsize=6, title_fontsize=6, loc="upper center", bbox_to_anchor=(0.5, -0.3), ncol=1,
+               handlelength=2.2, alignment="left")
+    return fits, secants
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -222,6 +237,13 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--pr-power", type=float, help="p in x = Ra Pr^p for every family (default: p = a)")
     p.add_argument("--min-points", type=int, default=3, help="fewest points for a slice")
     p.add_argument("--min-q", type=float, default=0.0, help="leave out points with Nu-1 below this (weak convection)")
+    p.add_argument("--fit", nargs="+", choices=("linear", "quadratic"), default=["linear"],
+                   help="fits of log(Nu-1) against log x along each slice, as in rbc.plots.scaling")
+    p.add_argument("--norm", choices=("none", "first", "ref", "common", "law"), default="none",
+                   help="vertical normalization of the top row (see rbc.plots.scaling)")
+    p.add_argument("--ref-ra", type=float, default=7.0, help="log10 Ra for --norm ref")
+    p.add_argument("--alpha", type=float, default=0.5, help="Pr exponent of the reference law used to compensate")
+    p.add_argument("--beta", type=float, default=0.5, help="Ra exponent of the reference law used to compensate")
     p.add_argument("--no-fit-line", action="store_true", help="leave out the line from one power law fitted to all points")
     p.add_argument("--include-running", action="store_true", help="also use points whose status is not 'finished'")
     p.add_argument("--results", type=Path, default=rc.RESULTS_CSV, help="results table (default: data/results.csv)")
@@ -244,32 +266,43 @@ def main(argv=None) -> None:
     df = rc.load_results(a.results)
     rc.require_columns(df, ["Nu"], "the reduced-variable figure")
     df = df[np.isfinite(df["Nu"])]
-    if not a.include_running:
-        df = df[df["status"] == "finished"]
-    alpha, beta = (None, None) if a.no_fit_line else global_exponents(df)
-    if alpha is not None:
-        print(f"one power law for all points: Nu-1 ~ Pr^{alpha:.4f} Ra^{beta:.4f}")
+    if a.min_q > 0:
+        df = df[df["Nu"] - 1 >= a.min_q]
+    fitted = None if a.no_fit_line else global_exponents(
+        df if a.include_running else df[df["status"] == "finished"])
+    if fitted is not None:
+        print(f"one power law for all points: Nu-1 ~ Pr^{fitted[0]:.4f} Ra^{fitted[1]:.4f}")
     n = len(a.family)
     w, _ = style.figsize(1.0)
-    fig, axes = plt.subplots(2, n, figsize=(w if n > 1 else 0.7 * w, 1.2 * w if n > 1 else 1.4 * w),
+    fig, axes = plt.subplots(2, n, figsize=(w if n > 1 else 0.7 * w, 1.3 * w if n > 1 else 1.5 * w),
                              squeeze=False, sharex="col", layout="constrained", height_ratios=[1.2, 1])
-    rows = []
+    fits, secants = [], []
     for k, fam in enumerate(a.family):
         p = fam if a.pr_power is None else a.pr_power
         span = 1 + p * fam                          # d log x / d log Ra along a slice
-        refs = {rf"SL, GL IV$_l$: {(1 + fam) / (2 * span):.3g}": (1 + fam) / (2 * span)}
-        if alpha is not None:
-            g = (beta + fam * alpha) / span
-            refs[rf"one law for all points: {g:.3g}"] = g
-        rows += family(axes[0, k], axes[1, k], df, fam, p, a.min_points, a.min_q, refs)
-    if not rows:
+        g_ref = (a.beta + fam * a.alpha) / span
+        refs = {rf"reference law ($\alpha$={a.alpha:g}, $\beta$={a.beta:g}; SL, GL IV$_l$): {g_ref:.3g}": g_ref}
+        if fitted is not None:
+            refs[rf"one law for all points: {(fitted[1] + fam * fitted[0]) / span:.3g}"] = \
+                (fitted[1] + fam * fitted[0]) / span
+        f, s_ = family(axes[0, k], axes[1, k], df, fam, p, (a.alpha, a.beta), a.fit, a.norm, a.ref_ra,
+                       a.min_points, a.include_running, refs)
+        axes[0, k].set_xlabel("")
+        fits += f
+        secants += s_
+    if not secants:
         raise SystemExit(f"no slice with {a.min_points} points or more in families {a.family}")
+
     def num(v):                                     # file-name form: -0.5 -> m0p5
         return f"{v:g}".replace("-", "m").replace(".", "p")
 
     tag = "reduced_" + "_".join(num(f) for f in a.family) + ("" if a.pr_power is None else f"_p{num(a.pr_power)}")
     print(style.save(fig, a.out / tag, png=a.png))
-    pd.DataFrame(rows).to_csv(a.out / f"{tag}_gamma.csv", index=False, float_format="%.6g")
+    pd.DataFrame(secants).to_csv(a.out / f"{tag}_gamma.csv", index=False, float_format="%.6g")
+    fits = pd.DataFrame(fits)
+    fits.to_csv(a.out / f"{tag}_fits.csv", index=False, float_format="%.6g")
+    with pd.option_context("display.width", 140, "display.precision", 4):
+        print(fits)
 
 
 if __name__ == "__main__":

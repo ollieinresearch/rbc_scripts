@@ -3,7 +3,8 @@ Nu − 1 against Ra Pr^a along slices, and its local exponent
 ===========================================================
 
 Left: slices :math:`Pr \\propto Ra^{-1/2}` against :math:`x = Ra\\,Pr^{-1/2}`. Right: slices
-:math:`Pr \\propto Ra^{-1}` against :math:`x = Ra/Pr = Re_{\\rm ff}^2`. Bottom: the local
+:math:`Pr \\propto Ra^{-1}` against :math:`x = Ra/Pr = Re_{\\rm ff}^2`. Top: the compensated
+scaling plot against :math:`x`, with a straight-line fit per slice. Bottom: the local
 exponent :math:`\\gamma = d\\log(Nu-1)/d\\log x` of each slice, with the value the
 Shishkina–Lohse low-Pr ultimate law gives and the one a single power law fitted to all
 points gives. Along a slice :math:`\\gamma` is the slice exponent divided by

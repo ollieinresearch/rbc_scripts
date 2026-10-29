@@ -53,7 +53,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib import colormaps
 
 from rbc import cases as rc
 from rbc import style
@@ -210,8 +209,7 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
     """
     other, x = ("log_ra", "Pr") if along == "pr" else ("log_pr", "Ra")
     vals = sorted(df[other].unique())
-    cmap = colormaps["viridis"]
-    lo, hi = min(vals), max(vals)
+    pkind = "ra" if other == "log_ra" else "pr"     # colours by expense of the fixed parameter
     sym = r"\alpha" if along == "pr" else r"\beta"
     ref = alpha if along == "pr" else beta
     departure = norm in ("comp", "law")      # slopes are departures from the reference
@@ -228,7 +226,8 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
         g = df[df[other] == v].sort_values(x)
         if len(g) < 2:
             continue
-        col = cmap(0.9 * (v - lo) / max(hi - lo, 1e-9))
+        ckw = style.category_kw(v, pkind)
+        col = ckw["color"]
         y, err = qcol(g, q)
         div = divisor(g, along, norm, alpha, beta)
         if norm == "common":
@@ -248,7 +247,7 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
         if slopes:      # value first, so the numbers line up in the legend column
             lab = rf"${sym} = {f['coef'][-2]:+.3f}$ at {lab}" if departure else \
                 rf"${sym} = {f['coef'][-2]:.3f}$ at {lab}"
-        ax.errorbar(g[x], y, yerr=err, color=col, marker="o", ms=3, lw=0 if fit else 0.9,
+        ax.errorbar(g[x], y, yerr=err, color=col, marker=ckw["marker"], ms=3, lw=0 if fit else 0.9,
                     capsize=1.5, label=lab)
         if fit:
             xx = np.logspace(np.log10(g[x].min()), np.log10(g[x].max()), 60)

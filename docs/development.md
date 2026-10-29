@@ -159,8 +159,11 @@ Link check
    `get_parser()` returning an `argparse.ArgumentParser` with `--results`, `--out`,
    `--png` and `--no-tex`, and `main(argv=None)` that calls `style.use("paper")`, builds
    the figure at `style.figsize(...)` and saves with `style.save`.
-2. Load data with {func}`rbc.cases.load_results` and colour slices with
-   {func}`rbc.style.slice_kw`, so it matches the other figures.
+2. Load data with {func}`rbc.cases.load_results`, and colour slices with
+   {func}`rbc.style.slice_kw`, curves at one Ra or one Pr with
+   {func}`rbc.style.category_kw`, and runs ranked within the figure with
+   {func}`rbc.style.ranked_colours`, so it matches the other figures
+   ({ref}`expense-colours`).
 3. Add it to the `jobs` list of {mod}`rbc.plots.all`.
 4. Add `docs/examples/plot_<name>.py` (copy an existing one) for the gallery, an entry in
    {doc}`user-guide/figures`, and the command to {doc}`reference/cli`.
