@@ -24,6 +24,11 @@ Outputs, all under ``--basepath``:
     full fields, only with ``--snapshots``.
 ``outputs/jobs.csv``
     one row per job: resources used and the stretch of simulation time covered.
+
+With ``--bench ITERS`` the script instead times ``ITERS`` steps at fixed ``--dt`` from
+a random initial condition, with no restart, output or checkpoint, appends one row to
+``--bench_csv`` and exits (``trill_bench`` in ``shell/workflow.sh`` loops over
+configurations).
 """
 from __future__ import annotations
 
@@ -42,6 +47,12 @@ logger = logging.getLogger(__name__)
 JOB_FIELDS = ("finished", "job_id", "cluster", "nodes", "ranks", "cpus_per_rank", "mesh",
               "nx", "ny", "nz", "t_start", "t_end", "iter_start", "iter_end",
               "wall_s", "setup_s", "loop_s", "core_hours", "stop_reason")
+BENCH_FIELDS = ("finished", "job_id", "nodes", "ranks", "cpus_per_rank", "mesh", "nx", "ny", "nz",
+                "build_s", "warmup", "iters", "s_per_iter", "dof_cycles_per_cpu_s",
+                "node_rss_max_gib", "node_rss_min_gib", "rank_rss_max_gib", "finite",
+                "s_per_iter_spread", "tasks_per_node")
+BENCH_WARMUP = 20
+BENCH_BLOCKS = 4
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -97,7 +108,89 @@ def get_parser() -> argparse.ArgumentParser:
                    help="use Dedalus' own file-handler code (e.g. with fixed_get_file.py)")
     g.add_argument("--verify_load", action="store_true",
                    help="compare the fast and Dedalus restart loaders, then exit")
+    g.add_argument("--bench", type=int, default=0, metavar="ITERS",
+                   help="time ITERS steps at fixed --dt (no restart, output or checkpoint), then exit")
+    g.add_argument("--bench_csv", type=Path, help="benchmark results file (default: BASEPATH/bench.csv)")
     return p
+
+
+def run_bench(solver, comm, dt, iters, build_s, info, path, tick=None) -> None:
+    """Time steps at a fixed timestep and record speed and peak memory.
+
+    Runs :data:`BENCH_WARMUP` untimed steps, then ``iters`` timed ones in
+    :data:`BENCH_BLOCKS` blocks, each between two barriers, so every time is that of
+    the slowest rank. The spread of the block means, (max - min) / mean, estimates the
+    run-to-run noise. Peak memory is each process's
+    maximum resident set size since it started (it includes the matrix build), summed
+    per node.
+
+    Parameters
+    ----------
+    solver : dedalus.core.solvers.InitialValueSolver
+        Built solver with its initial condition set.
+    comm : mpi4py.MPI.Comm
+        All ranks.
+    dt : float
+        Fixed timestep.
+    iters : int
+        Timed steps.
+    build_s : float
+        Seconds taken by ``build_solver``.
+    info : dict
+        Configuration columns of :data:`BENCH_FIELDS` (nodes, ranks, mesh, sizes, ...).
+    path : pathlib.Path
+        CSV file, appended to (rank 0 only).
+    tick : callable, optional
+        Called every 10 steps (re-arms the watchdog).
+    """
+    import resource
+
+    import numpy as np
+    from mpi4py import MPI
+
+    for i in range(BENCH_WARMUP):
+        solver.step(dt)
+    sizes = [iters // BENCH_BLOCKS + (b < iters % BENCH_BLOCKS) for b in range(BENCH_BLOCKS)]
+    block_means = []
+    for n in (k for k in sizes if k):
+        comm.Barrier()
+        t0 = time.time()
+        for i in range(n):
+            solver.step(dt)
+            if tick is not None and i % 10 == 0:
+                tick()
+        comm.Barrier()
+        block_means.append((time.time() - t0) / n)
+    loop = sum(m * n for m, n in zip(block_means, (k for k in sizes if k)))
+    spread = (max(block_means) - min(block_means)) / (loop / iters)
+
+    finite = comm.allreduce(all(np.isfinite(f.data).all() for f in solver.state), op=MPI.LAND)
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20      # KiB -> GiB on Linux
+    node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    node_rss = node.allreduce(rss, op=MPI.SUM)
+    lead = node.rank == 0
+    node.Free()
+    nodes = [r for r in comm.gather(node_rss if lead else None, root=0) or [] if r is not None]
+    rank_max = comm.reduce(rss, op=MPI.MAX, root=0)
+    if comm.rank == 0:
+        dof = info["nx"] * info["ny"] * info["nz"]
+        row = dict(info, finished=datetime.now().isoformat(timespec="seconds"),
+                   job_id=os.environ.get("SLURM_JOB_ID", ""), build_s=f"{build_s:.1f}",
+                   warmup=BENCH_WARMUP, iters=iters, s_per_iter=f"{loop / iters:.5f}",
+                   dof_cycles_per_cpu_s=f"{dof * iters / (comm.size * info['cpus_per_rank'] * loop):.4g}",
+                   node_rss_max_gib=f"{max(nodes):.1f}", node_rss_min_gib=f"{min(nodes):.1f}",
+                   rank_rss_max_gib=f"{rank_max:.2f}", finite=finite,
+                   s_per_iter_spread=f"{spread:.4f}",
+                   tasks_per_node=os.environ.get("SLURM_NTASKS_PER_NODE", ""))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        new = not path.exists()
+        with open(path, "a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=BENCH_FIELDS, extrasaction="ignore")
+            if new:
+                w.writeheader()
+            w.writerow(row)
+        logger.info(f"bench {info['mesh']} on {info['nodes']} nodes: {loop / iters:.4f} s/iter, "
+                    f"node peak {min(nodes):.1f}-{max(nodes):.1f} GiB, finite={finite}")
 
 
 def log_job(path: Path, row: dict) -> None:
@@ -201,7 +294,9 @@ def main(argv=None) -> None:
     problem.add_equation("b(z=Lz) = 0")
     problem.add_equation("u(z=Lz) = 0")
 
+    t_build = time.time()
     solver = problem.build_solver(stepper)
+    build_s = time.time() - t_build
     solver.stop_sim_time = args.sim_time
 
     # Watchdog: if no progress for RBC_WATCHDOG seconds, dump the Python stack of every
@@ -231,7 +326,7 @@ def main(argv=None) -> None:
     watchdog("restart load / setup")
 
     restart_path = basepath / "restart" / "restart.h5"
-    if restart_path.exists():
+    if restart_path.exists() and not args.bench:
         if args.verify_load:
             rbc.vast.verify_load(solver, restart_path, args.index, logger)
             raise SystemExit(0)
@@ -242,6 +337,21 @@ def main(argv=None) -> None:
         b.fill_random("g", seed=42, distribution="normal", scale=1e-5)
         b["g"] *= z * (Lz - z)
         b.low_pass_filter(scales=0.25)
+
+    if args.bench:
+        watchdog("benchmark")
+        node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+        used_nodes = comm.allreduce(int(node.rank == 0))     # nodes holding ranks, not allocated
+        node.Free()
+        info = dict(nodes=used_nodes, ranks=comm.size, cpus_per_rank=int(os.environ.get("OMP_NUM_THREADS") or 1),
+                    mesh=f"{mesh[0]}x{mesh[1]}", nx=nx, ny=ny, nz=nz)
+        run_bench(solver, comm, step_dt, args.bench, build_s, info,
+                  args.bench_csv or basepath / "bench.csv", tick=watchdog)
+        if wd_file is not None:
+            faulthandler.cancel_dump_traceback_later()
+            wd_file.close()
+            Path(wd_file.name).unlink(missing_ok=True)
+        return
 
     # Output
     T = b0 + b

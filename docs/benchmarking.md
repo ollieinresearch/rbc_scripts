@@ -1,0 +1,408 @@
+# Choosing resolution, process mesh and node count for Dedalus RBC runs on Trillium
+
+Oliver Brown (UVic, supervisor David Goluskin) · account rrg-goluskin · October 2026
+
+This document explains how we choose the configuration of our 3D Rayleigh–Bénard
+convection runs: the vertical resolution `RES_Z`, the MPI process mesh `MESHX × MESHY`,
+and the node count. We make these choices with short benchmark jobs rather than by
+assumption. Every rule is derived below, the measurements so far are included, and the
+code that implements each step is quoted in §8.
+
+## 1. The simulation and what limits it
+
+- **Solver.** Dedalus v3, pseudo-spectral: Fourier in x and y, Chebyshev in z, 3/2
+  dealiasing, RK222 IMEX time stepping, adaptive dt from a CFL condition. The aspect ratio
+  is 2, so `RES_HOR = 2 RES_Z`.
+- **Grid sizes.** At `RES_Z = 256` the coefficients are 512 × 512 × 256 and the dealiased
+  grid is 768 × 768 × 384.
+- **Parallel layout.** Dedalus distributes the first two axes over a 2D process mesh
+  ("pencils"). Each step does forward and backward transforms, global transposes between
+  layouts, and banded LU solves, one per horizontal mode.
+- **Launch.** One MPI rank per core, packed 8 per L3 cache with `mpirun --map-by
+  ppr:8:l3cache:pe=1 --bind-to core`, on whole 192-core nodes.
+
+## 2. The benchmark itself
+
+`sim/rayleigh_benard.py --bench ITERS` builds the production solver with the production
+equations, process mesh and placement, then:
+
+- starts from a small random temperature perturbation and loads no restart;
+- creates no file handlers, spectra or checkpoints, so nothing is written to scratch;
+- runs 20 untimed steps, which include the first LU factorisation and FFTW planning;
+- times `ITERS` steps (default 100) at a **fixed** dt in 4 blocks, each between two
+  barriers, so each time is that of the slowest rank;
+- records the seconds per step, the spread of the four block means (a noise estimate), and
+  the peak resident memory, summed per node, both fullest and emptiest node;
+- appends one row to a CSV file and exits.
+
+**Why a fixed dt.** Every change of dt makes Dedalus refactorise every LU matrix, so CFL
+adaptation would add noise that depends on the flow rather than on the configuration.
+
+**Why a random start is enough.** A step costs the same whatever the field values: the
+transforms and transposes have fixed sizes and the solves use already-factorised
+matrices. There is no iterative solver whose count depends on the state.
+
+**What it does not measure:**
+- **Memory with output.** Production memory is about 3.5× the benchmark's (§6.1).
+- **dt.** dt depends on the flow, not on the configuration, so dt-dependent quantities are
+  handled analytically (§4).
+
+**One job per configuration.** Each configuration runs as its own job
+(`shell/bench_one.sh`) on exactly the nodes its mesh fills, so no allocated core sits idle.
+A configuration takes about 2–3 minutes including start-up.
+
+## 3. Load balance of the process mesh
+
+Dedalus splits a distributed axis of `G` groups over `P` ranks into blocks of `⌈G/P⌉`; the
+last ranks get a short block or nothing. A step waits for the fullest rank, so the
+load-balance efficiency of one mesh dimension is
+
+    e(P) = min over G of  G / (P ⌈G/P⌉),
+
+over the group counts that dimension may have to split:
+
+- `RES_Z` Fourier cos/sin pairs;
+- `3 RES_Z` Fourier grid points;
+- `RES_Z` Chebyshev coefficients;
+- `1.5 RES_Z` Chebyshev grid points.
+
+The mesh's efficiency is `e(MESHX) e(MESHY)`. A dimension divides all four counts exactly
+when it divides `RES_Z/2`: with `RES_Z = 2m`, it must divide both `2m` and `3m`, and
+`gcd(2m, 3m) = m`.
+
+**A consequence specific to Trillium.** With one rank per core, a job has
+`N = nodes × 192 = nodes × 2⁶ × 3` ranks, so the mesh always contains a factor of 3. A
+perfectly balanced mesh is possible only when `RES_Z/2` contains a 3:
+- possible: 240, 288, 192, 180;
+- impossible: 256 (`256/2 = 2⁷`), 280.
+
+**Evidence that the model holds:**
+- **Memory pattern.** A production run at 256 on 5 nodes with mesh 30 × 32 had
+  `e(30) = 256/270 = 0.948`: 28 rows of 9 Fourier pairs, one row of 4, one empty row. The
+  last node therefore holds `(4·9 + 4)/(6·9) = 0.74` of a full node's matrices. It used
+  530 GiB against about 692 GiB on the other nodes (0.77). The small excess over 0.74 is
+  fixed per-rank overhead.
+- **Step cost.** 30 × 32 on 5 nodes took 4.12 node-seconds per step, against 3.57 for
+  128 × 9 on 6 nodes (e = 0.981).
+
+**Mesh orientation also matters, and the model does not predict it.** Measured pairs:
+
+| Pair | Slower / faster |
+|---|---|
+| 128×9 vs 9×128 (256, 6 nodes) | 1.17 |
+| 40×24 vs 24×40 (240, 5 nodes) | 1.04 |
+| 48×36 vs 36×48 (288, 9 nodes) | 1.004 |
+
+In all three pairs the larger first dimension was faster. The tool therefore always runs
+that orientation, and adds the other one only for meshes elongated by more than 2:1.
+
+**cpus-per-task.** On the same 8 nodes at 256, `C = 3` (16 × 24 mesh, 2 ranks per L3
+cache) took 1.087 s per step against 0.512 s for `C = 1` (24 × 64), 2.1× slower. Each `C = 3`
+rank did 4× the work in 2.1× the time, so having more memory bandwidth per rank helps, but
+not enough to break even.
+
+A production comparison at RES_Z = 288 points the same way:
+
+| Configuration | Per step |
+|---|---|
+| 8 nodes, C = 2, 24 × 32 | 8 × 0.9786 s = 7.83 node-seconds |
+| 10 nodes, C = 1, 48 × 40 | 10 × 0.6526 s = 6.53 node-seconds |
+
+C = 1 was 1.20× cheaper per step, despite its worse balance (0.90 against 0.96). All runs
+now use one core per rank.
+
+## 4. Choosing the resolution (stage 1)
+
+The physically required resolution comes first, from our spectral-decay criteria. The
+benchmark only chooses between nearby resolutions that we would accept.
+
+### 4.1 Transform sizes
+
+FFTW is fastest for sizes `2ᵃ 3ᵇ 5ᶜ 7ᵈ 11ᵉ 13ᶠ` with `e + f ≤ 1`, and especially for powers
+of 2; other sizes fall back to a slower general algorithm [1]. The Chebyshev transforms
+are DCT-II/III, whose speed depends on the factorisation of the transform length [2].
+Dedalus recommends "powers of two, or powers of two multiplied by other small factors" [3].
+The transform lengths `3 RES_Z` and `1.5 RES_Z` have the primes of `RES_Z` plus a 3, so
+classifying `RES_Z` classifies every transform:
+
+| Tier | RES_Z | Use |
+|---|---|---|
+| A | 3-smooth (`2ᵃ3ᵇ`) | preferred |
+| B | 5-smooth | acceptable |
+| C | one factor of 7 | only if a benchmark shows it pays |
+| — | 11, 13 or larger, 7², or odd | rejected |
+
+No published source quantifies the per-point penalty for a 5 or a 7 at these sizes. That
+is why the decision rests on measurement rather than on a penalty table.
+
+### 4.2 Cost of a resolution
+
+The work per step is proportional to the number of grid points times a logarithm,
+`RES_Z³ log RES_Z`. The advective CFL limit makes `dt ∝ 1/RES_Z`, so the number of steps
+to reach a fixed simulation time is `∝ RES_Z`. Diffusion is implicit, so it does not limit
+dt. The cost to reach a given simulation time is therefore
+
+    C(N) ∝ N⁴ log N.
+
+Break-even: going from `N₁` down to `N₂` saves `1 − C(N₂)/C(N₁)`. The smaller size is
+worth it unless its factorisation or balance penalty on the step time exceeds
+`C(N₁)/C(N₂) − 1`:
+
+| Change | (N₂/N₁)⁴ | log ratio | Cost ratio | Saving | Break-even penalty |
+|---|---|---|---|---|---|
+| 288 → 280 | 0.8934 | 0.9950 | 0.889 | 11.1% | 12.5% |
+| 256 → 240 | 0.7725 | 0.9884 | 0.763 | 23.7% | 31% |
+| 192 → 180 | 0.7725 | 0.9877 | 0.763 | 23.7% | 31% |
+
+So 192 → 180 or 256 → 240 almost certainly pays, provided the lower resolution is
+physically adequate. 288 → 280 is too close to call: 280 adds a 7 and cannot be balanced
+on 192-rank nodes. It is the kind of case worth benchmarking.
+
+### 4.3 Which resolutions to benchmark
+
+Requiring candidates to be "at least X apart" or "at most X apart" doesn't answer the
+question. We use a **predicted-cost band** instead: a candidate is worth measuring only if
+its predicted cost is within the plausible penalty of the best, so that measurement could
+change the answer. `python -m rbc.bench candidates`:
+
+1. takes every even `RES_Z` in `[0.93 T, 1.125 T]` around the target `T`, and discards
+   rejected tiers;
+2. gives each one the most balanced node count between 0.9× and 1.35× the target's node
+   count scaled by `(RES_Z/T)³`, which keeps the work and memory per node comparable;
+3. predicts its relative cost as `(N/T)⁴ log N / log T × prior / e`. The priors are 1.00,
+   1.03 and 1.08 for tiers A, B and C. They are assumptions, used only for this
+   preselection;
+4. keeps the target, the best-predicted resolution of each tier, and nothing predicted
+   more than 15% above the cheapest; at most 4 resolutions.
+
+For a target of 256 on 6 nodes this selects 240 (5 nodes, 40 × 24) and 256 (6 nodes,
+128 × 9 and 9 × 128). 252 and 288 are predicted 31% and 108% dearer than 240, so the
+prediction decides them without a run.
+
+### 4.4 The decision
+
+The cost per unit of simulated time is `node-seconds per step / dt`, and `dt ∝ 1/RES_Z`,
+so it is proportional to `nodes × s_per_step × RES_Z`. `decide-res` chooses the
+lowest-cost resolution at or above a floor we set. If the runner-up is within the
+measured noise (at least 3%), it takes the **higher** resolution: equal cost, better
+resolved. It writes `decision_resolution.txt` and a figure.
+
+## 5. Choosing the node count (stage 2)
+
+### 5.1 Objective
+
+More nodes shorten the wall time but usually raise node-hours. We minimise
+
+    J = (node-hours) × (wall time)^k = N T^(1+k),     k = 1 by default,
+
+which weights a fractional saving in wall time equally with the same fractional saving in
+node-hours. It is the analogue of the energy-delay product.
+
+Write `r = N/N₀`, `S = T₀/T` and `E = S/r`, the efficiency relative to the smallest count
+tested. Then
+
+    J/J₀ = r · (T/T₀)^(1+k) = r (r E)^-(1+k) = r^-k E^-(1+k),
+
+so a larger count beats the baseline exactly when
+
+    E > r^(-k/(1+k))       (k = 1:  E > r^-1/2).
+
+| Node ratio r | Efficiency needed (k = 1) |
+|---|---|
+| 1.25 | 0.89 |
+| 1.5 | 0.82 |
+| 2 | 0.71 |
+
+These are close to common practice. Princeton's scaling guide [6], for example, settles on
+two nodes at 90% efficiency and rejects a larger count at 67%.
+
+Example: going from 8 to 12 nodes at E = 0.9 gives `S = 1.5 × 0.9 = 1.35`. That is 26% less
+wall time for 11% more node-hours, and `J/J₀ = 0.82`, so it is accepted.
+
+Counts whose J is within the measured noise of the minimum count as ties, and the fewest
+nodes among them is chosen. The decision file also reports the marginal efficiency
+`(T_prev/T − 1)/(N/N_prev − 1)`, the share of ideal speed-up delivered by the last nodes
+added. Minimising J with k = 1 keeps it above about 0.45.
+
+### 5.2 Range swept
+
+**Minimum.** The minimum node count comes from stage 1's memory, scaled to production (§6.1):
+
+    N_min = ⌈ (benchmark peak per node × nodes) × 3.5 / (747 GiB × 0.85) ⌉.
+
+747 GiB is the `sacct` MaxRSS at which a run was killed for running out of memory, and 0.85
+is headroom.
+
+**Range.** `python -m rbc.bench sweep` covers `N_min` to `2 N_min` nodes. It keeps the
+counts whose best mesh has balance of at least `min(0.93, best in range − 0.03)`, at most 6
+of them, always including both ends.
+
+**Expected scaling regime.** Burns et al. [4] report Dedalus' parallel efficiency staying
+above 50% down to about 8 pencils per core. At 256 on 6 nodes there are 512² / 1152 ≈ 228
+pencils per core, so this range is far from that limit.
+
+`decide-nodes` writes `decision_nodes.txt` and a figure with four panels: step time against
+ideal, speed-up, E against the threshold curve with marginal efficiency, and wall time
+against node-hours.
+
+## 6. Limitations and open questions
+
+### 6.1 Memory factor
+
+The benchmark builds no output handlers and runs for minutes, so it under-reads production
+memory. The factor 3.5 comes from one run at 256 on 5 nodes:
+
+- **Benchmark:** at most 240 GiB per node, about 1,200 GiB in total.
+- **Production:** about 3,300 GiB after 3.6 h, then killed for running out of memory
+  (≈ 747 GiB per node), i.e. 2.9× the benchmark, still growing at about 8–10 GiB/h per node.
+
+3.5 allows for that growth over a 12-hour job. It is a calibration, not a model, and can be
+changed with `--mem-factor`.
+
+The benchmark's per-node figure sums each rank's `ru_maxrss`, which counts shared pages
+once per rank. For the 30 × 32 run it gave 240 GiB, against 207 GiB for `sacct` MaxRSS.
+
+### 6.2 Other gaps
+
+- **Cost model.** It assumes `dt ∝ 1/RES_Z`. If near-wall Chebyshev clustering sets dt
+  instead, lower resolutions save even more.
+- **Noise.** Single runs of each configuration are separated by the 4-block spread. A
+  configuration can be submitted twice to measure run-to-run noise.
+
+### 6.3 Questions for SciNet
+
+1. What is the node-failure rate for 48-node, 12-hour jobs? It sets the checkpoint interval
+   (currently moving from 60 to 15 minutes of wall time).
+2. Is `--requeue` recommended for automatic restarts on Trillium?
+3. Is there a recommended rank placement across the CCDs beyond 8 ranks per L3 cache?
+
+## 7. Measurements so far
+
+First benchmark, job 2697353, Ra = 10⁶, Pr = 10⁻⁴, 100 steps at dt = 5 × 10⁻⁴:
+
+| RES_Z | Nodes | Mesh | C | Balance e | s/step | Node-s/step | Peak GiB/node (max/min) |
+|---|---|---|---|---|---|---|---|
+| 240 | 5 | 24×40 | 1 | 1.000 | 0.634 | 3.17 | 201/198 |
+| 240 | 5 | 40×24 | 1 | 1.000 | 0.607 | 3.04 | 196/192 |
+| 256 | 5 | 30×32 | 1 | 0.948 | 0.823 | 4.12 | 240/196 |
+| 256 | 6 | 9×128 | 1 | 0.981 | 0.695 | 4.17 | 239/216 |
+| 256 | 6 | 128×9 | 1 | 0.981 | 0.595 | 3.57 | 190/185 |
+| 256 | 8 | 24×64 | 1 | 0.970 | 0.512 | 4.10 | 177/151 |
+| 256 | 8 | 16×24 | 3 | 0.970 | 1.087 | 8.69 | 117/114 |
+| 288 | 9 | 36×48 | 1 | 1.000 | 0.665 | 5.98 | 200/196 |
+| 288 | 9 | 48×36 | 1 | 1.000 | 0.662 | 5.96 | 193/189 |
+
+Stage 1 decision from these rows (`python -m rbc.bench decide-res <dir> --target 256`):
+
+```
+CHOICE: RES_Z = 240 on 5 nodes, mesh 40x24 (C = 1)
+Reason: lowest node-hours per unit of simulated time.
+
+ RES_Z factors      nodes     mesh    eff   s/step  node-s  cost/t  wall/t   work
+   240 2^4 3 5          5    40x24  1.000   0.6073    3.04   0.797   0.957  1.044  <-
+   256 2^8              6    128x9  0.981   0.5949    3.57   1.000   1.000  1.000
+   288 2^5 3^2          9    48x36  1.000   0.6622    5.96   1.878   1.252  1.148
+```
+
+Here `cost/t` is node-hours per unit of simulated time and `wall/t` wall time per unit of
+simulated time, both relative to 256. `work` is node-seconds per `RES_Z³ ln RES_Z`,
+relative to 256.
+
+The cost model of §4.2, with the balance factors of §3, gets the ordering right and most
+of the magnitude:
+
+| RES_Z | Predicted cost/t | Measured |
+|---|---|---|
+| 240 | 0.7635 × 0.981 = 0.749 | 0.797 |
+| 288 | 1.636 × 0.981 = 1.605 | 1.878 |
+
+The `work` column is the residual: per unit of work, 240 ran 4% and 288 ran 15% slower than
+256. 288 is 3-smooth and perfectly balanced, so its residual is more likely communication
+or cache effects at the larger size and node count than factorisation. Residuals of this
+size are why the decision uses measurements and treats the model only as a preselection.
+
+With a floor of 256, the choice is 256 on 6 nodes with mesh 128 × 9, which is 13% fewer
+node-seconds per step (and 28% less time per step) than the 30 × 32 mesh we had been
+using. The stage 2 node sweep is the next job; its results will follow.
+
+## 8. The code in action
+
+**Commands, run from a run folder holding `params.conf`:**
+
+```bash
+source params.conf                                   # paths, RA, PR, DT, STEPPER
+python -m rbc.bench candidates --target 256 --nodes 6 -o res.conf   # + res.txt
+python -m rbc.bench submit res.conf --dir bench/res --submit        # one job per line
+python -m rbc.bench decide-res bench/res --target 256 --floor 256   # decision + figure
+python -m rbc.bench sweep bench/res --res 256 -o nodes.conf         # + nodes.txt
+python -m rbc.bench submit nodes.conf --dir bench/nodes --submit
+python -m rbc.bench decide-nodes bench/nodes --res 256              # decision + figure
+```
+
+**One configuration per job, on exactly its nodes** (`shell/bench_one.sh`, submitted
+with `--nodes`, `--ntasks-per-node` and `--time` set by `rbc.bench submit`):
+
+```bash
+mpirun -n $(( mx * my )) --bind-to core --map-by "ppr:$(( 8 / c )):l3cache:pe=$c" \
+    -x HDF5_USE_FILE_LOCKING -x OMP_NUM_THREADS -x RBC_WATCHDOG \
+    python3 "$SCRIPTS_PATH/sim/rayleigh_benard.py" \
+    --Ra "$RA" --Pr "$PR" --Lx "$LX" --Ly "$LY" --nz "$res" --meshx "$mx" --meshy "$my" \
+    --stepper "$STEPPER" --dt "$DT" --sim_time 1e9 --basepath "$run" \
+    --bench "${BENCH_ITERS:-100}" --bench_csv "$run/bench.csv" < /dev/null
+exit $?
+```
+
+**The timed loop** (`run_bench` in `sim/rayleigh_benard.py`):
+
+```python
+for i in range(BENCH_WARMUP):                 # 20 steps: first LU factorisation, FFTW plans
+    solver.step(dt)
+sizes = [iters // BENCH_BLOCKS + (b < iters % BENCH_BLOCKS) for b in range(BENCH_BLOCKS)]
+block_means = []
+for n in (k for k in sizes if k):
+    comm.Barrier()                            # every block timed between barriers:
+    t0 = time.time()                          # the slowest rank's time
+    for i in range(n):
+        solver.step(dt)                       # fixed dt: no refactorisation
+    comm.Barrier()
+    block_means.append((time.time() - t0) / n)
+loop = sum(m * n for m, n in zip(block_means, (k for k in sizes if k)))
+spread = (max(block_means) - min(block_means)) / (loop / iters)
+rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20      # GiB, per rank
+node_rss = node.allreduce(rss, op=MPI.SUM)                            # summed per node
+```
+
+**Load balance** (`rbc/plan.py`):
+
+```python
+def groups(res_z, gamma=2.0):
+    nh = round(gamma * res_z)
+    return nh // 2, 3 * nh // 2, res_z, 3 * res_z // 2
+
+def efficiency(p, sizes):
+    return min(g / (p * math.ceil(g / p)) for g in sizes)
+```
+
+**The node decision** (`decide_nodes` in `rbc/bench.py`):
+
+```python
+for p in pts:
+    p["r"] = p["nodes"] / base["nodes"]
+    p["S"] = base["s"] / p["s"]
+    p["E"] = p["S"] / p["r"]
+    p["thr"] = p["r"] ** (-k / (1 + k))          # break-even efficiency against the baseline
+    p["J"] = p["nodes"] * p["s"] ** (1 + k) / (base["nodes"] * base["s"] ** (1 + k))
+jmin = min(p["J"] for p in pts)
+top = min(pts, key=lambda p: p["J"])
+ties = [p for p in pts if p["J"] <= jmin * (1 + (1 + k) * noise_of(p, top))]
+best = min(ties, key=lambda p: p["nodes"])      # ties within noise go to fewer nodes
+```
+
+## Sources
+
+1. FFTW 3 manual, Real-data DFTs: https://www.fftw.org/fftw3_doc/Real_002ddata-DFTs.html
+2. FFTW 3 manual, Real-to-Real Transforms: https://www.fftw.org/fftw3_doc/Real_002dto_002dReal-Transforms.html
+3. Dedalus documentation, Performance tips: https://dedalus-project.readthedocs.io/en/latest/pages/performance_tips.html
+4. K. J. Burns, G. M. Vasil, J. S. Oishi, D. Lecoanet, B. P. Brown, "Dedalus: A flexible framework for numerical simulations with spectral methods", Phys. Rev. Research 2, 023068 (2020): https://link.aps.org/doi/10.1103/PhysRevResearch.2.023068
+5. SciNet, Trillium Quickstart: https://docs.scinet.utoronto.ca/index.php/Trillium_Quickstart
+6. Princeton Research Computing, Scaling analysis: https://researchcomputing.princeton.edu/support/knowledge-base/scaling-analysis

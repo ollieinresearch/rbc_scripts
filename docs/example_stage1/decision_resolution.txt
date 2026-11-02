@@ -1,0 +1,22 @@
+Resolution decision (target RES_Z = 256)
+
+CHOICE: RES_Z = 240 on 5 nodes, mesh 40x24 (C = 1)
+Reason: lowest node-hours per unit of simulated time.
+
+Per resolution (best configuration of each):
+ RES_Z factors      nodes     mesh    eff   s/step  node-s  cost/t  wall/t   work  noise
+   240 2^4 3 5          5    40x24  1.000   0.6073    3.04   0.797   0.957  1.044    n/a  <-
+   256 2^8              6    128x9  0.981   0.5949    3.57   1.000   1.000  1.000    n/a
+   288 2^5 3^2          9    48x36  1.000   0.6622    5.96   1.878   1.252  1.148    n/a
+
+Columns: cost/t = node-hours per unit simulated time and wall/t = wall time per unit
+simulated time, both relative to the target and assuming dt proportional to 1/RES_Z;
+work = node-seconds per (RES_Z^3 ln RES_Z), relative to the target: how efficiently each
+configuration does a unit of work (factorisation, mesh balance and communication combined).
+eff = predicted mesh load balance; noise = spread of the timed blocks (n/a: older runs).
+
+Other configurations at RES_Z = 240:
+     24x40 on 5 nodes, C = 1: 1.04x the node-seconds per step of the choice
+
+
+Next: python -m rbc.bench sweep <this folder> --res 240  (node count for this resolution)
