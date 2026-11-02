@@ -478,6 +478,7 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
     res["converged"] = bool(all(res[k]["spread_pct"] < 1.0 for k in CONVERGENCE_QOI))
 
     # plate fluxes: reported, not part of the convergence rule
+    """
     pf = plate_fluxes(run, t[0], t[-1])
     if pf is not None:
         tp, nbot, ntop = pf
@@ -489,6 +490,7 @@ def compute(run: Path, t0: float | str = 0.0, t1: float = np.inf) -> tuple[dict,
                              imbalance_pct=float(100 * imb / (res["Nu"] - 1)),
                              imbalance_z=float(imb / se_d) if se_d > 0 else float("nan"))
         series["plates"] = (tp, nbot, ntop)
+    """
     res["converged_stat"] = bool(all(_passes(res[k]) for k in CONVERGENCE_QOI))
     series["tau"] = {}
     for k in CONVERGENCE_QOI:

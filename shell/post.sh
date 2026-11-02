@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=jobs/job_post_%j.out
-#SBATCH --time=02:59:00
+#SBATCH --time=00:59:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=192
@@ -23,5 +23,5 @@ if [[ -n $SNAPSHOTS ]]; then
     plot_snapshots
     load_modules
 fi
-backup_and_prune
+# backup_and_prune
 collect_results
