@@ -23,33 +23,48 @@ code that implements each step is quoted in §8.
 
 ## 2. The benchmark itself
 
-`sim/rayleigh_benard.py --bench ITERS` builds the production solver with the production
-equations, process mesh and placement, then:
+Each configuration runs as its own job (`shell/bench_one.sh`) on exactly the nodes its mesh
+fills, so no allocated core sits idle. The job makes two launches of
+`sim/rayleigh_benard.py`, with the production equations, process mesh and rank placement.
 
-- starts from a small random temperature perturbation and loads no restart;
-- creates no file handlers, spectra or checkpoints, so nothing is written to scratch;
-- runs 20 untimed steps, which include the first LU factorisation and FFTW planning;
-- times `ITERS` steps (default 100) at a **fixed** dt in 4 blocks, each between two
-  barriers, so each time is that of the slowest rank;
-- records the seconds per step, the spread of the four block means (a noise estimate), and
-  the peak resident memory, summed per node, both fullest and emptiest node;
-- appends one row to a CSV file and exits.
+**Launch 1: rehearsal.** The script builds everything and takes 10 steps. Nothing is
+recorded. Its purpose is to warm the nodes (libraries and file-system caches), so the
+measured launch doesn't pay first-use costs. §3 shows those costs biased our first
+measurements.
+
+**Launch 2: measurement.** Starting from a small random temperature perturbation, with no
+restart, the script:
+
+1. takes 20 untimed steps, which include the first LU factorisation and FFTW planning;
+2. times blocks of 25 steps at a **fixed** dt, each block between two barriers so its
+   time is the slowest rank's, until about 4 minutes of stepping have been timed. The
+   spread of the block means estimates the noise;
+3. records the peak memory of this compute-only phase;
+4. builds the **production outputs** read from `params.conf` (state, snapshots, analysis,
+   horizontal averages, in-run spectra, flow statistics) and takes 30 more steps. The
+   handlers write on the first of these, and every handler is then forced to write once
+   more;
+5. records the peak memory again, two ways: each process's maximum resident set size
+   summed per node (comparable to `sacct` MaxRSS), and `MemTotal − MemAvailable` on each
+   node (what the out-of-memory killer sees). The larger of the two is used;
+6. appends one row to a CSV file. The job then deletes the output files it wrote.
+
+A job takes about 7–8 minutes.
 
 **Why a fixed dt.** Every change of dt makes Dedalus refactorise every LU matrix, so CFL
 adaptation would add noise that depends on the flow rather than on the configuration.
 
-**Why a random start is enough.** A step costs the same whatever the field values: the
-transforms and transposes have fixed sizes and the solves use already-factorised
-matrices. There is no iterative solver whose count depends on the state.
+**Why a random start, and why Ra and Pr don't matter.** A step costs the same whatever the
+field values: the transforms and transposes have fixed sizes, and the solves use
+already-factorised matrices. There is no iterative solver whose iteration count depends on
+the state. The same holds for Ra and Pr, so a benchmark at a given resolution applies to
+every run at that resolution.
 
 **What it does not measure:**
-- **Memory with output.** Production memory is about 3.5× the benchmark's (§6.1).
-- **dt.** dt depends on the flow, not on the configuration, so dt-dependent quantities are
-  handled analytically (§4).
-
-**One job per configuration.** Each configuration runs as its own job
-(`shell/bench_one.sh`) on exactly the nodes its mesh fills, so no allocated core sits idle.
-A configuration takes about 2–3 minutes including start-up.
+- **Memory growth over hours.** This is an allowance, `MEM_GROWTH` (§6.1).
+- **The timestep.** dt depends on the flow, so dt-dependent comparisons use dt ∝ 1/RES_Z
+  (§4.2). Wall-time projections use the mean timestep of an earlier run at the same Ra and
+  Pr, scaled the same way.
 
 ## 3. Load balance of the process mesh
 
@@ -85,16 +100,19 @@ perfectly balanced mesh is possible only when `RES_Z/2` contains a 3:
 - **Step cost.** 30 × 32 on 5 nodes took 4.12 node-seconds per step, against 3.57 for
   128 × 9 on 6 nodes (e = 0.981).
 
-**Mesh orientation also matters, and the model does not predict it.** Measured pairs:
+**Mesh orientation: open question.** Our first benchmark ran all configurations in one
+allocation, and in each orientation pair the slower run was the one that first used a
+fresh node:
 
-| Pair | Slower / faster |
+| Pair, first run listed first | Slower / faster |
 |---|---|
-| 128×9 vs 9×128 (256, 6 nodes) | 1.17 |
-| 40×24 vs 24×40 (240, 5 nodes) | 1.04 |
-| 48×36 vs 36×48 (288, 9 nodes) | 1.004 |
+| 9×128 then 128×9 (256; 9×128 was the first job on the 6th node) | 1.17 |
+| 24×40 then 40×24 (240; first job of the allocation) | 1.04 |
+| 36×48 then 48×36 (288; 36×48 was the first job on the 9th node) | 1.004 |
 
-In all three pairs the larger first dimension was faster. The tool therefore always runs
-that orientation, and adds the other one only for meshes elongated by more than 2:1.
+Run order and orientation are confounded, so we don't yet know whether orientation
+matters. Every job now has a rehearsal launch, and stage 1 benchmarks both orientations.
+Stage 2 uses whichever orientation won.
 
 **cpus-per-task.** On the same 8 nodes at 256, `C = 3` (16 × 24 mesh, 2 ranks per L3
 cache) took 1.087 s per step against 0.512 s for `C = 1` (24 × 64), 2.1× slower. Each `C = 3`
@@ -160,32 +178,36 @@ on 192-rank nodes. It is the kind of case worth benchmarking.
 
 ### 4.3 Which resolutions to benchmark
 
-Requiring candidates to be "at least X apart" or "at most X apart" doesn't answer the
-question. We use a **predicted-cost band** instead: a candidate is worth measuring only if
-its predicted cost is within the plausible penalty of the best, so that measurement could
-change the answer. `python -m rbc.bench candidates`:
+The lowest acceptable resolution, `RES_FLOOR`, comes from our physics criterion: a short
+run whose time-averaged spectra span at least 4 decades. Below the floor nothing is
+considered. Above it, a higher resolution can only win if its better factorisation or mesh
+balance outweighs its extra work.
 
-1. takes every even `RES_Z` in `[0.93 T, 1.125 T]` around the target `T`, and discards
-   rejected tiers;
-2. gives each one the most balanced node count between 0.9× and 1.35× the target's node
-   count scaled by `(RES_Z/T)³`, which keeps the work and memory per node comparable;
-3. predicts its relative cost as `(N/T)⁴ log N / log T × prior / e`. The priors are 1.00,
+Requiring candidates to be "at least X apart" or "at most X apart" doesn't answer that
+question. We use a **predicted-cost band** instead: a candidate is worth measuring only if
+its predicted cost is within the plausible penalty of the cheapest, so that measurement
+could change the answer. The planner:
+
+1. takes every even `RES_Z` from the floor `F` up to `1.125 F`, and discards rejected tiers;
+2. gives each one the most balanced node count between its memory minimum (§5.2, from a
+   prior per-cell memory before anything is measured) and 1.35× that;
+3. predicts its relative cost as `(N/F)⁴ log N / log F × prior / e`. The priors are 1.00,
    1.03 and 1.08 for tiers A, B and C. They are assumptions, used only for this
    preselection;
-4. keeps the target, the best-predicted resolution of each tier, and nothing predicted
+4. keeps the floor, the best-predicted resolution of each tier, and nothing predicted
    more than 15% above the cheapest; at most 4 resolutions.
 
-For a target of 256 on 6 nodes this selects 240 (5 nodes, 40 × 24) and 256 (6 nodes,
-128 × 9 and 9 × 128). 252 and 288 are predicted 31% and 108% dearer than 240, so the
-prediction decides them without a run.
+For a floor of 256, every higher candidate is predicted at least 35% dearer (e.g. 270, 280,
+288), so only 256 is run, in both orientations. For a floor of 192, 216 is predicted 78%
+dearer. Going up in resolution almost never pays, because the cost grows as `N⁴`.
 
 ### 4.4 The decision
 
 The cost per unit of simulated time is `node-seconds per step / dt`, and `dt ∝ 1/RES_Z`,
-so it is proportional to `nodes × s_per_step × RES_Z`. `decide-res` chooses the
-lowest-cost resolution at or above a floor we set. If the runner-up is within the
-measured noise (at least 3%), it takes the **higher** resolution: equal cost, better
-resolved. It writes `decision_resolution.txt` and a figure.
+so it is proportional to `nodes × s_per_step × RES_Z`. The lowest-cost resolution at or
+above the floor is chosen. If the runner-up is within the measured noise (at least 3%), the
+**higher** resolution is taken: equal cost, better resolved. The result is written to
+`decision_resolution.txt` with a figure.
 
 ## 5. Choosing the node count (stage 2)
 
@@ -226,48 +248,58 @@ added. Minimising J with k = 1 keeps it above about 0.45.
 
 ### 5.2 Range swept
 
-**Minimum.** The minimum node count comes from stage 1's memory, scaled to production (§6.1):
+**Memory model.** Memory per node is a fixed part (libraries, MPI, Python; about 90 GiB at
+192 ranks per node, measured on a 96³-sized problem where the data is negligible) plus a
+part that scales with resolution and is spread over the nodes:
 
-    N_min = ⌈ (benchmark peak per node × nodes) × 3.5 / (747 GiB × 0.85) ⌉.
+    peak per node ≈ M_fixed + V × (1 + g × job hours) / nodes
 
-747 GiB is the `sacct` MaxRSS at which a run was killed for running out of memory, and 0.85
-is headroom.
+`V` comes from stage 1's measurement with production outputs:
+`V = peak per node × nodes − M_fixed × nodes`. `g` is the growth allowance (§6.1). The
+minimum node count is the smallest that keeps this below `747 GiB × 0.85`. 747 GiB is the
+`sacct` MaxRSS at which a run was killed for running out of memory, and 0.85 is headroom.
 
-**Range.** `python -m rbc.bench sweep` covers `N_min` to `2 N_min` nodes. It keeps the
-counts whose best mesh has balance of at least `min(0.93, best in range − 0.03)`, at most 6
-of them, always including both ends.
+**Range.** From that minimum up to 2× it, keeping node counts whose best mesh has balance
+of at least `min(0.93, best in range − 0.03)`, at most 6 of them, always including both
+ends. A count whose projected end-of-job memory exceeds the budget is never chosen.
 
 **Expected scaling regime.** Burns et al. [4] report Dedalus' parallel efficiency staying
 above 50% down to about 8 pencils per core. At 256 on 6 nodes there are 512² / 1152 ≈ 228
 pencils per core, so this range is far from that limit.
 
-`decide-nodes` writes `decision_nodes.txt` and a figure with four panels: step time against
-ideal, speed-up, E against the threshold curve with marginal efficiency, and wall time
-against node-hours.
+The result is written to `decision_nodes.txt` with a figure of four panels:
+- step time against ideal;
+- speed-up, with the projected end-of-job memory per node;
+- E against the break-even curve, with marginal efficiency;
+- wall time against node-hours.
 
 ## 6. Limitations and open questions
 
-### 6.1 Memory factor
+### 6.1 Memory
 
-The benchmark builds no output handlers and runs for minutes, so it under-reads production
-memory. The factor 3.5 comes from one run at 256 on 5 nodes:
+Two observations led to measuring memory with the outputs built.
 
-- **Benchmark:** at most 240 GiB per node, about 1,200 GiB in total.
-- **Production:** about 3,300 GiB after 3.6 h, then killed for running out of memory
-  (≈ 747 GiB per node), i.e. 2.9× the benchmark, still growing at about 8–10 GiB/h per node.
+- **The compute-only benchmark under-read production by about 3×.** At 256 on 5 nodes it
+  peaked at about 1,200 GiB in total. Production at the same configuration already used
+  about 3,300 GiB 10 minutes into the run.
+- **Two production runs at the same resolution and node count (288, 8 nodes) peaked at 635
+  and about 300 GB per node.** Output settings are the first suspect.
 
-3.5 allows for that growth over a 12-hour job. It is a calibration, not a model, and can be
-changed with `--mem-factor`.
+**Growth.** That production run grew from about 3,280 GiB at 10 minutes to about 3,540 GiB
+at 3.6 hours, roughly 2.3% per hour. A run at 288 on 8 nodes grew much less over 12 hours.
+`MEM_GROWTH = 1.5%/h` is a compromise. It is the least certain input, and per-node memory
+logs from production runs would calibrate it.
 
-The benchmark's per-node figure sums each rank's `ru_maxrss`, which counts shared pages
-once per rank. For the 30 × 32 run it gave 240 GiB, against 207 GiB for `sacct` MaxRSS.
+**Measurement.** Summing `ru_maxrss` over a node's ranks counts shared pages once per rank:
+for one run it gave 240 GiB against 207 GiB from `sacct`. `MemTotal − MemAvailable`
+includes the operating system. The tool takes the larger of the two.
 
 ### 6.2 Other gaps
 
 - **Cost model.** It assumes `dt ∝ 1/RES_Z`. If near-wall Chebyshev clustering sets dt
   instead, lower resolutions save even more.
-- **Noise.** Single runs of each configuration are separated by the 4-block spread. A
-  configuration can be submitted twice to measure run-to-run noise.
+- **Noise.** Each configuration is timed in many 25-step blocks; the spread of the block
+  means is the noise estimate used for ties. A configuration can also be repeated.
 
 ### 6.3 Questions for SciNet
 
@@ -292,7 +324,9 @@ First benchmark, job 2697353, Ra = 10⁶, Pr = 10⁻⁴, 100 steps at dt = 5 × 
 | 288 | 9 | 36×48 | 1 | 1.000 | 0.665 | 5.98 | 200/196 |
 | 288 | 9 | 48×36 | 1 | 1.000 | 0.662 | 5.96 | 193/189 |
 
-Stage 1 decision from these rows (`python -m rbc.bench decide-res <dir> --target 256`):
+These runs predate the rehearsal launch (§3), so the first run on each fresh node may be biased slow; the best configuration of each resolution below was in each case a second run.
+
+The stage 1 rule (§4.4) applied to these rows, with every resolution eligible, relative to 256:
 
 ```
 CHOICE: RES_Z = 240 on 5 nodes, mesh 40x24 (C = 1)
@@ -327,20 +361,21 @@ using. The stage 2 node sweep is the next job; its results will follow.
 
 ## 8. The code in action
 
-**Commands, run from a run folder holding `params.conf`:**
+**Commands.** Everything runs from a benchmark folder holding `params.conf` (physics,
+output settings and paths) and `bench.conf` (what to benchmark: the floor resolution,
+timing and memory settings), on a login node:
 
 ```bash
-source params.conf                                   # paths, RA, PR, DT, STEPPER
-python -m rbc.bench candidates --target 256 --nodes 6 -o res.conf   # + res.txt
-python -m rbc.bench submit res.conf --dir bench/res --submit        # one job per line
-python -m rbc.bench decide-res bench/res --target 256 --floor 256   # decision + figure
-python -m rbc.bench sweep bench/res --res 256 -o nodes.conf         # + nodes.txt
-python -m rbc.bench submit nodes.conf --dir bench/nodes --submit
-python -m rbc.bench decide-nodes bench/nodes --res 256              # decision + figure
+python -m rbc.bench          # stage 1: shows the plan, asks, submits one job per configuration
+python -m rbc.bench          # later: reports progress; once done, decides the resolution,
+                             #        plans stage 2 and asks before submitting it
+python -m rbc.bench          # after stage 2: decides the node count, prints the production lines
+python -m rbc.bench status   # progress only
 ```
 
 **One configuration per job, on exactly its nodes** (`shell/bench_one.sh`, submitted
-with `--nodes`, `--ntasks-per-node` and `--time` set by `rbc.bench submit`):
+with `--nodes`, `--ntasks-per-node` and `--time` set by `rbc.bench`): a rehearsal launch,
+then the measured one.
 
 ```bash
 mpirun -n $(( mx * my )) --bind-to core --map-by "ppr:$(( 8 / c )):l3cache:pe=$c" \

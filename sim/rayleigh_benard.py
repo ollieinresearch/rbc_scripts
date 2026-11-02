@@ -50,9 +50,11 @@ JOB_FIELDS = ("finished", "job_id", "cluster", "nodes", "ranks", "cpus_per_rank"
 BENCH_FIELDS = ("finished", "job_id", "nodes", "ranks", "cpus_per_rank", "mesh", "nx", "ny", "nz",
                 "build_s", "warmup", "iters", "s_per_iter", "dof_cycles_per_cpu_s",
                 "node_rss_max_gib", "node_rss_min_gib", "rank_rss_max_gib", "finite",
-                "s_per_iter_spread", "tasks_per_node")
+                "s_per_iter_spread", "tasks_per_node", "blocks", "io_steps",
+                "node_rss_io_max_gib", "node_rss_io_min_gib", "node_used_io_max_gib")
 BENCH_WARMUP = 20
-BENCH_BLOCKS = 4
+BENCH_BLOCK = 25
+BENCH_MIN_BLOCKS = 4
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -108,21 +110,78 @@ def get_parser() -> argparse.ArgumentParser:
                    help="use Dedalus' own file-handler code (e.g. with fixed_get_file.py)")
     g.add_argument("--verify_load", action="store_true",
                    help="compare the fast and Dedalus restart loaders, then exit")
-    g.add_argument("--bench", type=int, default=0, metavar="ITERS",
-                   help="time ITERS steps at fixed --dt (no restart, output or checkpoint), then exit")
+    g.add_argument("--bench", type=int, default=0, metavar="MAX_ITERS",
+                   help="benchmark: time at most MAX_ITERS steps at fixed --dt from a random start, then exit")
+    g.add_argument("--bench_seconds", type=float, default=240.0,
+                   help="benchmark: keep timing until this many seconds of stepping (or MAX_ITERS)")
+    g.add_argument("--bench_io", type=int, default=0, metavar="STEPS",
+                   help="benchmark: then build the production outputs and take STEPS steps to measure memory")
+    g.add_argument("--bench_rehearsal", type=int, default=0, metavar="STEPS",
+                   help="build everything, take STEPS steps and exit without recording (warms the nodes)")
     g.add_argument("--bench_csv", type=Path, help="benchmark results file (default: BASEPATH/bench.csv)")
     return p
 
 
-def run_bench(solver, comm, dt, iters, build_s, info, path, tick=None) -> None:
-    """Time steps at a fixed timestep and record speed and peak memory.
+def node_memory(comm, value: float):
+    """Sum a per-rank value over each node; the per-node sums, on rank 0 only.
 
-    Runs :data:`BENCH_WARMUP` untimed steps, then ``iters`` timed ones in
-    :data:`BENCH_BLOCKS` blocks, each between two barriers, so every time is that of
-    the slowest rank. The spread of the block means, (max - min) / mean, estimates the
-    run-to-run noise. Peak memory is each process's
-    maximum resident set size since it started (it includes the matrix build), summed
-    per node.
+    Parameters
+    ----------
+    comm : mpi4py.MPI.Comm
+        All ranks.
+    value : float
+        This rank's value.
+
+    Returns
+    -------
+    list of float or None
+        One sum per node on rank 0, None elsewhere.
+    """
+    from mpi4py import MPI
+
+    node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    total = node.allreduce(value, op=MPI.SUM)
+    lead = node.rank == 0
+    node.Free()
+    sums = comm.gather(total if lead else None, root=0)
+    return [v for v in sums if v is not None] if comm.rank == 0 else None
+
+
+def node_used_gib() -> float:
+    """Memory in use on this node (MemTotal - MemAvailable), what the out-of-memory killer sees.
+
+    Returns
+    -------
+    float
+        GiB, or NaN if ``/proc/meminfo`` cannot be read.
+    """
+    try:
+        info = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
+        kib = lambda k: float(info[k].split()[0])
+        return (kib("MemTotal") - kib("MemAvailable")) / 2**20
+    except (OSError, KeyError, ValueError):
+        return float("nan")
+
+
+def run_bench(solver, comm, dt, build_s, info, path, seconds=240.0, max_iters=100000,
+              rehearsal=0, add_outputs=None, io_steps=0, tick=None) -> None:
+    """Time steps at a fixed timestep, then measure memory with the production outputs.
+
+    Phases, all at the fixed ``dt``:
+
+    1. Rehearsal (``rehearsal > 0``): take that many steps and return without
+       recording. Run as its own launch before the real one, it warms the nodes
+       (libraries, file-system caches) so the first measured job is not penalised.
+    2. Warm-up: :data:`BENCH_WARMUP` untimed steps (first LU factorisation, FFTW plans).
+    3. Timing: blocks of :data:`BENCH_BLOCK` steps, each between two barriers so that
+       its time is the slowest rank's, until ``seconds`` have been timed (at least
+       :data:`BENCH_MIN_BLOCKS` blocks, at most ``max_iters`` steps). The spread of the
+       block means, (max - min) / mean, estimates the noise.
+    4. Memory with outputs (``add_outputs`` given): build the production file handlers,
+       spectra and flow statistics, take ``io_steps`` steps (the handlers write on the
+       first) and force one more write of every handler. Peak memory is then measured
+       two ways: each process's maximum resident set size summed per node (like sacct
+       MaxRSS), and MemTotal - MemAvailable on each node.
 
     Parameters
     ----------
@@ -132,14 +191,22 @@ def run_bench(solver, comm, dt, iters, build_s, info, path, tick=None) -> None:
         All ranks.
     dt : float
         Fixed timestep.
-    iters : int
-        Timed steps.
     build_s : float
         Seconds taken by ``build_solver``.
     info : dict
         Configuration columns of :data:`BENCH_FIELDS` (nodes, ranks, mesh, sizes, ...).
     path : pathlib.Path
         CSV file, appended to (rank 0 only).
+    seconds : float, optional
+        Stepping time to measure.
+    max_iters : int, optional
+        Upper limit on timed steps.
+    rehearsal : int, optional
+        Steps of a rehearsal-only run.
+    add_outputs : callable, optional
+        Creates the production outputs and returns ``(spectra, flow)``.
+    io_steps : int, optional
+        Steps taken with the outputs.
     tick : callable, optional
         Called every 10 steps (re-arms the watchdog).
     """
@@ -148,40 +215,76 @@ def run_bench(solver, comm, dt, iters, build_s, info, path, tick=None) -> None:
     import numpy as np
     from mpi4py import MPI
 
-    for i in range(BENCH_WARMUP):
-        solver.step(dt)
-    sizes = [iters // BENCH_BLOCKS + (b < iters % BENCH_BLOCKS) for b in range(BENCH_BLOCKS)]
-    block_means = []
-    for n in (k for k in sizes if k):
-        comm.Barrier()
-        t0 = time.time()
+    def steps(n):
         for i in range(n):
             solver.step(dt)
             if tick is not None and i % 10 == 0:
                 tick()
+
+    def peak_rss():
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20      # KiB -> GiB on Linux
+
+    if rehearsal:
+        t0 = time.time()
+        steps(rehearsal)
+        comm.Barrier()
+        if comm.rank == 0:
+            logger.info(f"rehearsal: {rehearsal} steps in {time.time() - t0:.1f} s; nothing recorded")
+        return
+
+    steps(BENCH_WARMUP)
+    block_means, done = [], 0
+    while True:
+        n = min(BENCH_BLOCK, max_iters - done)
+        comm.Barrier()
+        t0 = time.time()
+        steps(n)
         comm.Barrier()
         block_means.append((time.time() - t0) / n)
-    loop = sum(m * n for m, n in zip(block_means, (k for k in sizes if k)))
-    spread = (max(block_means) - min(block_means)) / (loop / iters)
+        done += n
+        timed = sum(m * BENCH_BLOCK for m in block_means)
+        more = done < max_iters and (len(block_means) < BENCH_MIN_BLOCKS or timed < seconds)
+        if not comm.bcast(more, root=0):
+            break
+    loop = sum(m * BENCH_BLOCK for m in block_means[:-1]) + block_means[-1] * (done - BENCH_BLOCK * (len(block_means) - 1))
+    s_iter = loop / done
+    spread = (max(block_means) - min(block_means)) / s_iter
 
     finite = comm.allreduce(all(np.isfinite(f.data).all() for f in solver.state), op=MPI.LAND)
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20      # KiB -> GiB on Linux
-    node = comm.Split_type(MPI.COMM_TYPE_SHARED)
-    node_rss = node.allreduce(rss, op=MPI.SUM)
-    lead = node.rank == 0
-    node.Free()
-    nodes = [r for r in comm.gather(node_rss if lead else None, root=0) or [] if r is not None]
+    rss = peak_rss()
+    nodes = node_memory(comm, rss)
     rank_max = comm.reduce(rss, op=MPI.MAX, root=0)
+
+    io = {}
+    if add_outputs is not None and io_steps > 0:
+        spectra, _ = add_outputs()
+        for i in range(io_steps):
+            solver.step(dt)
+            if spectra is not None:
+                spectra.maybe_write(solver)
+            if tick is not None and i % 10 == 0:
+                tick()
+        solver.evaluate_handlers(dt=dt)
+        comm.Barrier()
+        rss_io = node_memory(comm, peak_rss())
+        node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+        used = node_used_gib() if node.rank == 0 else float("-inf")
+        node.Free()
+        used = comm.reduce(used, op=MPI.MAX, root=0)
+        if comm.rank == 0:
+            io = dict(io_steps=io_steps, node_rss_io_max_gib=f"{max(rss_io):.1f}",
+                      node_rss_io_min_gib=f"{min(rss_io):.1f}", node_used_io_max_gib=f"{used:.1f}")
+
     if comm.rank == 0:
         dof = info["nx"] * info["ny"] * info["nz"]
         row = dict(info, finished=datetime.now().isoformat(timespec="seconds"),
                    job_id=os.environ.get("SLURM_JOB_ID", ""), build_s=f"{build_s:.1f}",
-                   warmup=BENCH_WARMUP, iters=iters, s_per_iter=f"{loop / iters:.5f}",
-                   dof_cycles_per_cpu_s=f"{dof * iters / (comm.size * info['cpus_per_rank'] * loop):.4g}",
+                   warmup=BENCH_WARMUP, iters=done, blocks=len(block_means), s_per_iter=f"{s_iter:.5f}",
+                   dof_cycles_per_cpu_s=f"{dof / (comm.size * info['cpus_per_rank'] * s_iter):.4g}",
                    node_rss_max_gib=f"{max(nodes):.1f}", node_rss_min_gib=f"{min(nodes):.1f}",
                    rank_rss_max_gib=f"{rank_max:.2f}", finite=finite,
                    s_per_iter_spread=f"{spread:.4f}",
-                   tasks_per_node=os.environ.get("SLURM_NTASKS_PER_NODE", ""))
+                   tasks_per_node=os.environ.get("SLURM_NTASKS_PER_NODE", ""), **io)
         path.parent.mkdir(parents=True, exist_ok=True)
         new = not path.exists()
         with open(path, "a", newline="") as f:
@@ -189,8 +292,10 @@ def run_bench(solver, comm, dt, iters, build_s, info, path, tick=None) -> None:
             if new:
                 w.writeheader()
             w.writerow(row)
-        logger.info(f"bench {info['mesh']} on {info['nodes']} nodes: {loop / iters:.4f} s/iter, "
-                    f"node peak {min(nodes):.1f}-{max(nodes):.1f} GiB, finite={finite}")
+        logger.info(f"bench {info['mesh']} on {info['nodes']} nodes: {s_iter:.4f} s/iter over {done} steps "
+                    f"(spread {spread:.1%}), node peak {min(nodes):.1f}-{max(nodes):.1f} GiB"
+                    + (f", with outputs {io['node_rss_io_min_gib']}-{io['node_rss_io_max_gib']} GiB "
+                       f"(node used {io['node_used_io_max_gib']} GiB)" if io else "") + f", finite={finite}")
 
 
 def log_job(path: Path, row: dict) -> None:
@@ -326,7 +431,7 @@ def main(argv=None) -> None:
     watchdog("restart load / setup")
 
     restart_path = basepath / "restart" / "restart.h5"
-    if restart_path.exists() and not args.bench:
+    if restart_path.exists() and not (args.bench or args.bench_rehearsal):
         if args.verify_load:
             rbc.vast.verify_load(solver, restart_path, args.index, logger)
             raise SystemExit(0)
@@ -338,68 +443,81 @@ def main(argv=None) -> None:
         b["g"] *= z * (Lz - z)
         b.low_pass_filter(scales=0.25)
 
-    if args.bench:
+    def add_outputs():
+        """Create the production file handlers, in-run spectra and flow statistics.
+
+        Returns
+        -------
+        spectra : rbc.spectra.core.InSimSpectra or None
+            None with ``--no_spectra``.
+        flow : dedalus.extras.flow_tools.GlobalFlowProperty
+            Reynolds-number monitor.
+        """
+        T = b0 + b
+        grad_T = de.grad(T)
+        vol, area = 1 / (Lx * Ly * Lz), 1 / (Lx * Ly)
+        havg = lambda f: area * de.integ(de.integ(f, "x"), "y")
+        for d in ("state", "analysis", "horizontal_analysis") + (("snapshots",) if args.snapshots else ()):
+            (basepath / d).mkdir(parents=True, exist_ok=True)
+
+        state = solver.evaluator.add_file_handler(basepath / "state", wall_dt=args.state_freq,
+                                                  max_writes=1, mode="append", parallel=args.par)
+        state.add_tasks(solver.state, layout=args.state_layout)
+
+        if args.snapshots:
+            snap = solver.evaluator.add_file_handler(basepath / "snapshots", sim_dt=args.snaps_freq,
+                                                     max_writes=30, mode="append", parallel=args.par)
+            snap.add_task(T, name="temperature")
+            snap.add_task(u, name="u")
+            snap.add_task(omega @ omega, name="vorticity")   # |omega|^2
+
+        Ra_f, Pr_f = dist.Field(name="Ra"), dist.Field(name="Pr")
+        Ra_f["g"], Pr_f["g"] = Ra, Pr
+
+        an = solver.evaluator.add_file_handler(basepath / "analysis", sim_dt=args.a_freq, mode="append",
+                                               parallel=args.par_small)
+        an.add_task(Ra_f, name="Ra")
+        an.add_task(Pr_f, name="Pr")
+        an.add_task(vol * de.integ((u @ ez) * T), name="avg_wT")
+        an.add_task(vol * de.integ(grad_T @ grad_T), name="avg_grad_T_sq")
+        an.add_task(vol * de.integ(omega @ omega), name="avg_vorticity_sq")
+        an.add_task(vol * de.integ(u @ u), name="avg_K")
+
+        an_h = solver.evaluator.add_file_handler(basepath / "horizontal_analysis", sim_dt=args.a_freq,
+                                                 mode="append", parallel=args.par_small)
+        an_h.add_task(havg(T), name="avg_T")
+        an_h.add_task(havg((u @ ex) ** 2), name="avg_u_sq")
+        an_h.add_task(havg((u @ ey) ** 2), name="avg_v_sq")
+        an_h.add_task(havg((u @ ez) ** 2), name="avg_w_sq")
+        an_h.add_task(havg(T ** 2), name="avg_T_sq")
+        an_h.add_task(havg((u @ ez) * T), name="havg_wT")
+
+        spectra = None
+        if not args.no_spectra:
+            spectra = InSimSpectra(dist, u, b, args.spec_freq, basepath / "spectra",
+                                   attrs=dict(Ra=Ra, Pr=Pr, Lx=Lx, Ly=Ly, Lz=Lz), comm=comm)
+
+        flow = de.GlobalFlowProperty(solver, cadence=message_iters)
+        flow.add_property(np.sqrt(u @ u) / nu, name="Re")
+        return spectra, flow
+
+    if args.bench or args.bench_rehearsal:
         watchdog("benchmark")
         node = comm.Split_type(MPI.COMM_TYPE_SHARED)
         used_nodes = comm.allreduce(int(node.rank == 0))     # nodes holding ranks, not allocated
         node.Free()
         info = dict(nodes=used_nodes, ranks=comm.size, cpus_per_rank=int(os.environ.get("OMP_NUM_THREADS") or 1),
                     mesh=f"{mesh[0]}x{mesh[1]}", nx=nx, ny=ny, nz=nz)
-        run_bench(solver, comm, step_dt, args.bench, build_s, info,
-                  args.bench_csv or basepath / "bench.csv", tick=watchdog)
+        run_bench(solver, comm, step_dt, build_s, info, args.bench_csv or basepath / "bench.csv",
+                  seconds=args.bench_seconds, max_iters=args.bench, rehearsal=args.bench_rehearsal,
+                  add_outputs=add_outputs if args.bench_io else None, io_steps=args.bench_io, tick=watchdog)
         if wd_file is not None:
             faulthandler.cancel_dump_traceback_later()
             wd_file.close()
             Path(wd_file.name).unlink(missing_ok=True)
         return
 
-    # Output
-    T = b0 + b
-    grad_T = de.grad(T)
-    vol, area = 1 / (Lx * Ly * Lz), 1 / (Lx * Ly)
-    havg = lambda f: area * de.integ(de.integ(f, "x"), "y")
-    for d in ("state", "analysis", "horizontal_analysis") + (("snapshots",) if args.snapshots else ()):
-        (basepath / d).mkdir(parents=True, exist_ok=True)
-
-    state = solver.evaluator.add_file_handler(basepath / "state", wall_dt=args.state_freq,
-                                              max_writes=1, mode="append", parallel=args.par)
-    state.add_tasks(solver.state, layout=args.state_layout)
-
-    if args.snapshots:
-        snap = solver.evaluator.add_file_handler(basepath / "snapshots", sim_dt=args.snaps_freq,
-                                                 max_writes=30, mode="append", parallel=args.par)
-        snap.add_task(T, name="temperature")
-        snap.add_task(u, name="u")
-        snap.add_task(omega @ omega, name="vorticity")   # |omega|^2
-
-    Ra_f, Pr_f = dist.Field(name="Ra"), dist.Field(name="Pr")
-    Ra_f["g"], Pr_f["g"] = Ra, Pr
-
-    an = solver.evaluator.add_file_handler(basepath / "analysis", sim_dt=args.a_freq, mode="append",
-                                           parallel=args.par_small)
-    an.add_task(Ra_f, name="Ra")
-    an.add_task(Pr_f, name="Pr")
-    an.add_task(vol * de.integ((u @ ez) * T), name="avg_wT")
-    an.add_task(vol * de.integ(grad_T @ grad_T), name="avg_grad_T_sq")
-    an.add_task(vol * de.integ(omega @ omega), name="avg_vorticity_sq")
-    an.add_task(vol * de.integ(u @ u), name="avg_K")
-
-    an_h = solver.evaluator.add_file_handler(basepath / "horizontal_analysis", sim_dt=args.a_freq,
-                                             mode="append", parallel=args.par_small)
-    an_h.add_task(havg(T), name="avg_T")
-    an_h.add_task(havg((u @ ex) ** 2), name="avg_u_sq")
-    an_h.add_task(havg((u @ ey) ** 2), name="avg_v_sq")
-    an_h.add_task(havg((u @ ez) ** 2), name="avg_w_sq")
-    an_h.add_task(havg(T ** 2), name="avg_T_sq")
-    an_h.add_task(havg((u @ ez) * T), name="havg_wT")
-
-    spectra = None
-    if not args.no_spectra:
-        spectra = InSimSpectra(dist, u, b, args.spec_freq, basepath / "spectra",
-                               attrs=dict(Ra=Ra, Pr=Pr, Lx=Lx, Ly=Ly, Lz=Lz), comm=comm)
-
-    flow = de.GlobalFlowProperty(solver, cadence=message_iters)
-    flow.add_property(np.sqrt(u @ u) / nu, name="Re")
+    spectra, flow = add_outputs()
     CFL = None
     if use_cfl:
         CFL = de.CFL(solver, initial_dt=step_dt, cadence=args.cfl_cadence,
