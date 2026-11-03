@@ -335,6 +335,7 @@ def main(argv=None) -> None:
     from dedalus.core import evaluator
 
     import rbc.vast
+    from rbc.memguard import MemoryGuard
     from rbc.shutdown import GracefulStop
     from rbc.spectra.core import InSimSpectra
 
@@ -526,6 +527,8 @@ def main(argv=None) -> None:
         step_dt = CFL.compute_timestep()
 
     stop = GracefulStop(comm, logger=logger)
+    memory = MemoryGuard(comm, logger=logger)
+    mem_stop = False
     good = True
     start_iter, start_time, warmup = solver.iteration, solver.sim_time, 100
     t_start = t_main = time.time()
@@ -546,6 +549,10 @@ def main(argv=None) -> None:
                 spectra.maybe_write(solver)
             if stop.check(solver.iteration):
                 break
+            if memory.check(solver.iteration):
+                mem_stop = True
+                stop.reason = "memory"
+                break
             if (solver.iteration - 1) % message_iters == 0:
                 Re = flow.grid_average("Re")
                 if not np.isfinite(Re):
@@ -556,7 +563,8 @@ def main(argv=None) -> None:
                     logger.info("-"*64)
                     logger.info(f"dt changed {len(dts)}x: mean {np.mean(dts):.3e}, "
                                 f"min {np.min(dts):.3e}, max {np.max(dts):.3e}")
-                logger.info(f"Iteration={solver.iteration}, t={solver.sim_time:.5f}, dt={step_dt:.4e}, Re={Re:.2f}")
+                logger.info(f"Iteration={solver.iteration}, t={solver.sim_time:.5f}, dt={step_dt:.4e}, Re={Re:.2f}, "
+                            f"{memory.status()}")
                 logger.info("-"*64)
                 dts = []
             if CFL is not None:
@@ -574,6 +582,8 @@ def main(argv=None) -> None:
         elif not good:
             logger.error("Solution not finite: no final checkpoint written.")
         stop.record(basepath)
+        if mem_stop and comm.rank == 0:
+            (basepath / "stop_reason.txt").write_text("memory\n")
         niter = max(solver.iteration - start_iter - warmup, 1)
         loop = time.time() - t_main
         if comm.rank == 0:

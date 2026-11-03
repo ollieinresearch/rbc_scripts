@@ -28,3 +28,4 @@ rc=$?
 reason=$(cat stop_reason.txt 2>/dev/null) || reason="no stop_reason.txt: crashed or watchdog, see watchdog/"
 echo "Simulation exited with $rc ($reason)"
 submit_post
+exit $rc

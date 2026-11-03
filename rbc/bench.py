@@ -41,11 +41,12 @@ TIER_PRIOR = {"A": 1.00, "B": 1.03, "C": 1.08}
 TIER_NAME = {"A": "3-smooth", "B": "5-smooth", "C": "one factor of 7"}
 ROYGBIV = ("#d62728", "#ff7f0e", "#e3b505", "#2ca02c", "#1f77b4", "#3f007d", "#9467bd")
 
-DEFAULTS = dict(RES_FLOOR=None, RES_ABOVE=0.125, RES_BAND=0.15, RES_MAX=4, ORIENT="both",
+DEFAULTS = dict(RES_FLOOR=None, RES_ABOVE=0.125, RES_BAND=0.15, RES_MAX=4, ORIENT="larger", SQUARE=1,
                 BENCH_SECONDS=240.0, BENCH_IO=30, BENCH_REHEARSAL=10, BENCH_TIME="00:30:00",
                 ACCOUNT="rrg-goluskin", MEM_FIXED=90.0, MEM_PER_CELL=1.69e-4, MEM_GROWTH=0.015,
                 JOB_HOURS=12.0, MEM_USABLE=747.0, MEM_HEADROOM=0.85, NODE_SPAN=2.0, NODE_POINTS=6,
-                NODE_MAX=None, TIME_WEIGHT=1.0, DT_REF=None, DT_REF_RES=None)
+                NODE_MIN=None, NODE_MAX=None, TIME_WEIGHT=1.0, DT_REF=None, DT_REF_RES=None,
+                MEM_FACTOR=1.0)
 PARAMS = ("RES_Z", "RA", "PR", "SIM_TIME", "RESTART_FROM", "SCRIPTS_PATH", "USER")
 
 
@@ -106,7 +107,7 @@ def load_config(folder: Path) -> dict:
         if not cfg["RES_Z"]:
             raise SystemExit("set RES_FLOOR in bench.conf (or RES_Z in params.conf)")
         cfg["RES_FLOOR"] = cfg["RES_Z"]
-    for key in ("RES_FLOOR", "RES_MAX", "BENCH_IO", "BENCH_REHEARSAL", "NODE_POINTS", "NODE_MAX", "DT_REF_RES"):
+    for key in ("RES_FLOOR", "RES_MAX", "BENCH_IO", "BENCH_REHEARSAL", "NODE_POINTS", "NODE_MIN", "NODE_MAX", "DT_REF_RES", "SQUARE"):
         if cfg[key] is not None:
             cfg[key] = int(float(cfg[key]))
     cfg["SIM_TIME"] = float(cfg["SIM_TIME"]) if cfg["SIM_TIME"] else None
@@ -201,6 +202,45 @@ def best_mesh(res: int, nodes: int, c: int = 1):
     n = nodes * ranks_per_node(c)
     p0, p1, e = max(meshes(n, groups(res)), key=lambda m: (round(m[2], 4), -abs(m[0] - m[1])))
     return max(p0, p1), min(p0, p1), e
+
+
+def square_mesh(res: int, nodes: int, c: int = 1):
+    """Most nearly square mesh on a node count, whatever its balance.
+
+    Parameters
+    ----------
+    res : int
+        ``RES_Z``.
+    nodes : int
+        Node count.
+    c : int, optional
+        cpus-per-task.
+
+    Returns
+    -------
+    tuple
+        ``(meshx, meshy, efficiency)`` with ``meshx >= meshy``.
+    """
+    n = nodes * ranks_per_node(c)
+    p1 = max(d for d in range(1, math.isqrt(n) + 1) if n % d == 0)
+    p0 = n // p1
+    return p0, p1, efficiency(p0, groups(res)) * efficiency(p1, groups(res))
+
+
+def is_square(mx: int, my: int) -> bool:
+    """Whether a mesh is the most nearly square factorisation of its rank count.
+
+    Parameters
+    ----------
+    mx, my : int
+        Mesh dimensions.
+
+    Returns
+    -------
+    bool
+    """
+    n = mx * my
+    return min(mx, my) == max(d for d in range(1, math.isqrt(n) + 1) if n % d == 0)
 
 
 def cost_model(res: int, ref: int) -> float:
@@ -312,7 +352,9 @@ def measured_variable(row: dict, cfg: dict) -> tuple[float, str]:
 
     Uses the peak per node with production outputs (the larger of summed resident
     memory and the node's MemTotal - MemAvailable), times the node count, minus the
-    fixed part. Rows without the outputs phase fall back to :func:`prior_variable`.
+    fixed part, times ``MEM_FACTOR`` (production over benchmark, calibrated from a
+    production run; the benchmark does not reproduce everything production allocates).
+    Rows without the outputs phase fall back to :func:`prior_variable`.
 
     Parameters
     ----------
@@ -330,8 +372,9 @@ def measured_variable(row: dict, cfg: dict) -> tuple[float, str]:
     """
     if row["mem_io"] is None:
         return prior_variable(row["nz"], cfg), "prior (no outputs phase in this result)"
-    v = row["mem_io"] * row["nodes"] - fixed_per_node(cfg, row["c"]) * row["nodes"]
-    return v, f"measured with outputs: {row['mem_io']:.0f} GiB/node on {row['nodes']} nodes"
+    v = (row["mem_io"] * row["nodes"] - fixed_per_node(cfg, row["c"]) * row["nodes"]) * cfg["MEM_FACTOR"]
+    scaled = f", x MEM_FACTOR {cfg['MEM_FACTOR']:g}" if cfg["MEM_FACTOR"] != 1 else ""
+    return v, f"measured with outputs: {row['mem_io']:.0f} GiB/node on {row['nodes']} nodes{scaled}"
 
 
 def job_peak(variable: float, nodes: int, cfg: dict, c: int = 1) -> float:
@@ -556,6 +599,10 @@ def plan_resolutions(cfg: dict):
         mx, my = r["mx"], r["my"]
         both = cfg["ORIENT"] == "both" or (cfg["ORIENT"] == "elongated" and mx > 2 * my)
         lines += [(r["res"], r["nodes"], 1, mx, my)] + ([(r["res"], r["nodes"], 1, my, mx)] if both and mx != my else [])
+        if cfg["SQUARE"]:
+            sx, sy, _ = square_mesh(r["res"], r["nodes"])
+            if (sx, sy) != (mx, my):
+                lines.append((r["res"], r["nodes"], 1, sx, sy))
     return rows, lines
 
 
@@ -592,8 +639,11 @@ def resolution_report(rows, lines, cfg) -> str:
                        f"{'BENCHMARK' if r['keep'] else 'skip'}: {r['why']}")
     if rejected:
         out.append("Rejected (a prime of 11 or more, or 7^2): " + ", ".join(str(r["res"]) for r in rejected))
-    out += ["", f"{len(lines)} jobs (orientations: {cfg['ORIENT']}):"]
-    out += [f"  RES_Z {a:>4} on {b:>2} nodes, mesh {d}x{e}" for a, b, _, d, e in lines]
+    out += ["", f"{len(lines)} jobs (orientations: {cfg['ORIENT']}; most square mesh added: "
+                f"{'yes' if cfg['SQUARE'] else 'no'}):"]
+    out += [f"  RES_Z {a:>4} on {b:>2} nodes, mesh {d}x{e}  balance "
+            f"{efficiency(d, groups(a)) * efficiency(e, groups(a)):.3f}{'  (most square)' if is_square(d, e) else ''}"
+            for a, b, _, d, e in lines]
     return "\n".join(out) + "\n"
 
 
@@ -714,16 +764,22 @@ def plan_nodes(rows, res: int, cfg: dict):
     ref = min(at, key=lambda r: r["node_s"])
     var, how = measured_variable(ref, cfg)
     n_min = min_nodes(var, cfg)
+    if cfg["NODE_MIN"]:
+        n_min = max(n_min, cfg["NODE_MIN"])
     n_max = math.ceil(cfg["NODE_SPAN"] * n_min)
     if cfg["NODE_MAX"]:
         n_max = min(n_max, cfg["NODE_MAX"])
     flip = ref["mx"] < ref["my"]
+    balanced = best_mesh(res, ref["nodes"])[:2]
+    square = bool(cfg["SQUARE"]) and is_square(ref["mx"], ref["my"]) and \
+        (max(ref["mx"], ref["my"]), min(ref["mx"], ref["my"])) != balanced
+    pick = square_mesh if square else best_mesh
     options = []
     for nn in range(n_min, n_max + 1):
-        mx, my, e = best_mesh(res, nn)
+        mx, my, e = pick(res, nn)
         options.append((nn, *((my, mx) if flip else (mx, my)), e))
     top = max(o[3] for o in options)
-    cut = min(top - 0.03, 0.93)
+    cut = 0.0 if square else min(top - 0.03, 0.93)
     kept = [o for o in options if o[3] >= cut]
     pts = int(cfg["NODE_POINTS"])
     if len(kept) > pts:
@@ -734,9 +790,11 @@ def plan_nodes(rows, res: int, cfg: dict):
            f"Memory ({how}): {var:,.0f} GiB depends on the resolution; grown x{growth(cfg):.2f} over "
            f"{cfg['JOB_HOURS']:g} h -> {var * growth(cfg):,.0f} GiB.",
            f"Per node: budget {budget(cfg):.0f} GiB minus {fixed_per_node(cfg):.0f} GiB fixed -> "
-           f"minimum {n_min} nodes. Sweep {n_min}-{n_max}.",
-           f"Kept: balance >= {cut:.3f}. Orientation: {'smaller' if flip else 'larger'} dimension first "
-           f"(the faster one in stage 1, {ref['mesh']}).", "",
+           f"minimum {n_min} nodes" + (f" (NODE_MIN = {cfg['NODE_MIN']})" if cfg["NODE_MIN"] else "")
+           + f". Sweep {n_min}-{n_max}.",
+           f"Meshes: {'most square' if square else 'most balanced'} for each node count, as {ref['mesh']} "
+           f"won stage 1; {'smaller' if flip else 'larger'} dimension first. "
+           + ("Kept: evenly spaced counts." if square else f"Kept: balance >= {cut:.3f}."), "",
            f"{'nodes':>5} {'ranks':>6} {'mesh':>9} {'bal':>6}  kept"]
     for nn, mx, my, e in options:
         out.append(f"{nn:>5} {nn * ranks_per_node(1):>6} {str(mx) + 'x' + str(my):>9} {e:6.3f}  "
@@ -786,7 +844,11 @@ def decide_nodes(rows, res: int, cfg: dict):
     if len(by_nodes) < 2:
         raise SystemExit(f"need results at two or more node counts for RES_Z = {res}")
     pts = [dict(r) for _, r in sorted(by_nodes.items())]
-    base = pts[0]
+    for p in pts:
+        var, _ = measured_variable(p, cfg)
+        p["peak"] = job_peak(var, p["nodes"], cfg, p["c"])
+        p["fits"] = p["peak"] <= budget(cfg)
+    base = next((p for p in pts if p["fits"]), pts[0])
     prev = None
     for p in pts:
         p["r"] = p["nodes"] / base["nodes"]
@@ -795,9 +857,6 @@ def decide_nodes(rows, res: int, cfg: dict):
         p["thr"] = p["r"] ** (-k / (1 + k))
         p["Em"] = None if prev is None else (prev["s"] / p["s"] - 1) / (p["nodes"] / prev["nodes"] - 1)
         p["J"] = p["nodes"] * p["s"] ** (1 + k) / (base["nodes"] * base["s"] ** (1 + k))
-        var, _ = measured_variable(p, cfg)
-        p["peak"] = job_peak(var, p["nodes"], cfg, p["c"])
-        p["fits"] = p["peak"] <= budget(cfg)
         p["ok"] = p["E"] >= p["thr"]
         prev = p
     eligible = [p for p in pts if p["fits"]] or pts
@@ -831,7 +890,7 @@ def decide_nodes(rows, res: int, cfg: dict):
         noise = f"{p['noise']:.1%}" if p["noise"] is not None else "n/a"
         out.append(f"{p['nodes']:>5} {p['mesh']:>8} {p['eff']:6.3f} {p['s']:8.4f} {p['node_s']:7.2f} {p['S']:8.2f} "
                    f"{p['E']:6.2f} {p['thr']:6.2f} {em:>9} {p['J']:6.3f} {noise:>6} {p['peak']:8.0f}  {p['why']}")
-    out += ["", "E = efficiency relative to the smallest count; E min = break-even against it; marginal = share of",
+    out += ["", "E = efficiency relative to the smallest count with memory for a full job; E min = break-even against it; marginal = share of",
             "ideal speed-up delivered by the nodes added since the previous row; J relative to the smallest count;",
             f"GiB end = projected peak per node after a {cfg['JOB_HOURS']:g} h job (budget {budget(cfg):.0f})."]
     if best["nodes"] * 192 < 1024:
@@ -1213,7 +1272,7 @@ def do_decide_res(res_dir: Path, cfg: dict) -> int:
 
 
 def do_decide_nodes(nodes_dir: Path, res: int, cfg: dict) -> None:
-    """Write the stage 2 decision.
+    """Write the stage 2 decision, using the stage 1 results at the same resolution too.
 
     Parameters
     ----------
@@ -1224,7 +1283,8 @@ def do_decide_nodes(nodes_dir: Path, res: int, cfg: dict) -> None:
     cfg : dict
         Configuration.
     """
-    best, pts, text = decide_nodes(load(nodes_dir), res, cfg)
+    reused = [r for r in load(nodes_dir.parent / "res") if r["nz"] == res]
+    best, pts, text = decide_nodes(load(nodes_dir) + reused, res, cfg)
     (nodes_dir / "decision_nodes.txt").write_text(text)
     plot_nodes(pts, best, nodes_dir / "decision_nodes.png", cfg)
     print(text + f"(written to {nodes_dir}/decision_nodes.txt and .png)")
@@ -1261,15 +1321,34 @@ def step(folder: Path, yes: bool = False, dry: bool = False) -> None:
     if not print_status("Stage 1 (resolution)", job_status(res_dir), res_dir):
         return
     if not (nodes_dir / "jobs.tsv").exists():
+        done = {line.split("\t")[0] for line in (res_dir / "jobs.tsv").read_text().splitlines() if line.strip()}
+        _, planned = plan_resolutions(cfg)
+        missing = [line for line in planned if tag(line) not in done]
+        if missing:
+            print("\nStage 1 plan has configurations not yet run (settings changed since it was submitted):")
+            print("\n".join(f"  {tag(line)}" for line in missing))
+            if not dry and confirm(missing, cfg, yes):
+                submit(missing, res_dir, cfg, folder)
+                print("\nSubmitted. Run 'python -m rbc.bench' again to check on them.")
+            return
         print()
         res = do_decide_res(res_dir, cfg)
         lines, text = plan_nodes(load(res_dir), res, cfg)
+        have = {tag((r["nz"], r["nodes"], r["c"], r["mx"], r["my"])) for r in load(res_dir)}
+        reuse = [line for line in lines if tag(line) in have]
+        lines = [line for line in lines if tag(line) not in have]
+        if reuse:
+            text += "\nAlready measured in stage 1, reused: " + ", ".join(tag(line) for line in reuse) + "\n"
         print(text)
         if dry:
             return
         (folder / "nodes.txt").write_text(text)
         write_conf(lines, folder / "nodes.conf", "stage 2 plan (see nodes.txt)")
-        if confirm(lines, cfg, yes):
+        if not lines:
+            nodes_dir.mkdir(parents=True, exist_ok=True)
+            (nodes_dir / "jobs.tsv").touch()
+            print("Nothing new to run. Run 'python -m rbc.bench' again for the decision.")
+        elif confirm(lines, cfg, yes):
             submit(lines, nodes_dir, cfg, folder)
             print("\nStage 2 submitted. Run 'python -m rbc.bench' again to check on it.")
         return
@@ -1313,7 +1392,7 @@ def main(argv=None) -> None:
         if not any(res_dir.rglob("bench.csv")):
             raise SystemExit("no stage 1 results yet")
         res = do_decide_res(res_dir, cfg)
-        if any(nodes_dir.rglob("bench.csv")):
+        if (nodes_dir / "jobs.tsv").exists():
             do_decide_nodes(nodes_dir, chosen_resolution(res_dir) or res, cfg)
 
 

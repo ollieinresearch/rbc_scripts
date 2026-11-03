@@ -294,6 +294,17 @@ logs from production runs would calibrate it.
 for one run it gave 240 GiB against 207 GiB from `sacct`. `MemTotal − MemAvailable`
 includes the operating system. The tool takes the larger of the two.
 
+**Guard in production runs.** Nodes without swap don't slow down as memory fills; they run
+at full speed until the out-of-memory killer ends the job. So production runs now check the
+memory directly (`rbc/memguard.py`). About every 5 minutes of wall time (at iterations all ranks agree on), each node reads
+`MemTotal − MemAvailable`, and all ranks take the maximum over nodes; the fullest node
+decides.
+- **Above 95% on any node:** the run stops cleanly, writes its checkpoint and records
+  `stop_reason` "memory". The next job resumes from that checkpoint in fresh processes, so
+  the memory that built up is released.
+- **Above 85% in the first 20 minutes:** a warning is logged that the configuration starts
+  too close to the limit.
+
 ### 6.2 Other gaps
 
 - **Cost model.** It assumes `dt ∝ 1/RES_Z`. If near-wall Chebyshev clustering sets dt

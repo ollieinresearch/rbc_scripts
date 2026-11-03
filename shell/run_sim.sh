@@ -19,7 +19,10 @@ load_modules
 export HDF5_USE_FILE_LOCKING=FALSE
 
 determine_ic
+rm -f stop_reason.txt
 srun_sim
-echo "Simulation step exited with $? ($(cat stop_reason.txt 2>/dev/null))"
-
+rc=$?
+reason=$(cat stop_reason.txt 2>/dev/null) || reason="no stop_reason.txt: crashed or watchdog, see watchdog/"
+echo "Simulation exited with $rc ($reason)"
 submit_post
+exit $rc
