@@ -32,24 +32,43 @@ recorded. Its purpose is to warm the nodes (libraries and file-system caches), s
 measured launch doesn't pay first-use costs. §3 shows those costs biased our first
 measurements.
 
-**Launch 2: measurement.** Starting from a small random temperature perturbation, with no
-restart, the script:
+**Launch 2: a short production job.** Starting from a small random temperature
+perturbation, with no restart, the script:
 
-1. takes 20 untimed steps, which include the first LU factorisation and FFTW planning;
-2. times blocks of 25 steps at a **fixed** dt, each block between two barriers so its
-   time is the slowest rank's, until about 4 minutes of stepping have been timed. The
-   spread of the block means estimates the noise;
-3. records the peak memory of this compute-only phase;
-4. builds the **production outputs** read from `params.conf` (state, snapshots, analysis,
-   horizontal averages, in-run spectra, flow statistics) and takes 30 more steps. The
-   handlers write on the first of these, and every handler is then forced to write once
-   more;
-5. records the peak memory again, two ways: each process's maximum resident set size
-   summed per node (comparable to `sacct` MaxRSS), and `MemTotal − MemAvailable` on each
-   node (what the out-of-memory killer sees). The larger of the two is used;
+1. builds the **production outputs** read from `params.conf` (checkpoint, snapshots,
+   analysis, horizontal averages, in-run spectra, flow statistics) before the first step,
+   as a production run does, so step times include the output writes and memory includes
+   the output buffers;
+2. steps at a **fixed** dt for 15 minutes (`BENCH_SECONDS`), in blocks of about 20 s, each
+   between two barriers so its time is the slowest rank's. Rank 0 decides after each
+   block whether to continue and broadcasts it, so every rank stops on the same step (the
+   same mechanism as Dedalus' own wall-time stop; the script needs the block boundaries
+   as well). There is no `mpirun` timeout;
+3. leaves the first 5 minutes (`BENCH_DISCARD`) out of the timing: they hold the first LU
+   factorisations, FFTW planning and the first write of every handler. The time per step
+   is the total time of the remaining blocks over their steps (500 to 1500 steps at the
+   resolutions in use). The noise estimate is the spread of the means of the four equal
+   parts of that 10 minute window, (max − min) / mean;
+4. after every block, reads `MemTotal − MemAvailable` on every node and logs the fullest
+   (`bench_mem.csv`). If a node passes 95% of its memory, stepping stops and the result is
+   recorded as too small (`mem_stop`), instead of the out-of-memory killer losing the job;
+5. forces every handler to write once more (as a job's final checkpoint), then records the
+   memory two ways: each process's maximum resident set size summed per node (comparable
+   to `sacct` MaxRSS), and `MemTotal − MemAvailable` on each node. The larger of the two,
+   on the fullest node, is used;
 6. appends one row to a CSV file. The job then deletes the output files it wrote.
 
-A job takes about 7–8 minutes.
+The job requests `BENCH_SECONDS` + 6 minutes (21 minutes) by default, for the rehearsal, two
+solver builds and the final writes. If that turns out too short, stepping stops early
+enough before the allocation ends to save the result (`truncated` in the CSV): the job's
+end time comes from Slurm. Billing is for the time used either way, but shorter requests
+are easier for the scheduler to backfill.
+
+**Why 15 minutes.** Production memory logs of 24 h jobs show that after 15 minutes a job
+has reached 80 ± 2.5% of its peak memory, so the peak can be projected from a short run
+(§5.2). The earlier 4 minute benchmark built the outputs only at the end and under-read
+production memory about 4× (§6.1). Ten minutes of timed steps also average over many
+output writes.
 
 **Why a fixed dt.** Every change of dt makes Dedalus refactorise every LU matrix, so CFL
 adaptation would add noise that depends on the flow rather than on the configuration.
@@ -61,7 +80,7 @@ the state. The same holds for Ra and Pr, so a benchmark at a given resolution ap
 every run at that resolution.
 
 **What it does not measure:**
-- **Memory growth over hours.** This is an allowance, `MEM_GROWTH` (§6.1).
+- **Memory growth over hours** directly: it is projected from 15 minutes (§5.2).
 - **The timestep.** dt depends on the flow, so dt-dependent comparisons use dt ∝ 1/RES_Z
   (§4.2). Wall-time projections use the mean timestep of an earlier run at the same Ra and
   Pr, scaled the same way.
@@ -201,6 +220,18 @@ For a floor of 256, every higher candidate is predicted at least 35% dearer (e.g
 288), so only 256 is run, in both orientations. For a floor of 192, 216 is predicted 78%
 dearer. Going up in resolution almost never pays, because the cost grows as `N⁴`.
 
+**Horizontal and vertical resolution separately.** Sometimes the vertical boundary layers
+limit the resolution, not the bulk. A resolution is therefore a pair: `RES_HOR` modes in x
+and in y, and `RES_Z` Chebyshev modes. By default `RES_HOR` follows `RES_Z` at the ratio in
+`params.conf`. Setting `RES_HOR_FLOOR` in `bench.conf` lets the two vary independently;
+`RES_HOR_ABOVE=0` keeps the horizontal fixed and refines only in z. With independent axes:
+- the work per step is `RES_HOR² RES_Z log(RES_HOR² RES_Z)`;
+- steps per unit time scale as `max(RES_HOR/Lx, RES_Z)`, the finer of the horizontal
+  spacing and the mean vertical spacing;
+- a pair is classified by the worse tier of its two axes.
+
+With `RES_HOR = Lx × RES_Z`, all of these reduce to the formulas above.
+
 ### 4.4 The decision
 
 The cost per unit of simulated time is `node-seconds per step / dt`, and `dt ∝ 1/RES_Z`,
@@ -246,18 +277,49 @@ nodes among them is chosen. The decision file also reports the marginal efficien
 `(T_prev/T − 1)/(N/N_prev − 1)`, the share of ideal speed-up delivered by the last nodes
 added. Minimising J with k = 1 keeps it above about 0.45.
 
+**Faster-than-ideal jumps.** If a step up in node count is faster than ideal by more than
+the noise, the decision file warns. The code cannot scale better than ideal (cache effects
+give a few percent), so the smaller counts were slowed by something that went away: memory
+pressure (a nearly full node without swap evicts program code and reads it again from the
+file system) or the network (MPI falling back to TCP). The warning lists the measured memory
+on both sides of the jump. Times at the slow counts should not be trusted until it is
+explained.
+
 ### 5.2 Range swept
 
 **Memory model.** Memory per node is a fixed part (libraries, MPI, Python; about 90 GiB at
 192 ranks per node, measured on a 96³-sized problem where the data is negligible) plus a
 part that scales with resolution and is spread over the nodes:
 
-    peak per node ≈ M_fixed + V × (1 + g × job hours) / nodes
+    peak per node ≈ M_fixed + V / nodes
 
-`V` comes from stage 1's measurement with production outputs:
-`V = peak per node × nodes − M_fixed × nodes`. `g` is the growth allowance (§6.1). The
-minimum node count is the smallest that keeps this below `747 GiB × 0.85`. 747 GiB is the
-`sacct` MaxRSS at which a run was killed for running out of memory, and 0.85 is headroom.
+`V` comes from stage 1's measurement: with `m` the memory per node at the end of the 15
+minute benchmark on `n` nodes and `f = 0.80` the share of a 24 h job's peak reached after 15
+minutes (`BENCH_MEM_FRACTION`),
+
+    V = n × (m / f − M_fixed)
+
+so on the benchmarked count the projected peak is `m / f`. The ±2.5% spread of `f` is ±3% on
+the projection, inside the 15% headroom. The minimum node count is the smallest that keeps
+the projected peak below `747 GiB × 0.85`. 747 GiB is the `sacct` MaxRSS at which a run on
+Trillium was killed for running out of memory (another cluster needs its own value), and
+0.85 is headroom. Results of the earlier short benchmark are still read, with `MEM_FACTOR`
+and the growth allowance `MEM_GROWTH` instead of `f`; the decision files warn when the two
+kinds are mixed, because their step times are not comparable.
+
+**History.** Every 15 minute result is added to a history file
+(`~/rbc_bench_history.csv`) with its cluster, cpus-per-task and snapshot setting; the
+stage 2 choice is marked. A later benchmark on the same cluster uses it twice:
+- **stage 1** starts each candidate resolution at the node count its memory needs, with
+  `V` scaled from the nearest resolution measured before by the ratio of
+  `(RES_HOR/2)² RES_Z` (field and transform buffers scale with the grid; the fixed part
+  per node is not scaled). For 288 → 384 this is (384/288)³ = 2.37;
+- **stage 2** also sweeps the count chosen at the nearest resolution, scaled by the same
+  ratio (work per step scales with the grid size, up to a logarithm), extending the range
+  if needed.
+
+Only results with the same cpus-per-task are used: C = 2 used about twice the memory of
+C = 1.
 
 **Range.** From that minimum up to 2× it, keeping node counts whose best mesh has balance
 of at least `min(0.93, best in range − 0.03)`, at most 6 of them, always including both
@@ -267,17 +329,24 @@ ends. A count whose projected end-of-job memory exceeds the budget is never chos
 above 50% down to about 8 pencils per core. At 256 on 6 nodes there are 512² / 1152 ≈ 228
 pencils per core, so this range is far from that limit.
 
-The result is written to `decision_nodes.txt` with a figure of four panels:
-- step time against ideal;
-- speed-up, with the projected end-of-job memory per node;
-- E against the break-even curve, with marginal efficiency;
-- wall time against node-hours.
+The result is written to `decision_nodes.txt` with a figure (`decision_nodes.pdf`, vector,
+and a 200 dpi `.png`) of four panels, each comparing against the choice:
+- (a) step time against nodes, log-log, with perfect scaling and the equal-J curve through
+  the choice (a point below that curve would have lower J);
+- (b) projected memory per node at the end of a production job: fixed part, fields at the
+  start and growth, with the measured benchmark value, the budget and the node's memory;
+- (c) J relative to its minimum, with the noise band of a tie, each count's change in
+  node-hours and wall time against the choice, and the marginal efficiency of each step;
+- (d) node-hours against wall time, each relative to the best feasible count: the
+  time-to-solution/cost Pareto plot common in HPC scaling studies, with curves of equal J
+  (with k = 1, J is cost × delay, the same form as the energy-delay product used in
+  computer architecture).
 
 ## 6. Limitations and open questions
 
 ### 6.1 Memory
 
-Two observations led to measuring memory with the outputs built.
+Three observations led to the 15 minute benchmark with outputs built from the start.
 
 - **The compute-only benchmark under-read production by about 3×.** At 256 on 5 nodes it
   peaked at about 1,200 GiB in total. Production at the same configuration already used
@@ -285,17 +354,26 @@ Two observations led to measuring memory with the outputs built.
 - **Two production runs at the same resolution and node count (288, 8 nodes) peaked at 635
   and about 300 GB per node.** Output settings are the first suspect.
 
-**Growth.** That production run grew from about 3,280 GiB at 10 minutes to about 3,540 GiB
-at 3.6 hours, roughly 2.3% per hour. A run at 288 on 8 nodes grew much less over 12 hours.
-`MEM_GROWTH = 1.5%/h` is a compromise. It is the least certain input, and per-node memory
-logs from production runs would calibrate it.
+- **Growth.** That production run grew from about 3,280 GiB at 10 minutes to about
+  3,540 GiB at 3.6 hours, roughly 2.3% per hour; a run at 288 on 8 nodes grew much less
+  over 12 hours. A fixed growth rate (`MEM_GROWTH`) could not fit both. The per-node
+  memory logs of production runs (`rbc/memguard.py`) then showed that 15 minutes in, a
+  24 h job is at 80 ± 2.5% of its peak, which replaces the growth rate.
+
+The 0.80 comes from production jobs that start from a checkpoint and adapt dt; the
+benchmark starts from rest at a fixed dt. Its 15 minutes also start after the solver build,
+a little later in the job than a production run's, which errs towards a higher reading.
+Comparing a production run's first 15 minutes against its benchmark (`bench_mem.csv`)
+would check the transfer.
 
 **Measurement.** Summing `ru_maxrss` over a node's ranks counts shared pages once per rank:
 for one run it gave 240 GiB against 207 GiB from `sacct`. `MemTotal − MemAvailable`
 includes the operating system. The tool takes the larger of the two.
 
-**Guard in production runs.** Nodes without swap don't slow down as memory fills; they run
-at full speed until the out-of-memory killer ends the job. So production runs now check the
+**Guard in production runs.** Nodes without swap give no gradual warning as memory fills:
+they run at full speed until close to the limit, then slow sharply (the kernel evicts
+program code and libraries and reads them back) and the out-of-memory killer ends the job.
+So production runs now check the
 memory directly (`rbc/memguard.py`). About every 5 minutes of wall time (at iterations all ranks agree on), each node reads
 `MemTotal − MemAvailable`, and all ranks take the maximum over nodes; the fullest node
 decides.

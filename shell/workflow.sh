@@ -80,6 +80,7 @@ determine_ic() {
 
 # Lustre clusters (Rorqual, Fir): Slurm launch.
 srun_sim() {
+    check_ranks
     rb_args
     set_deadline
     srun -n "$N" -c "$C" --cpu-bind=cores python3 "$SIM_SCRIPT" "${RB_ARGS[@]}"
@@ -89,6 +90,7 @@ srun_sim() {
 # rbc.vast (applied by the sim script), so fixed_get_file.py is no longer needed;
 # set FIXED_GET_FILE=path to wrap with it anyway.
 trill_run_sim() {
+    check_ranks
     rb_args
     set_deadline
     mpirun -n "$N" --bind-to core --map-by "ppr:${RANKS_PER_L3CACHE}:l3cache:pe=${OMP_NUM_THREADS}" \
@@ -150,6 +152,16 @@ trill_verify_load() {
     mpirun -n "$N" --bind-to core --map-by "ppr:${RANKS_PER_L3CACHE}:l3cache:pe=${OMP_NUM_THREADS}" \
         -x HDF5_USE_FILE_LOCKING -x OMP_NUM_THREADS \
         python3 "$SIM_SCRIPT" "${RB_ARGS[@]}" --verify_load
+}
+
+check_ranks() {
+    local per=${SLURM_NTASKS_PER_NODE%%(*}
+    local slots=${SLURM_NTASKS:-$(( SLURM_JOB_NUM_NODES * per ))}
+    if (( MESHX * MESHY != slots )); then
+        echo "MESHX*MESHY = $(( MESHX * MESHY )) ranks but the job has $slots slots" \
+             "($SLURM_JOB_NUM_NODES nodes); check params.conf and #SBATCH --nodes. Not starting."
+        exit 1
+    fi
 }
 
 # Post-processing runs as its own 1-node job after the sim job ends (any exit state).

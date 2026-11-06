@@ -47,14 +47,18 @@ logger = logging.getLogger(__name__)
 JOB_FIELDS = ("finished", "job_id", "cluster", "nodes", "ranks", "cpus_per_rank", "mesh",
               "nx", "ny", "nz", "t_start", "t_end", "iter_start", "iter_end",
               "wall_s", "setup_s", "loop_s", "core_hours", "stop_reason")
-BENCH_FIELDS = ("finished", "job_id", "nodes", "ranks", "cpus_per_rank", "mesh", "nx", "ny", "nz",
+BENCH_FIELDS = ("finished", "job_id", "cluster", "nodes", "ranks", "cpus_per_rank", "mesh", "nx", "ny", "nz",
                 "build_s", "warmup", "iters", "s_per_iter", "dof_cycles_per_cpu_s",
                 "node_rss_max_gib", "node_rss_min_gib", "rank_rss_max_gib", "finite",
                 "s_per_iter_spread", "tasks_per_node", "blocks", "io_steps",
-                "node_rss_io_max_gib", "node_rss_io_min_gib", "node_used_io_max_gib")
-BENCH_WARMUP = 20
-BENCH_BLOCK = 25
-BENCH_MIN_BLOCKS = 4
+                "node_rss_io_max_gib", "node_rss_io_min_gib", "node_used_io_max_gib",
+                "outputs", "snapshots", "discard_s", "stepping_s", "measured_s", "discard_iters",
+                "node_used_discard_max_gib", "node_used_end_max_gib", "node_used_end_min_gib",
+                "node_used_end_frac", "mem_stop", "truncated")
+BENCH_MEM_FIELDS = ("t_s", "iteration", "node_used_max_gib", "node_used_min_gib", "node_used_max_frac", "host_max")
+BENCH_BLOCK_S = 20.0     # target length of one timed block, seconds
+BENCH_SEGMENTS = 4       # the measured window is split into this many segments for the noise estimate
+BENCH_MEM_STOP = 0.95    # stop the benchmark (and record it) if a node passes this fraction of its memory
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -111,11 +115,18 @@ def get_parser() -> argparse.ArgumentParser:
     g.add_argument("--verify_load", action="store_true",
                    help="compare the fast and Dedalus restart loaders, then exit")
     g.add_argument("--bench", type=int, default=0, metavar="MAX_ITERS",
-                   help="benchmark: time at most MAX_ITERS steps at fixed --dt from a random start, then exit")
-    g.add_argument("--bench_seconds", type=float, default=240.0,
-                   help="benchmark: keep timing until this many seconds of stepping (or MAX_ITERS)")
-    g.add_argument("--bench_io", type=int, default=0, metavar="STEPS",
-                   help="benchmark: then build the production outputs and take STEPS steps to measure memory")
+                   help="benchmark: step at fixed --dt from a random start (at most MAX_ITERS steps), then exit")
+    g.add_argument("--bench_seconds", type=float, default=900.0,
+                   help="benchmark: seconds of stepping, counted from the first step")
+    g.add_argument("--bench_discard", type=float, default=300.0,
+                   help="benchmark: seconds at the start left out of the timing (start-up, first writes)")
+    g.add_argument("--bench_outputs", action="store_true",
+                   help="benchmark: build the production outputs before the first step, as a production run does")
+    g.add_argument("--bench_deadline", type=float, default=0.0, metavar="EPOCH_S",
+                   help="benchmark: end of the Slurm allocation (Unix time); stepping stops early enough "
+                        "to write the results before it")
+    g.add_argument("--bench_reserve", type=float, default=150.0,
+                   help="benchmark: seconds kept before --bench_deadline for the final writes")
     g.add_argument("--bench_rehearsal", type=int, default=0, metavar="STEPS",
                    help="build everything, take STEPS steps and exit without recording (warms the nodes)")
     g.add_argument("--bench_csv", type=Path, help="benchmark results file (default: BASEPATH/bench.csv)")
@@ -155,33 +166,80 @@ def node_used_gib() -> float:
     float
         GiB, or NaN if ``/proc/meminfo`` cannot be read.
     """
-    try:
-        info = dict(line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines())
-        kib = lambda k: float(info[k].split()[0])
-        return (kib("MemTotal") - kib("MemAvailable")) / 2**20
-    except (OSError, KeyError, ValueError):
-        return float("nan")
+    from rbc.memguard import used_fraction
+
+    frac, gib = used_fraction()
+    return gib if frac else float("nan")
 
 
-def run_bench(solver, comm, dt, build_s, info, path, seconds=240.0, max_iters=100000,
-              rehearsal=0, add_outputs=None, io_steps=0, tick=None) -> None:
-    """Time steps at a fixed timestep, then measure memory with the production outputs.
+def append_csv(path: Path, fields, rows) -> None:
+    """Append rows to a CSV file, rewriting it first if its header is not ``fields``.
+
+    A results file written by an older version of this script keeps its rows: they are
+    read and written back under the current header (new columns left blank), so the
+    columns of old and new rows never shift against each other.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        CSV file (created if absent).
+    fields : sequence of str
+        Column names.
+    rows : list of dict
+        Rows to append.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = []
+    if path.exists():
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            if list(reader.fieldnames or []) != list(fields):
+                old = list(reader)
+            else:
+                reader = None
+        if reader is None:
+            with open(path, "a", newline="") as f:
+                csv.DictWriter(f, fieldnames=fields, extrasaction="ignore").writerows(rows)
+            return
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(old + list(rows))
+
+
+def run_bench(solver, comm, dt, build_s, info, path, seconds=900.0, discard=300.0, max_iters=10**7,
+              rehearsal=0, add_outputs=None, deadline=0.0, reserve=150.0, tick=None) -> None:
+    """Run like a short production job and record its speed and memory.
 
     Phases, all at the fixed ``dt``:
 
     1. Rehearsal (``rehearsal > 0``): take that many steps and return without
        recording. Run as its own launch before the real one, it warms the nodes
        (libraries, file-system caches) so the first measured job is not penalised.
-    2. Warm-up: :data:`BENCH_WARMUP` untimed steps (first LU factorisation, FFTW plans).
-    3. Timing: blocks of :data:`BENCH_BLOCK` steps, each between two barriers so that
-       its time is the slowest rank's, until ``seconds`` have been timed (at least
-       :data:`BENCH_MIN_BLOCKS` blocks, at most ``max_iters`` steps). The spread of the
-       block means, (max - min) / mean, estimates the noise.
-    4. Memory with outputs (``add_outputs`` given): build the production file handlers,
-       spectra and flow statistics, take ``io_steps`` steps (the handlers write on the
-       first) and force one more write of every handler. Peak memory is then measured
-       two ways: each process's maximum resident set size summed per node (like sacct
-       MaxRSS), and MemTotal - MemAvailable on each node.
+    2. Outputs (``add_outputs`` given): the production file handlers, spectra and flow
+       statistics are built before the first step, so memory and step time include
+       them, as in production.
+    3. Stepping for ``seconds`` of wall time from the first step, in blocks of about
+       :data:`BENCH_BLOCK_S` seconds, each between two barriers (so its time is the
+       slowest rank's). Every rank stops on the same step: rank 0 decides after each
+       block and broadcasts the decision. The first ``discard`` seconds (first LU
+       factorisations, FFTW plans, first handler writes) are left out of the timing;
+       ``s_per_iter`` is the total time of the remaining blocks over their steps, so
+       it includes the output writes that fall in them. The noise estimate is the
+       spread of the means of :data:`BENCH_SEGMENTS` equal parts of that window,
+       (max - min) / mean.
+    4. Memory: after every block, the first rank of each node reads ``MemTotal -
+       MemAvailable``; the maximum over nodes is written to ``bench_mem.csv`` next to
+       ``path``. Stepping stops early if a node passes :data:`BENCH_MEM_STOP` of its
+       memory (``mem_stop`` = 1), which marks the configuration as too small instead of
+       letting the out-of-memory killer lose the job.
+    5. End: every handler is written once more (as a production job's final
+       checkpoint), then peak memory is measured two ways: each process's maximum
+       resident set size summed per node (like sacct MaxRSS), and ``MemTotal -
+       MemAvailable`` per node.
+
+    Stepping also stops ``reserve`` seconds before ``deadline`` (``truncated`` = 1), so
+    the results are written even if the Slurm time limit is tight.
 
     Parameters
     ----------
@@ -196,17 +254,21 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=240.0, max_iters=10
     info : dict
         Configuration columns of :data:`BENCH_FIELDS` (nodes, ranks, mesh, sizes, ...).
     path : pathlib.Path
-        CSV file, appended to (rank 0 only).
+        Results CSV, appended to (rank 0 only).
     seconds : float, optional
-        Stepping time to measure.
+        Wall time of stepping, from the first step.
+    discard : float, optional
+        Leading seconds left out of the timing.
     max_iters : int, optional
-        Upper limit on timed steps.
+        Upper limit on steps.
     rehearsal : int, optional
         Steps of a rehearsal-only run.
     add_outputs : callable, optional
         Creates the production outputs and returns ``(spectra, flow)``.
-    io_steps : int, optional
-        Steps taken with the outputs.
+    deadline : float, optional
+        End of the allocation, Unix time (0: none).
+    reserve : float, optional
+        Seconds kept before ``deadline``.
     tick : callable, optional
         Called every 10 steps (re-arms the watchdog).
     """
@@ -215,14 +277,30 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=240.0, max_iters=10
     import numpy as np
     from mpi4py import MPI
 
+    from rbc.memguard import used_fraction
+
+    node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    leader = node.rank == 0
+    node.Free()
+    spectra = None
+
     def steps(n):
-        for i in range(n):
+        for _ in range(n):
             solver.step(dt)
-            if tick is not None and i % 10 == 0:
+            if spectra is not None:
+                spectra.maybe_write(solver)
+            if tick is not None and solver.iteration % 10 == 0:
                 tick()
 
     def peak_rss():
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20      # KiB -> GiB on Linux
+
+    def node_used():
+        """(max GiB, min GiB, max fraction, host of the max) over nodes, on every rank."""
+        frac, gib = used_fraction() if leader else (0.0, 0.0)
+        big = comm.allreduce((gib, frac, socket.gethostname()) if leader else (-1.0, 0.0, ""), op=MPI.MAX)
+        small = comm.allreduce(gib if leader else float("inf"), op=MPI.MIN)
+        return big[0], small, big[1], big[2]
 
     if rehearsal:
         t0 = time.time()
@@ -232,70 +310,84 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=240.0, max_iters=10
             logger.info(f"rehearsal: {rehearsal} steps in {time.time() - t0:.1f} s; nothing recorded")
         return
 
-    steps(BENCH_WARMUP)
-    block_means, done = [], 0
+    if add_outputs is not None:
+        spectra, _ = add_outputs()
+    stop_at = seconds
+    if deadline:
+        stop_at = min(stop_at, max(deadline - reserve - time.time(), 0.0))
+    if comm.rank == 0:
+        logger.info(f"bench: stepping for {stop_at:.0f} s (first {discard:.0f} s not timed)"
+                    + (f"; shortened from {seconds:.0f} s by the Slurm time limit" if stop_at < seconds else ""))
+
+    blocks, trace = [], []          # (start s, end s, steps); (t, iteration, used max, used min, frac, host)
+    n, mem_stop = 1, False
+    comm.Barrier()
+    t_first = time.time()
     while True:
-        n = min(BENCH_BLOCK, max_iters - done)
-        comm.Barrier()
-        t0 = time.time()
+        n = min(n, max_iters - sum(b[2] for b in blocks))
+        t0 = time.time() - t_first
         steps(n)
         comm.Barrier()
-        block_means.append((time.time() - t0) / n)
-        done += n
-        timed = sum(m * BENCH_BLOCK for m in block_means)
-        more = done < max_iters and (len(block_means) < BENCH_MIN_BLOCKS or timed < seconds)
+        t1 = time.time() - t_first
+        blocks.append((t0, t1, n))
+        used_max, used_min, frac, host = node_used()
+        trace.append((t1, solver.iteration, used_max, used_min, frac, host))
+        mem_stop = frac > BENCH_MEM_STOP
+        n = int(min(max(round(BENCH_BLOCK_S * n / max(t1 - t0, 1e-9)), 1), 200))
+        more = t1 < stop_at and sum(b[2] for b in blocks) < max_iters and not mem_stop
         if not comm.bcast(more, root=0):
             break
-    loop = sum(m * BENCH_BLOCK for m in block_means[:-1]) + block_means[-1] * (done - BENCH_BLOCK * (len(block_means) - 1))
-    s_iter = loop / done
-    spread = (max(block_means) - min(block_means)) / s_iter
+    stepping = blocks[-1][1]
+    timed = [b for b in blocks if b[0] >= discard] or blocks[len(blocks) // 2:]
+    measured = sum(b[1] - b[0] for b in timed)
+    iters = sum(b[2] for b in timed)
+    s_iter = measured / iters
+    edges = np.linspace(timed[0][0], timed[-1][1], BENCH_SEGMENTS + 1)
+    seg = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        part = [blk for blk in timed if a <= (blk[0] + blk[1]) / 2 < b]
+        if part:
+            seg.append(sum(blk[1] - blk[0] for blk in part) / sum(blk[2] for blk in part))
+    spread = (max(seg) - min(seg)) / s_iter if len(seg) > 1 else float("nan")
+    at_discard = next((t for t in trace if t[0] >= discard), trace[-1])
 
     finite = comm.allreduce(all(np.isfinite(f.data).all() for f in solver.state), op=MPI.LAND)
+    if add_outputs is not None and finite and not mem_stop:
+        solver.evaluate_handlers(dt=dt)          # every output once more, as a job's final checkpoint
+    comm.Barrier()
     rss = peak_rss()
     nodes = node_memory(comm, rss)
     rank_max = comm.reduce(rss, op=MPI.MAX, root=0)
-
-    io = {}
-    if add_outputs is not None and io_steps > 0:
-        spectra, _ = add_outputs()
-        for i in range(io_steps):
-            solver.step(dt)
-            if spectra is not None:
-                spectra.maybe_write(solver)
-            if tick is not None and i % 10 == 0:
-                tick()
-        solver.evaluate_handlers(dt=dt)
-        comm.Barrier()
-        rss_io = node_memory(comm, peak_rss())
-        node = comm.Split_type(MPI.COMM_TYPE_SHARED)
-        used = node_used_gib() if node.rank == 0 else float("-inf")
-        node.Free()
-        used = comm.reduce(used, op=MPI.MAX, root=0)
-        if comm.rank == 0:
-            io = dict(io_steps=io_steps, node_rss_io_max_gib=f"{max(rss_io):.1f}",
-                      node_rss_io_min_gib=f"{min(rss_io):.1f}", node_used_io_max_gib=f"{used:.1f}")
+    used_max, used_min, frac, host = node_used()
+    trace.append((time.time() - t_first, solver.iteration, used_max, used_min, frac, host))
 
     if comm.rank == 0:
         dof = info["nx"] * info["ny"] * info["nz"]
+        end = dict(node_rss_io_max_gib=f"{max(nodes):.1f}", node_rss_io_min_gib=f"{min(nodes):.1f}",
+                   node_used_io_max_gib=f"{used_max:.1f}") if add_outputs is not None else {}
         row = dict(info, finished=datetime.now().isoformat(timespec="seconds"),
-                   job_id=os.environ.get("SLURM_JOB_ID", ""), build_s=f"{build_s:.1f}",
-                   warmup=BENCH_WARMUP, iters=done, blocks=len(block_means), s_per_iter=f"{s_iter:.5f}",
+                   job_id=os.environ.get("SLURM_JOB_ID", ""), cluster=os.environ.get("CC_CLUSTER", ""),
+                   build_s=f"{build_s:.1f}", warmup=sum(b[2] for b in blocks) - iters, iters=iters,
+                   blocks=len(timed), s_per_iter=f"{s_iter:.5f}",
                    dof_cycles_per_cpu_s=f"{dof / (comm.size * info['cpus_per_rank'] * s_iter):.4g}",
                    node_rss_max_gib=f"{max(nodes):.1f}", node_rss_min_gib=f"{min(nodes):.1f}",
-                   rank_rss_max_gib=f"{rank_max:.2f}", finite=finite,
-                   s_per_iter_spread=f"{spread:.4f}",
-                   tasks_per_node=os.environ.get("SLURM_NTASKS_PER_NODE", ""), **io)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        new = not path.exists()
-        with open(path, "a", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=BENCH_FIELDS, extrasaction="ignore")
-            if new:
-                w.writeheader()
-            w.writerow(row)
-        logger.info(f"bench {info['mesh']} on {info['nodes']} nodes: {s_iter:.4f} s/iter over {done} steps "
-                    f"(spread {spread:.1%}), node peak {min(nodes):.1f}-{max(nodes):.1f} GiB"
-                    + (f", with outputs {io['node_rss_io_min_gib']}-{io['node_rss_io_max_gib']} GiB "
-                       f"(node used {io['node_used_io_max_gib']} GiB)" if io else "") + f", finite={finite}")
+                   rank_rss_max_gib=f"{rank_max:.2f}", finite=finite, s_per_iter_spread=f"{spread:.4f}",
+                   tasks_per_node=os.environ.get("SLURM_NTASKS_PER_NODE", ""), io_steps="",
+                   outputs=int(add_outputs is not None), discard_s=f"{discard:.0f}", stepping_s=f"{stepping:.1f}",
+                   measured_s=f"{measured:.1f}", discard_iters=sum(b[2] for b in blocks) - iters,
+                   node_used_discard_max_gib=f"{at_discard[2]:.1f}", node_used_end_max_gib=f"{used_max:.1f}",
+                   node_used_end_min_gib=f"{used_min:.1f}", node_used_end_frac=f"{frac:.3f}",
+                   mem_stop=int(mem_stop), truncated=int(stop_at < seconds and not mem_stop), **end)
+        append_csv(path, BENCH_FIELDS, [row])
+        append_csv(path.with_name("bench_mem.csv"), BENCH_MEM_FIELDS,
+                   [dict(t_s=f"{t:.1f}", iteration=it, node_used_max_gib=f"{a:.1f}", node_used_min_gib=f"{b:.1f}",
+                         node_used_max_frac=f"{fr:.3f}", host_max=h) for t, it, a, b, fr, h in trace])
+        logger.info(f"bench {info['mesh']} on {info['nodes']} nodes: {s_iter:.4f} s/iter over {iters} steps "
+                    f"in {measured:.0f} s (spread {spread:.1%}); node memory at the end {used_min:.0f}-"
+                    f"{used_max:.0f} GiB ({frac:.0%} of the fullest, {host}); summed RSS up to {max(nodes):.0f} GiB"
+                    + ("; STOPPED: a node passed the memory limit" if mem_stop else "")
+                    + (f"; shortened to {stepping:.0f} s by the time limit" if stop_at < seconds else "")
+                    + f", finite={finite}")
 
 
 def log_job(path: Path, row: dict) -> None:
@@ -509,9 +601,11 @@ def main(argv=None) -> None:
         node.Free()
         info = dict(nodes=used_nodes, ranks=comm.size, cpus_per_rank=int(os.environ.get("OMP_NUM_THREADS") or 1),
                     mesh=f"{mesh[0]}x{mesh[1]}", nx=nx, ny=ny, nz=nz)
+        info["snapshots"] = int(args.snapshots)
         run_bench(solver, comm, step_dt, build_s, info, args.bench_csv or basepath / "bench.csv",
-                  seconds=args.bench_seconds, max_iters=args.bench, rehearsal=args.bench_rehearsal,
-                  add_outputs=add_outputs if args.bench_io else None, io_steps=args.bench_io, tick=watchdog)
+                  seconds=args.bench_seconds, discard=args.bench_discard, max_iters=args.bench or 10**7,
+                  rehearsal=args.bench_rehearsal, add_outputs=add_outputs if args.bench_outputs else None,
+                  deadline=args.bench_deadline, reserve=args.bench_reserve, tick=watchdog)
         if wd_file is not None:
             faulthandler.cancel_dump_traceback_later()
             wd_file.close()

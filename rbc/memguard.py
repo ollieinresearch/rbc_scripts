@@ -1,7 +1,9 @@
 """Stop a run cleanly before any node runs out of memory.
 
-Linux nodes without swap do not slow down as memory fills; the job runs at full speed
-until the out-of-memory killer ends it, losing everything since the last checkpoint.
+Linux nodes without swap give no gradual warning as memory fills: the job runs at full
+speed until close to the limit, then slows sharply (the kernel evicts program code and
+libraries and reads them back from the file system) and the out-of-memory killer ends it,
+losing everything since the last checkpoint.
 So the guard watches the memory directly. About every ``interval`` seconds of wall time
 the first rank of each node reads ``MemTotal - MemAvailable`` (what the killer sees)
 and all ranks take the maximum over nodes with one Allreduce: the fullest node decides,
