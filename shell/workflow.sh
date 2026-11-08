@@ -263,18 +263,35 @@ _backup_states() {
     [[ $ok -eq 1 ]]
 }
 
+# True if a file can be created in directory $1 (made if missing). Tests by writing,
+# since a read-only mount can still pass [[ -w ]] over NFS.
+_writable_dir() {
+    local probe
+    mkdir -p "$1" 2>/dev/null || return 1
+    probe=$(mktemp -p "$1" .rbc_write_test.XXXXXX 2>/dev/null) || return 1
+    rm -f "$probe"
+}
+
 # results.csv (and results.parquet) -> data/ in the repo, then a copy next to the run
-# tree in each backup. Both are git-ignored until the paper is out.
+# tree in each backup. Both are git-ignored until the paper is out. Backups that cannot
+# be written from here (home and project on Trillium compute nodes) are skipped, not
+# counted as failures; a failed copy into a writable backup is.
 collect_results() {
-    local src=${DATA_ROOT:-$SCRATCH/ollie_rb_data/3d} dst f
+    local src=${DATA_ROOT:-$SCRATCH/ollie_rb_data/3d} dst f ok=0
     python3 -m rbc.collect "$src" --no-plots --jobs "${SLURM_CPUS_PER_TASK:-8}" || return 1
     for dst in ${BACKUP_DIRS:-$HOME}; do
         dst="$dst/${src#"$SCRATCH"/}"
-        mkdir -p "$dst"
+        if ! _writable_dir "$dst"; then
+            echo "collect_results: $dst is not writable from $(hostname -s); results not copied there"
+            continue
+        fi
         for f in "$SCRIPTS_PATH"/data/results.csv "$SCRIPTS_PATH"/data/results.parquet; do
-            [[ -f $f ]] && cp -p "$f" "$dst/"
+            if [[ -f $f ]]; then
+                cp -p "$f" "$dst/" || ok=1
+            fi
         done
     done
+    return $ok
 }
 
 # Quota summary at the top of every job log: a job that fills its quota dies mid-write

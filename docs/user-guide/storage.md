@@ -34,7 +34,10 @@ Then:
    deleted from scratch.
 
 `collect_results` also copies `data/results.csv` (and `results.parquet`) into each backup,
-next to the run tree (e.g. `$HOME/ollie_rb_data/3d/results.csv`).
+next to the run tree (e.g. `$HOME/ollie_rb_data/3d/results.csv`). A backup that cannot be
+written from the node it runs on is skipped with a message rather than failing the job.
+On Trillium, home and project are read-only on compute nodes, so a post-processing job
+there copies nothing; the copy has to be made from a login node.
 
 Copies use `rsync`, so only new or changed files move; the first backup of a large tree
 takes a while, later ones are quick.
