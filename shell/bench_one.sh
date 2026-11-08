@@ -7,7 +7,7 @@
 # 1. Rehearsal launch: build everything and take BENCH_REHEARSAL steps (warms the nodes).
 # 2. Measured launch, a short production job: the production outputs (params.conf:
 #    SNAPSHOTS, A_FREQ, ...) are built before the first step, then BENCH_SECONDS of
-#    stepping (default 900). The first BENCH_DISCARD seconds (default 300) are not timed.
+#    stepping (default 600). The first BENCH_DISCARD seconds (default 60) are not timed.
 #    Memory is read on every node throughout (bench_mem.csv) and at the end, after a
 #    final write of every output. No mpirun timeout: stepping ends on its own, and ends
 #    early enough to write the results if the Slurm time limit would otherwise cut it off.
@@ -60,8 +60,8 @@ if (( ${BENCH_REHEARSAL:-10} > 0 )); then
     launch --bench_rehearsal "${BENCH_REHEARSAL:-10}" || echo "rehearsal exited with $?"
 fi
 echo "=== $(date +%T) measured run"
-launch --bench "${BENCH_MAX_ITERS:-10000000}" --bench_seconds "${BENCH_SECONDS:-900}" \
-    --bench_discard "${BENCH_DISCARD:-300}" --bench_outputs --bench_deadline "$deadline" \
+launch --bench "${BENCH_MAX_ITERS:-10000000}" --bench_seconds "${BENCH_SECONDS:-600}" \
+    --bench_discard "${BENCH_DISCARD:-60}" --bench_outputs --bench_deadline "$deadline" \
     --bench_csv "$run/bench.csv"
 rc=$?
 echo "=== outputs written by the measured run (deleted next):"

@@ -39,16 +39,15 @@ perturbation, with no restart, the script:
    analysis, horizontal averages, in-run spectra, flow statistics) before the first step,
    as a production run does, so step times include the output writes and memory includes
    the output buffers;
-2. steps at a **fixed** dt for 15 minutes (`BENCH_SECONDS`), in blocks of about 20 s, each
+2. steps at a **fixed** dt for 10 minutes (`BENCH_SECONDS`), in blocks of about 20 s, each
    between two barriers so its time is the slowest rank's. Rank 0 decides after each
    block whether to continue and broadcasts it, so every rank stops on the same step (the
    same mechanism as Dedalus' own wall-time stop; the script needs the block boundaries
    as well). There is no `mpirun` timeout;
-3. leaves the first 5 minutes (`BENCH_DISCARD`) out of the timing: they hold the first LU
+3. leaves the first minute (`BENCH_DISCARD`) out of the timing: it holds the first LU
    factorisations, FFTW planning and the first write of every handler. The time per step
-   is the total time of the remaining blocks over their steps (500 to 1500 steps at the
-   resolutions in use). The noise estimate is the spread of the means of the four equal
-   parts of that 10 minute window, (max − min) / mean;
+   is the total time of the remaining blocks over their steps. The noise estimate is the
+   spread of the means of the four equal parts of that 9 minute window, (max − min) / mean;
 4. after every block, reads `MemTotal − MemAvailable` on every node and logs the fullest
    (`bench_mem.csv`). If a node passes 95% of its memory, stepping stops and the result is
    recorded as too small (`mem_stop`), instead of the out-of-memory killer losing the job;
@@ -58,17 +57,18 @@ perturbation, with no restart, the script:
    on the fullest node, is used;
 6. appends one row to a CSV file. The job then deletes the output files it wrote.
 
-The job requests `BENCH_SECONDS` + 6 minutes (21 minutes) by default, for the rehearsal, two
-solver builds and the final writes. If that turns out too short, stepping stops early
+The job requests `BENCH_SECONDS` + 5 minutes (15 minutes) by default. The rehearsal takes
+under 1.5 minutes and the measured launch (solver build, 10 minutes of stepping, final
+writes) under 10.5, so a job uses under 12. If that turns out too short, stepping stops early
 enough before the allocation ends to save the result (`truncated` in the CSV): the job's
 end time comes from Slurm. Billing is for the time used either way, but shorter requests
 are easier for the scheduler to backfill.
 
-**Why 15 minutes.** Production memory logs of 24 h jobs show that after 15 minutes a job
-has reached 80 ± 2.5% of its peak memory, so the peak can be projected from a short run
-(§5.2). The earlier 4 minute benchmark built the outputs only at the end and under-read
-production memory about 4× (§6.1). Ten minutes of timed steps also average over many
-output writes.
+**Why 10 minutes.** Production memory logs of 24 h jobs show that after 15 minutes a job
+has reached 80 ± 2.5% of its peak memory, and the 5 minutes from 10 to 15 add only about 2%
+more, so the peak can be projected from a 10 minute run (§5.2). The earlier 4 minute
+benchmark built the outputs only at the end and under-read production memory about 4×
+(§6.1). Nine minutes of timed steps also average over many output writes.
 
 **Why a fixed dt.** Every change of dt makes Dedalus refactorise every LU matrix, so CFL
 adaptation would add noise that depends on the flow rather than on the configuration.
@@ -80,7 +80,7 @@ the state. The same holds for Ra and Pr, so a benchmark at a given resolution ap
 every run at that resolution.
 
 **What it does not measure:**
-- **Memory growth over hours** directly: it is projected from 15 minutes (§5.2).
+- **Memory growth over hours** directly: it is projected from 10 minutes (§5.2).
 - **The timestep.** dt depends on the flow, so dt-dependent comparisons use dt ∝ 1/RES_Z
   (§4.2). Wall-time projections use the mean timestep of an earlier run at the same Ra and
   Pr, scaled the same way.
@@ -293,9 +293,9 @@ part that scales with resolution and is spread over the nodes:
 
     peak per node ≈ M_fixed + V / nodes
 
-`V` comes from stage 1's measurement: with `m` the memory per node at the end of the 15
-minute benchmark on `n` nodes and `f = 0.80` the share of a 24 h job's peak reached after 15
-minutes (`BENCH_MEM_FRACTION`),
+`V` comes from stage 1's measurement: with `m` the memory per node at the end of the 10
+minute benchmark on `n` nodes and `f = 0.80` the share of a 24 h job's peak reached after 10
+to 15 minutes (`BENCH_MEM_FRACTION`),
 
     V = n × (m / f − M_fixed)
 
@@ -307,7 +307,7 @@ Trillium was killed for running out of memory (another cluster needs its own val
 and the growth allowance `MEM_GROWTH` instead of `f`; the decision files warn when the two
 kinds are mixed, because their step times are not comparable.
 
-**History.** Every 15 minute result is added to a history file
+**History.** Every 10 minute result is added to a history file
 (`~/rbc_bench_history.csv`) with its cluster, cpus-per-task and snapshot setting; the
 stage 2 choice is marked. A later benchmark on the same cluster uses it twice:
 - **stage 1** starts each candidate resolution at the node count its memory needs, with
@@ -346,7 +346,7 @@ and a 200 dpi `.png`) of four panels, each comparing against the choice:
 
 ### 6.1 Memory
 
-Three observations led to the 15 minute benchmark with outputs built from the start.
+Three observations led to the 10 minute benchmark with outputs built from the start.
 
 - **The compute-only benchmark under-read production by about 3×.** At 256 on 5 nodes it
   peaked at about 1,200 GiB in total. Production at the same configuration already used
@@ -358,12 +358,13 @@ Three observations led to the 15 minute benchmark with outputs built from the st
   3,540 GiB at 3.6 hours, roughly 2.3% per hour; a run at 288 on 8 nodes grew much less
   over 12 hours. A fixed growth rate (`MEM_GROWTH`) could not fit both. The per-node
   memory logs of production runs (`rbc/memguard.py`) then showed that 15 minutes in, a
-  24 h job is at 80 ± 2.5% of its peak, which replaces the growth rate.
+  24 h job is at 80 ± 2.5% of its peak, and 10 minutes in only about 2% lower, which
+  replaces the growth rate.
 
 The 0.80 comes from production jobs that start from a checkpoint and adapt dt; the
-benchmark starts from rest at a fixed dt. Its 15 minutes also start after the solver build,
+benchmark starts from rest at a fixed dt. Its 10 minutes also start after the solver build,
 a little later in the job than a production run's, which errs towards a higher reading.
-Comparing a production run's first 15 minutes against its benchmark (`bench_mem.csv`)
+Comparing a production run's first 10 minutes against its benchmark (`bench_mem.csv`)
 would check the transfer.
 
 **Measurement.** Summing `ru_maxrss` over a node's ranks counts shared pages once per rank:

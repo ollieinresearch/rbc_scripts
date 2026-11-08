@@ -116,9 +116,9 @@ def get_parser() -> argparse.ArgumentParser:
                    help="compare the fast and Dedalus restart loaders, then exit")
     g.add_argument("--bench", type=int, default=0, metavar="MAX_ITERS",
                    help="benchmark: step at fixed --dt from a random start (at most MAX_ITERS steps), then exit")
-    g.add_argument("--bench_seconds", type=float, default=900.0,
+    g.add_argument("--bench_seconds", type=float, default=600.0,
                    help="benchmark: seconds of stepping, counted from the first step")
-    g.add_argument("--bench_discard", type=float, default=300.0,
+    g.add_argument("--bench_discard", type=float, default=60.0,
                    help="benchmark: seconds at the start left out of the timing (start-up, first writes)")
     g.add_argument("--bench_outputs", action="store_true",
                    help="benchmark: build the production outputs before the first step, as a production run does")
@@ -207,7 +207,7 @@ def append_csv(path: Path, fields, rows) -> None:
         w.writerows(old + list(rows))
 
 
-def run_bench(solver, comm, dt, build_s, info, path, seconds=900.0, discard=300.0, max_iters=10**7,
+def run_bench(solver, comm, dt, build_s, info, path, seconds=600.0, discard=60.0, max_iters=10**7,
               rehearsal=0, add_outputs=None, deadline=0.0, reserve=150.0, tick=None) -> None:
     """Run like a short production job and record its speed and memory.
 

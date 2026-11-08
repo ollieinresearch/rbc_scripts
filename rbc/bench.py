@@ -27,9 +27,9 @@ setting ``RES_HOR_FLOOR`` in bench.conf lets the two vary independently, e.g. to
 refine the boundary layers without refining horizontally.
 
 Each benchmark job is a short production job: the production outputs are built before
-the first step and it steps for 15 minutes (``BENCH_SECONDS``), the first 5
+the first step and it steps for 10 minutes (``BENCH_SECONDS``), the first minute
 (``BENCH_DISCARD``) left out of the timing. The memory at its end, divided by
-``BENCH_MEM_FRACTION`` (0.80: the share of a 24 h job's peak reached after 15
+``BENCH_MEM_FRACTION`` (0.80: the share of a 24 h job's peak reached after 10 to 15
 minutes), is the projected peak of a production job.
 
 Every result with that memory measurement is also added to a history file
@@ -56,8 +56,8 @@ from pathlib import Path
 from rbc.plan import efficiency, meshes, ranks_per_node
 
 NOISE = 0.03
-OVERHEAD_S = 360          # per job besides the stepping: rehearsal, two solver builds, final writes
-SLACK_MIN = 6             # minutes added to BENCH_SECONDS for the wall-time request
+OVERHEAD_S = 120          # per job besides the stepping: rehearsal, two solver builds, final writes
+SLACK_MIN = 5             # minutes added to BENCH_SECONDS for the wall-time request
 HISTORY_FIELDS = ("cluster", "recorded", "job_id", "nz", "nx", "nodes", "c", "mesh", "snapshots",
                   "s_per_iter", "noise", "mem_end_gib", "mem_fraction", "peak_gib", "var_peak_gib",
                   "var_per_cell", "fits", "mem_stop", "chosen", "folder")
@@ -67,7 +67,7 @@ ROYGBIV = ("#d62728", "#ff7f0e", "#e3b505", "#2ca02c", "#1f77b4", "#3f007d", "#9
 
 DEFAULTS = dict(RES_FLOOR=None, RES_ABOVE=0.125, RES_HOR_FLOOR=None, RES_HOR_ABOVE=None,
                 RES_BAND=0.15, RES_MAX=4, ORIENT="larger", SQUARE=1,
-                BENCH_SECONDS=900.0, BENCH_DISCARD=300.0, BENCH_REHEARSAL=10, BENCH_TIME="",
+                BENCH_SECONDS=600.0, BENCH_DISCARD=60.0, BENCH_REHEARSAL=10, BENCH_TIME="",
                 BENCH_MEM_FRACTION=0.80, BENCH_HISTORY="", ACCOUNT="rrg-goluskin", MEM_FIXED=90.0,
                 MEM_PER_CELL=1.69e-4, MEM_GROWTH=0.015, JOB_HOURS=24.0, MEM_USABLE=747.0, MEM_HEADROOM=0.85, NODE_SPAN=2.0, NODE_POINTS=6,
                 NODE_MIN=None, NODE_MAX=None, TIME_WEIGHT=1.0, DT_REF=None, DT_REF_RES=None,
@@ -461,10 +461,10 @@ def fixed_per_node(cfg: dict, c: int = 1) -> float:
 
 
 def growth(cfg: dict) -> float:
-    """Growth of the resolution-dependent memory over a job, for results without a 15 min run.
+    """Growth of the resolution-dependent memory over a job, for results without a 10 min run.
 
     Applies to the ``MEM_PER_CELL`` prior and to results of the earlier, short benchmark;
-    results of the 15 minute benchmark use ``BENCH_MEM_FRACTION`` instead.
+    results of the 10 minute benchmark use ``BENCH_MEM_FRACTION`` instead.
 
     Parameters
     ----------
@@ -537,9 +537,9 @@ def measured_variable(row: dict, cfg: dict) -> tuple[float, float, str]:
     Over all nodes, the resolution-dependent part is that minus the fixed part, times
     the node count. Projected to a production job's peak:
 
-    * 15 minute benchmark (production outputs from the first step): the per-node
+    * 10 minute benchmark (production outputs from the first step): the per-node
       memory divided by ``BENCH_MEM_FRACTION``, the share of a job's peak reached
-      after 15 minutes (0.80 +- 0.025 on 24 h jobs, from production memory logs);
+      after 10 to 15 minutes (about 0.80 on 24 h jobs, from production memory logs);
     * earlier short benchmark (outputs built at the end): times ``MEM_FACTOR``
       (production over that benchmark) and :func:`growth`;
     * no memory measured: :func:`prior_variable`.
@@ -687,9 +687,9 @@ def read_history(cfg: dict) -> list[dict]:
 
 
 def record_history(rows, cfg: dict, folder: Path, chosen=None) -> int:
-    """Add the 15 minute benchmark results to the history; mark the stage 2 choice.
+    """Add the 10 minute benchmark results to the history; mark the stage 2 choice.
 
-    Only results of the 15 minute benchmark are recorded (the short benchmark's memory
+    Only results of the 10 minute benchmark are recorded (the short benchmark's memory
     is not comparable). A result already there (same cluster, job id and
     configuration) is replaced, so re-running a decision does not duplicate it.
 
@@ -1208,8 +1208,8 @@ def decide_resolution(rows, cfg):
             "(fullest node). min nodes = fewest nodes whose projected peak fits:",
             f"  {memory_rule(per_res, cfg)}.", ""]
     if len({r["long"] for r in per_res}) > 1:
-        out += ["WARNING: these results mix the 15 minute benchmark with the earlier short one; their step",
-                "times are not comparable (the 15 minute one includes output writes). Rerun the short ones.", ""]
+        out += ["WARNING: these results mix the 10 minute benchmark with the earlier short one; their step",
+                "times are not comparable (the 10 minute one includes output writes). Rerun the short ones.", ""]
     stopped = [r for r in per_res if r["mem_stop"]]
     if stopped:
         out += ["Stopped early because a node passed 95% of its memory (more nodes needed): "
@@ -1416,8 +1416,8 @@ def decide_nodes(rows, res, cfg: dict):
             "GiB bench = memory per node at the end of the benchmark (fullest node); GiB end = projected peak",
             f"per node of a production job: {memory_rule(pts, cfg)}."]
     if len({p["long"] for p in pts}) > 1:
-        out += ["", "WARNING: these results mix the 15 minute benchmark with the earlier short one; their step",
-                "times are not comparable (the 15 minute one includes output writes). Rerun the short ones."]
+        out += ["", "WARNING: these results mix the 10 minute benchmark with the earlier short one; their step",
+                "times are not comparable (the 10 minute one includes output writes). Rerun the short ones."]
     short = [p for p in pts if p["truncated"]]
     if short:
         out += ["", "Shortened by the Slurm time limit (fewer timed steps; raise BENCH_TIME): "
