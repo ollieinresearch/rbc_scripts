@@ -335,7 +335,8 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=900.0, discard=300.
         mem_stop = frac > BENCH_MEM_STOP
         n = int(min(max(round(BENCH_BLOCK_S * n / max(t1 - t0, 1e-9)), 1), 200))
         more = t1 < stop_at and sum(b[2] for b in blocks) < max_iters and not mem_stop
-        if not comm.bcast(more, root=0):
+        more, n = comm.bcast((more, n), root=0)   # every rank must take the same number of steps
+        if not more:
             break
     stepping = blocks[-1][1]
     timed = [b for b in blocks if b[0] >= discard] or blocks[len(blocks) // 2:]
