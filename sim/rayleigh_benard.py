@@ -54,10 +54,9 @@ BENCH_FIELDS = ("finished", "job_id", "cluster", "nodes", "ranks", "cpus_per_ran
                 "node_rss_io_max_gib", "node_rss_io_min_gib", "node_used_io_max_gib",
                 "outputs", "snapshots", "discard_s", "stepping_s", "measured_s", "discard_iters",
                 "node_used_discard_max_gib", "node_used_end_max_gib", "node_used_end_min_gib",
-                "node_used_end_frac", "mem_stop", "truncated")
+                "node_used_end_frac", "mem_stop", "truncated", "stall_blocks", "stall_s")
 BENCH_MEM_FIELDS = ("t_s", "iteration", "node_used_max_gib", "node_used_min_gib", "node_used_max_frac", "host_max")
 BENCH_BLOCK_S = 20.0     # target length of one timed block, seconds
-BENCH_SEGMENTS = 4       # the measured window is split into this many segments for the noise estimate
 BENCH_MEM_STOP = 0.95    # stop the benchmark (and record it) if a node passes this fraction of its memory
 
 
@@ -224,10 +223,10 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=600.0, discard=60.0
        slowest rank's). Every rank stops on the same step: rank 0 decides after each
        block and broadcasts the decision. The first ``discard`` seconds (first LU
        factorisations, FFTW plans, first handler writes) are left out of the timing;
-       ``s_per_iter`` is the total time of the remaining blocks over their steps, so
-       it includes the output writes that fall in them. The noise estimate is the
-       spread of the means of :data:`BENCH_SEGMENTS` equal parts of that window,
-       (max - min) / mean.
+       of the rest, blocks slower than twice the median block (stalls) are left out
+       too. ``s_per_iter`` is the total time of the remaining blocks over their steps,
+       so it includes the routine output writes that fall in them. See
+       :func:`rbc.bench.block_stats`, which also gives the spread.
     4. Memory: after every block, the first rank of each node reads ``MemTotal -
        MemAvailable``; the maximum over nodes is written to ``bench_mem.csv`` next to
        ``path``. Stepping stops early if a node passes :data:`BENCH_MEM_STOP` of its
@@ -277,6 +276,7 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=600.0, discard=60.0
     import numpy as np
     from mpi4py import MPI
 
+    from rbc.bench import block_stats
     from rbc.memguard import used_fraction
 
     node = comm.Split_type(MPI.COMM_TYPE_SHARED)
@@ -339,17 +339,8 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=600.0, discard=60.0
         if not more:
             break
     stepping = blocks[-1][1]
-    timed = [b for b in blocks if b[0] >= discard] or blocks[len(blocks) // 2:]
-    measured = sum(b[1] - b[0] for b in timed)
-    iters = sum(b[2] for b in timed)
-    s_iter = measured / iters
-    edges = np.linspace(timed[0][0], timed[-1][1], BENCH_SEGMENTS + 1)
-    seg = []
-    for a, b in zip(edges[:-1], edges[1:]):
-        part = [blk for blk in timed if a <= (blk[0] + blk[1]) / 2 < b]
-        if part:
-            seg.append(sum(blk[1] - blk[0] for blk in part) / sum(blk[2] for blk in part))
-    spread = (max(seg) - min(seg)) / s_iter if len(seg) > 1 else float("nan")
+    st = block_stats(blocks, discard)              # leaves out stalls (rbc.bench.block_stats)
+    s_iter, spread, iters, measured = st["s_iter"], st["spread"], st["iters"], st["measured"]
     at_discard = next((t for t in trace if t[0] >= discard), trace[-1])
 
     finite = comm.allreduce(all(np.isfinite(f.data).all() for f in solver.state), op=MPI.LAND)
@@ -368,23 +359,25 @@ def run_bench(solver, comm, dt, build_s, info, path, seconds=600.0, discard=60.0
                    node_used_io_max_gib=f"{used_max:.1f}") if add_outputs is not None else {}
         row = dict(info, finished=datetime.now().isoformat(timespec="seconds"),
                    job_id=os.environ.get("SLURM_JOB_ID", ""), cluster=os.environ.get("CC_CLUSTER", ""),
-                   build_s=f"{build_s:.1f}", warmup=sum(b[2] for b in blocks) - iters, iters=iters,
-                   blocks=len(timed), s_per_iter=f"{s_iter:.5f}",
+                   build_s=f"{build_s:.1f}", warmup=st["discard_iters"], iters=iters,
+                   blocks=st["blocks"], s_per_iter=f"{s_iter:.5f}",
                    dof_cycles_per_cpu_s=f"{dof / (comm.size * info['cpus_per_rank'] * s_iter):.4g}",
                    node_rss_max_gib=f"{max(nodes):.1f}", node_rss_min_gib=f"{min(nodes):.1f}",
                    rank_rss_max_gib=f"{rank_max:.2f}", finite=finite, s_per_iter_spread=f"{spread:.4f}",
                    tasks_per_node=os.environ.get("SLURM_NTASKS_PER_NODE", ""), io_steps="",
                    outputs=int(add_outputs is not None), discard_s=f"{discard:.0f}", stepping_s=f"{stepping:.1f}",
-                   measured_s=f"{measured:.1f}", discard_iters=sum(b[2] for b in blocks) - iters,
+                   measured_s=f"{measured:.1f}", discard_iters=st["discard_iters"],
                    node_used_discard_max_gib=f"{at_discard[2]:.1f}", node_used_end_max_gib=f"{used_max:.1f}",
                    node_used_end_min_gib=f"{used_min:.1f}", node_used_end_frac=f"{frac:.3f}",
-                   mem_stop=int(mem_stop), truncated=int(stop_at < seconds and not mem_stop), **end)
+                   mem_stop=int(mem_stop), truncated=int(stop_at < seconds and not mem_stop),
+                   stall_blocks=st["stall_blocks"], stall_s=f"{st['stall_s']:.1f}", **end)
         append_csv(path, BENCH_FIELDS, [row])
         append_csv(path.with_name("bench_mem.csv"), BENCH_MEM_FIELDS,
                    [dict(t_s=f"{t:.1f}", iteration=it, node_used_max_gib=f"{a:.1f}", node_used_min_gib=f"{b:.1f}",
                          node_used_max_frac=f"{fr:.3f}", host_max=h) for t, it, a, b, fr, h in trace])
         logger.info(f"bench {info['mesh']} on {info['nodes']} nodes: {s_iter:.4f} s/iter over {iters} steps "
-                    f"in {measured:.0f} s (spread {spread:.1%}); node memory at the end {used_min:.0f}-"
+                    f"in {measured:.0f} s (spread {spread:.1%}; {st['stall_blocks']} stalled blocks, "
+                    f"{st['stall_s']:.0f} s, left out); node memory at the end {used_min:.0f}-"
                     f"{used_max:.0f} GiB ({frac:.0%} of the fullest, {host}); summed RSS up to {max(nodes):.0f} GiB"
                     + ("; STOPPED: a node passed the memory limit" if mem_stop else "")
                     + (f"; shortened to {stepping:.0f} s by the time limit" if stop_at < seconds else "")

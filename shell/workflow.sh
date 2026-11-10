@@ -218,23 +218,40 @@ snapshot_spectra() {
     srun -n "${SPEC_TASKS:-32}" -c 1 python3 -m rbc.spectra.snapshots snapshots/snapshots_s*.h5 --plot-every=0
 }
 
-# Mirror every run under DATA_ROOT into each of BACKUP_DIRS (same path below $SCRATCH):
-# analysis, spectra, outputs, logs and the BACKUP_STATES newest readable checkpoints.
-# Older checkpoints are then removed from each backup, and on scratch everything but
-# the KEEP_STATES newest, but only if every copy succeeded. Snapshots are not copied.
+# Mirror every run under DATA_ROOT (same path below $SCRATCH) into two kinds of backup:
+#   BACKUP_DIRS:       analysis, spectra, outputs, logs and the BACKUP_STATES newest
+#                      readable checkpoints; older checkpoints are then removed.
+#   LIGHT_BACKUP_DIRS: analysis, horizontal_analysis, logs and job scripts only.
+# Both kinds also get the benchmarking results in $SCRATCH/bench. On scratch everything
+# but the KEEP_STATES newest checkpoints is then removed, but only if every copy
+# succeeded. Snapshots are not copied.
 backup_and_prune() {
-    local src=${DATA_ROOT:-$SCRATCH/ollie_rb_data/3d} rel_root dst ok=1
+    local src=${DATA_ROOT:-$SCRATCH/ollie_rb_data/3d} bench=$SCRATCH/bench
+    local rel_root base dst ok=1
     rel_root=${src#"$SCRATCH"/}
+    local light=(--include='analysis/***' --include='horizontal_analysis/***'
+                 --include='params.conf' --include='stop_reason.txt'
+                 --include='job_*.out' --include='run_sim*.sh')
+    local full=("${light[@]}" --include='spectra/***' --include='outputs/***')
     for dst in ${BACKUP_DIRS:-$HOME}; do
         dst="$dst/$rel_root"
         mkdir -p "$dst" || { ok=0; continue; }
-        rsync -a -m --include='*/' \
-            --include='analysis/***' --include='horizontal_analysis/***' --include='spectra/***' \
-            --include='outputs/***' --include='params.conf' --include='stop_reason.txt' \
-            --include='job_*.out' --include='run_sim*.sh' --exclude='*' \
+        rsync -a -m --include='*/' "${full[@]}" --exclude='*' \
             "$src/" "$dst/" || { echo "backup to $dst failed"; ok=0; continue; }
         _backup_states "$src" "$dst" || ok=0
     done
+    for dst in ${LIGHT_BACKUP_DIRS:-}; do
+        dst="$dst/$rel_root"
+        mkdir -p "$dst" || { ok=0; continue; }
+        rsync -a -m --include='*/' "${light[@]}" --exclude='*' \
+            "$src/" "$dst/" || { echo "backup to $dst failed"; ok=0; }
+    done
+    if [[ -d $bench ]]; then
+        for base in ${BACKUP_DIRS:-$HOME} ${LIGHT_BACKUP_DIRS:-}; do
+            mkdir -p "$base/bench" && rsync -a "$bench/" "$base/bench/" \
+                || { echo "backup to $base/bench failed"; ok=0; }
+        done
+    fi
     if [[ $ok -ne 1 ]]; then
         echo "a backup failed; nothing pruned on scratch"
         return 1

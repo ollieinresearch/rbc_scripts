@@ -46,8 +46,9 @@ perturbation, with no restart, the script:
    as well). There is no `mpirun` timeout;
 3. leaves the first minute (`BENCH_DISCARD`) out of the timing: it holds the first LU
    factorisations, FFTW planning and the first write of every handler. The time per step
-   is the total time of the remaining blocks over their steps. The noise estimate is the
-   spread of the means of the four equal parts of that 9 minute window, (max − min) / mean;
+   is the total time of the remaining blocks over their steps, leaving out **stalls**:
+   blocks slower than twice the median block (below). The spread, reported for
+   information, is (max − min) / mean of the means of four equal parts of the window;
 4. after every block, reads `MemTotal − MemAvailable` on every node and logs the fullest
    (`bench_mem.csv`). If a node passes 95% of its memory, stepping stops and the result is
    recorded as too small (`mem_stop`), instead of the out-of-memory killer losing the job;
@@ -208,8 +209,11 @@ its predicted cost is within the plausible penalty of the cheapest, so that meas
 could change the answer. The planner:
 
 1. takes every even `RES_Z` from the floor `F` up to `1.125 F`, and discards rejected tiers;
-2. gives each one the most balanced node count between its memory minimum (§5.2, from a
-   prior per-cell memory before anything is measured) and 1.35× that;
+2. gives each one the node count chosen before at the nearest resolution on this cluster
+   (§5.2, History), scaled by size and rounded to an even count, but not below its memory
+   minimum (§5.2). Without such a choice, it gets the most balanced count between its
+   memory minimum (from a prior per-cell memory before anything is measured) and 1.35×
+   that;
 3. predicts its relative cost as `(N/F)⁴ log N / log F × prior / e`. The priors are 1.00,
    1.03 and 1.08 for tiers A, B and C. They are assumptions, used only for this
    preselection;
@@ -272,10 +276,25 @@ two nodes at 90% efficiency and rejects a larger count at 67%.
 Example: going from 8 to 12 nodes at E = 0.9 gives `S = 1.5 × 0.9 = 1.35`. That is 26% less
 wall time for 11% more node-hours, and `J/J₀ = 0.82`, so it is accepted.
 
-Counts whose J is within the measured noise of the minimum count as ties, and the fewest
-nodes among them is chosen. The decision file also reports the marginal efficiency
+The count with the lowest J is chosen, taking the measured times as exact. An earlier
+version treated counts within the measured noise of the minimum as ties and chose the fewest
+nodes among them. That let the noisiest measurement win: at 256 on Trillium, 13 nodes (34%
+spread, J 56% above the minimum) tied with 16 and was chosen over 14 and 16, which were both
+cheaper and faster. The noise is still reported. The decision file also reports the marginal efficiency
 `(T_prev/T − 1)/(N/N_prev − 1)`, the share of ideal speed-up delivered by the last nodes
 added. Minimising J with k = 1 keeps it above about 0.45.
+
+**The same rule as a local test.** Between two counts `N₁ < N₂`,
+`J₂/J₁ = (N₂/N₁)(T₂/T₁)^(1+k)`, so J falls exactly when
+
+    p = ln(T₁/T₂) / ln(N₂/N₁) > 1/(1+k)       (k = 1:  p > 0.5),
+
+with no model of the scaling. In words: with k = 1, nodes keep being added while doubling
+them cuts the step time by at least a factor √2 (29%), i.e. while a doubling costs at most
+41% more node-hours. If the scaling follows Amdahl's law, `T = a/N + b`, then `p` is the
+parallel efficiency `(a/N)/(a/N + b)`, and the minimum of J lies where it falls to
+`1/(1+k)`: at `N = a/b` for k = 1. At 256 on Trillium, 14 → 16 nodes gave p = 0.72, so J was
+still falling at the largest count measured.
 
 **Faster-than-ideal jumps.** If a step up in node count is faster than ideal by more than
 the noise, the decision file warns. The code cannot scale better than ideal (cache effects
@@ -310,20 +329,41 @@ kinds are mixed, because their step times are not comparable.
 **History.** Every 10 minute result is added to a history file
 (`~/rbc_bench_history.csv`) with its cluster, cpus-per-task and snapshot setting; the
 stage 2 choice is marked. A later benchmark on the same cluster uses it twice:
-- **stage 1** starts each candidate resolution at the node count its memory needs, with
-  `V` scaled from the nearest resolution measured before by the ratio of
-  `(RES_HOR/2)² RES_Z` (field and transform buffers scale with the grid; the fixed part
-  per node is not scaled). For 288 → 384 this is (384/288)³ = 2.37;
-- **stage 2** also sweeps the count chosen at the nearest resolution, scaled by the same
-  ratio (work per step scales with the grid size, up to a logarithm), extending the range
-  if needed.
+- **the node count (seed)**: the count chosen at the nearest resolution, scaled by the
+  ratio of `(RES_HOR/2)² RES_Z` (work per step scales with the grid size, up to a
+  logarithm). Stage 1 runs each candidate resolution on the seed rounded to an even count
+  (on Trillium a 128 × M mesh needs `192 N / 128 = 1.5 N` ranks per row, an integer only
+  for even N); stage 2 sweeps around it. For 256 → 288 this is 16 × (288/256)³ = 22.8, so
+  22 nodes;
+- **the memory floor**: `V` scaled from the nearest resolution by the same ratio (field and
+  transform buffers scale with the grid; the fixed part per node is not scaled).
+
+Memory only bounds the node count from below. It used to set where the sweep lay, but at
+256 the memory minimum is 3 nodes while the lowest J was at 16 or more, so it says nothing
+about where the optimum is: seeding from it made 288's stage 1 run on 3 nodes.
 
 Only results with the same cpus-per-task are used: C = 2 used about twice the memory of
 C = 1.
 
-**Range.** From that minimum up to 2× it, keeping node counts whose best mesh has balance
-of at least `min(0.93, best in range − 0.03)`, at most 6 of them, always including both
-ends. A count whose projected end-of-job memory exceeds the budget is never chosen.
+**Range.** A factor `NODE_SPAN` (2) centred geometrically on the seed: from seed/√2 to
+seed × √2. Without a seed (nothing chosen on this cluster yet), the stage 1 count is the
+centre. If the memory floor cuts off the bottom, the top moves up so the range still spans
+a factor 2. `NODE_MAX` (32) caps it. Counts whose best mesh has balance below
+`min(0.93, best in range − 0.03)` are dropped; at most 6 are kept, evenly spaced, plus the
+seed rounded to even. A count whose projected end-of-job memory exceeds the budget is
+never chosen.
+
+**Edge rule.** A lowest J at the largest count measured is not a minimum yet: a larger
+count may be lower still. A minimum is located only once it is *bracketed*, with a measured
+point on each side that is higher, as one-dimensional minimisers do before refining [7]. So
+when the best count is the largest measured, the next run of `python -m rbc.bench` offers
+1.25× and 1.5× that count (rounded to even, capped at `NODE_MAX`); when it is the smallest
+and the memory floor allows, the same fractions below it. This repeats until the best count
+is bracketed or `NODE_MAX` is reached. Each round costs about `(N₁ + N₂) / 4` node-hours,
+e.g. 11 for 20 and 24 nodes, against 384 node-hours for one 24 h job on 16 nodes.
+`NODE_MAX` also keeps the search inside the node counts agreed for production; the
+Alliance treats requesting processors that a job cannot use efficiently as abuse of the
+system [8].
 
 **Expected scaling regime.** Burns et al. [4] report Dedalus' parallel efficiency staying
 above 50% down to about 8 pencils per core. At 256 on 6 nodes there are 512² / 1152 ≈ 228
@@ -335,7 +375,7 @@ and a 200 dpi `.png`) of four panels, each comparing against the choice:
   the choice (a point below that curve would have lower J);
 - (b) projected memory per node at the end of a production job: fixed part, fields at the
   start and growth, with the measured benchmark value, the budget and the node's memory;
-- (c) J relative to its minimum, with the noise band of a tie, each count's change in
+- (c) J relative to its minimum, with each count's change in
   node-hours and wall time against the choice, and the marginal efficiency of each step;
 - (d) node-hours against wall time, each relative to the best feasible count: the
   time-to-solution/cost Pareto plot common in HPC scaling studies, with curves of equal J
@@ -388,8 +428,20 @@ decides.
 
 - **Cost model.** It assumes `dt ∝ 1/RES_Z`. If near-wall Chebyshev clustering sets dt
   instead, lower resolutions save even more.
-- **Noise.** Each configuration is timed in many 25-step blocks; the spread of the block
-  means is the noise estimate used for ties. A configuration can also be repeated.
+- **Noise.** Each configuration is timed in blocks of about 20 s. The spread of the means of
+  four parts of the timed window is reported but does not affect the choice.
+- **Stalls.** A timed block slower than twice the median block is left out of the step
+  time, and the seconds left out are reported (`stall s`). Timing delays only add time
+  ([Chen & Revels 2016](https://arxiv.org/abs/1608.04295)), so only slow blocks are
+  rejected. Routine output writes slow a block by up to about 1.3× the median and stay in,
+  since production pays for them. A stall (a file-system or network hiccup, where most of a
+  block was spent waiting) happens once or twice in a 9 minute window, so it decides the
+  comparison between node counts by chance. In the 256, 13-node run, one 50 s block at
+  0.80 s/step (2.6× the median) raised the step time from 0.319 to 0.337 s and the spread
+  from 9% to 34%. The common robust test, the modified z-score above 3.5 (Iglewicz &
+  Hoaglin 1993), was not used: steady blocks vary by only about 1%, so it also rejects the
+  routine write blocks. The cut is applied when results are read, from the block times in
+  `bench_mem.csv`, so it also applies to results recorded before it existed.
 
 ### 6.3 Questions for SciNet
 
@@ -459,7 +511,9 @@ timing and memory settings), on a login node:
 python -m rbc.bench          # stage 1: shows the plan, asks, submits one job per configuration
 python -m rbc.bench          # later: reports progress; once done, decides the resolution,
                              #        plans stage 2 and asks before submitting it
-python -m rbc.bench          # after stage 2: decides the node count, prints the production lines
+python -m rbc.bench          # after stage 2: decides the node count, prints the production lines;
+                             #        if the best count is at an edge, asks to submit counts beyond it
+python -m rbc.bench          # after those: decides again (repeats until bracketed or NODE_MAX)
 python -m rbc.bench status   # progress only
 ```
 
@@ -517,10 +571,7 @@ for p in pts:
     p["E"] = p["S"] / p["r"]
     p["thr"] = p["r"] ** (-k / (1 + k))          # break-even efficiency against the baseline
     p["J"] = p["nodes"] * p["s"] ** (1 + k) / (base["nodes"] * base["s"] ** (1 + k))
-jmin = min(p["J"] for p in pts)
-top = min(pts, key=lambda p: p["J"])
-ties = [p for p in pts if p["J"] <= jmin * (1 + (1 + k) * noise_of(p, top))]
-best = min(ties, key=lambda p: p["nodes"])      # ties within noise go to fewer nodes
+best = min(pts, key=lambda p: p["J"])          # times taken as measured; no noise ties
 ```
 
 ## Sources
@@ -531,3 +582,5 @@ best = min(ties, key=lambda p: p["nodes"])      # ties within noise go to fewer 
 4. K. J. Burns, G. M. Vasil, J. S. Oishi, D. Lecoanet, B. P. Brown, "Dedalus: A flexible framework for numerical simulations with spectral methods", Phys. Rev. Research 2, 023068 (2020): https://link.aps.org/doi/10.1103/PhysRevResearch.2.023068
 5. SciNet, Trillium Quickstart: https://docs.scinet.utoronto.ca/index.php/Trillium_Quickstart
 6. Princeton Research Computing, Scaling analysis: https://researchcomputing.princeton.edu/support/knowledge-base/scaling-analysis
+7. W. H. Press, S. A. Teukolsky, W. T. Vetterling, B. P. Flannery, *Numerical Recipes*, 3rd ed., Cambridge University Press (2007), §10.1 "Initially Bracketing a Minimum".
+8. Digital Research Alliance of Canada, Job scheduling policies: https://docs.alliancecan.ca/wiki/Job_scheduling_policies

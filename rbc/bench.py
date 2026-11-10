@@ -18,7 +18,8 @@ Run it repeatedly; each call does what is due:
    plan stage 2 (node counts for the chosen resolution, from its measured memory) and
    submit it;
 4. when stage 2 is done, write ``bench/nodes/decision_nodes.txt``, ``.pdf`` and ``.png``, which
-   end with the ``RES_Z``/``RES_HOR``/``MESHX``/``MESHY``/``--nodes`` lines for production.
+   end with the ``RES_Z``/``RES_HOR``/``MESHX``/``MESHY``/``--nodes`` lines for production;
+   if the best count is at an edge of those measured, offer counts beyond it (edge rule).
 
 A resolution is a pair of Chebyshev modes RES_Z and horizontal modes RES_HOR (the
 same in x and y); names put RES_Z first (``288_512``). Internally the pair is stored as
@@ -34,9 +35,11 @@ minutes), is the projected peak of a production job.
 
 Every result with that memory measurement is also added to a history file
 (``BENCH_HISTORY``, default ``~/rbc_bench_history.csv``) with the cluster it ran on.
-New benchmarks on the same cluster use it: stage 1 starts each resolution at the node
-count its memory needs, scaled from the nearest resolution measured before, and stage
-2 also sweeps the node count chosen before, scaled the same way.
+New benchmarks on the same cluster use it: the node count chosen before at the nearest
+resolution, scaled by size, is where stage 1 runs and what stage 2 sweeps around; memory
+only sets the fewest nodes allowed. If the best count of stage 2 is the largest (or
+smallest) measured, later runs offer counts beyond it until the best is bracketed or
+``NODE_MAX`` is reached.
 
 The rules behind each choice are written into the decision files; ``docs/benchmarking.md``
 derives them.
@@ -49,6 +52,7 @@ import math
 import os
 import re
 import socket
+import statistics
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -56,8 +60,11 @@ from pathlib import Path
 from rbc.plan import efficiency, meshes, ranks_per_node
 
 NOISE = 0.03
+STALL = 2.0               # a timed block slower than this multiple of the median block is a stall
+SEGMENTS = 4              # the timed window is split into this many parts for the spread
 OVERHEAD_S = 120          # per job besides the stepping: rehearsal, two solver builds, final writes
 SLACK_MIN = 5             # minutes added to BENCH_SECONDS for the wall-time request
+EDGE_STEPS = (1.25, 1.5)  # multiples of the edge count tried when the best count is at an edge
 HISTORY_FIELDS = ("cluster", "recorded", "job_id", "nz", "nx", "nodes", "c", "mesh", "snapshots",
                   "s_per_iter", "noise", "mem_end_gib", "mem_fraction", "peak_gib", "var_peak_gib",
                   "var_per_cell", "fits", "mem_stop", "chosen", "folder")
@@ -70,7 +77,7 @@ DEFAULTS = dict(RES_FLOOR=None, RES_ABOVE=0.125, RES_HOR_FLOOR=None, RES_HOR_ABO
                 BENCH_SECONDS=600.0, BENCH_DISCARD=60.0, BENCH_REHEARSAL=10, BENCH_TIME="",
                 BENCH_MEM_FRACTION=0.80, BENCH_HISTORY="", ACCOUNT="rrg-goluskin", MEM_FIXED=90.0,
                 MEM_PER_CELL=1.69e-4, MEM_GROWTH=0.015, JOB_HOURS=24.0, MEM_USABLE=747.0, MEM_HEADROOM=0.85, NODE_SPAN=2.0, NODE_POINTS=6,
-                NODE_MIN=None, NODE_MAX=None, TIME_WEIGHT=1.0, DT_REF=None, DT_REF_RES=None,
+                NODE_MIN=None, NODE_MAX=32, TIME_WEIGHT=1.0, DT_REF=None, DT_REF_RES=None,
                 DT_REF_RES_HOR=None, MEM_FACTOR=1.0)
 PARAMS = ("RES_Z", "RES_HOR", "LX", "RA", "PR", "SIM_TIME", "RESTART_FROM", "SCRIPTS_PATH", "USER",
           "SNAPSHOTS", "CC_CLUSTER")
@@ -809,7 +816,8 @@ def history_optimum(res, cfg: dict, c: int = 1):
     Returns
     -------
     tuple or None
-        ``(nodes, explanation)``, or None if no choice is recorded on this cluster.
+        ``(nodes, explanation)`` with ``nodes`` unrounded, or None if no choice is
+        recorded on this cluster.
     """
     cluster = cluster_name(cfg)
     hist = [h for h in read_history(cfg) if h["cluster"] == cluster and h["c"] == str(c) and h["chosen"] == "1"]
@@ -818,8 +826,29 @@ def history_optimum(res, cfg: dict, c: int = 1):
         return None
     h = near[-1]
     old = (int(h["nx"]), int(h["nz"]))
-    n = max(1, round(int(h["nodes"]) * cells(res) / cells(old)))
-    return n, f"{h['nodes']} nodes chosen at {label(old)} ({cluster}), x{cells(res) / cells(old):.2f} for the size"
+    n = int(h["nodes"]) * cells(res) / cells(old)
+    return n, (f"{h['nodes']} nodes chosen at {label(old)} ({cluster}), x{cells(res) / cells(old):.2f} "
+               f"for the size = {n:.1f}")
+
+
+def even(x: float, floor: int = 2) -> int:
+    """Nearest even node count to ``x``, at least ``floor`` (rounded up to even).
+
+    Even counts are preferred because a 128 x M mesh needs 192 N / 128 = 1.5 N ranks per
+    row, an integer only for even N.
+
+    Parameters
+    ----------
+    x : float
+        Target count.
+    floor : int, optional
+        Smallest count allowed.
+
+    Returns
+    -------
+    int
+    """
+    return max(2 * round(x / 2), floor + floor % 2)
 
 
 # ---------------------------------------------------------------- timestep for projections
@@ -913,9 +942,17 @@ def load(path) -> list[dict]:
     raw, f_of = [], {}
     for f in files:
         with open(f, newline="") as h:
-            for r in csv.DictReader(h):
-                raw.append(r)
-                f_of[id(r)] = f.parent
+            here = list(csv.DictReader(h))
+        long = [r for r in here if r.get("discard_s") and str(r.get("outputs")) == "1"]
+        runs = trace_runs(f.parent)
+        if long and len(runs) == len(long):          # step time recomputed without stalls (block_stats)
+            for r, blocks in zip(long, runs):
+                st = block_stats(blocks, float(r["discard_s"]))
+                r.update(s_per_iter=f"{st['s_iter']:.5f}", s_per_iter_spread=f"{st['spread']:.4f}",
+                         iters=str(st["iters"]), stall_blocks=str(st["stall_blocks"]), stall_s=f"{st['stall_s']:.1f}")
+        for r in here:
+            raw.append(r)
+            f_of[id(r)] = f.parent
     merged = {}
     for r in raw:
         if str(r.get("finite", "True")) != "True":
@@ -947,8 +984,93 @@ def load(path) -> list[dict]:
                          iters=int(float(last.get("iters") or 0)), mem_stop=str(last.get("mem_stop")) == "1",
                          truncated=str(last.get("truncated")) == "1", job_id=last.get("job_id", ""),
                          cluster=last.get("cluster", ""), snapshots=last.get("snapshots", ""),
-                         mem_discard=num(last, "node_used_discard_max_gib"), source=str(f_of[id(last)])))
+                         mem_discard=num(last, "node_used_discard_max_gib"), source=str(f_of[id(last)]),
+                         stall_s=sum(num(r, "stall_s") or 0.0 for r in rs)))
     return sorted(rows, key=lambda r: (cells(r["res"]), r["nodes"], r["node_s"]))
+
+
+def block_stats(blocks, discard: float, stall: float = STALL) -> dict:
+    """Step time of a benchmark from its timed blocks, leaving out stalls.
+
+    Blocks starting before ``discard`` seconds are not timed. Of the rest, a block
+    whose time per step is more than ``stall`` times the median block's is a stall
+    and is left out: most of it was spent waiting (a file-system or network hiccup),
+    not stepping. Timing delays only ever add time (Chen & Revels 2016), so only slow
+    blocks are rejected. Routine output writes make a block only somewhat slower
+    (up to about 1.3x the median in the runs so far) and stay in, since production
+    pays for them. Stalls are left out because one or two in a 9 minute window
+    decide the comparison between node counts by chance; their total is reported.
+
+    Parameters
+    ----------
+    blocks : list of tuple
+        ``(start s, end s, steps)`` per block, in order.
+    discard : float
+        Seconds at the start not timed.
+    stall : float, optional
+        Rejection threshold, as a multiple of the median block's time per step.
+
+    Returns
+    -------
+    dict
+        ``s_iter`` (s per step over the kept blocks), ``spread`` ((max - min) / mean
+        of the means of :data:`SEGMENTS` equal parts of the kept window), ``iters``,
+        ``measured`` (s), ``blocks`` (kept), ``discard_iters``, ``stall_blocks``,
+        ``stall_s``.
+    """
+    timed = [b for b in blocks if b[0] >= discard] or blocks[len(blocks) // 2:]
+    rate = [(b[1] - b[0]) / b[2] for b in timed]
+    med = statistics.median(rate)
+    kept = [b for b, r in zip(timed, rate) if r <= stall * med]
+    dropped = [b for b, r in zip(timed, rate) if r > stall * med]
+    measured = sum(b[1] - b[0] for b in kept)
+    iters = sum(b[2] for b in kept)
+    s_iter = measured / iters
+    lo, hi = kept[0][0], kept[-1][1]
+    seg = []
+    for i in range(SEGMENTS):
+        a, b = lo + (hi - lo) * i / SEGMENTS, lo + (hi - lo) * (i + 1) / SEGMENTS
+        part = [blk for blk in kept if a <= (blk[0] + blk[1]) / 2 < b or (i == SEGMENTS - 1 and blk[1] == hi)]
+        if part:
+            seg.append(sum(blk[1] - blk[0] for blk in part) / sum(blk[2] for blk in part))
+    return dict(s_iter=s_iter, spread=(max(seg) - min(seg)) / s_iter if len(seg) > 1 else float("nan"),
+                iters=iters, measured=measured, blocks=len(kept),
+                discard_iters=sum(b[2] for b in blocks) - sum(b[2] for b in timed),
+                stall_blocks=len(dropped), stall_s=sum(b[1] - b[0] for b in dropped))
+
+
+def trace_runs(folder: Path) -> list[list[tuple]]:
+    """Timed blocks of each run in a configuration's ``bench_mem.csv``.
+
+    Each line of the file is the end of one block (time from the first step,
+    iteration); a run's last line, written after the final output writes at the same
+    iteration, is not a block. A rerun into the same folder appends a new run, whose
+    times start again from zero.
+
+    Parameters
+    ----------
+    folder : pathlib.Path
+        Configuration folder.
+
+    Returns
+    -------
+    list of list of tuple
+        Per run, ``(start s, end s, steps)`` for every block after the first (whose
+        start is not recorded; it lies in the untimed start).
+    """
+    path = folder / "bench_mem.csv"
+    if not path.exists():
+        return []
+    runs, prev = [], None
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            t, it = float(r["t_s"]), int(float(r["iteration"]))
+            if prev is None or t < prev[0]:
+                runs.append([])
+            elif it > prev[1]:
+                runs[-1].append((prev[0], t, it - prev[1]))
+            prev = (t, it)
+    return [r for r in runs if r]
 
 
 def noise_of(*rows) -> float:
@@ -1009,9 +1131,12 @@ def plan_resolutions(cfg: dict):
     ``[RES_FLOOR, RES_FLOOR (1 + RES_ABOVE)]``; with ``RES_HOR_FLOOR`` set, every pair
     of such a RES_Z and an even RES_HOR in ``[RES_HOR_FLOOR, RES_HOR_FLOOR (1 +
     RES_HOR_ABOVE)]``. A pair is classified by the worse :func:`tier` of its axes. Each
-    acceptable one gets the most balanced node count between its memory minimum and
-    1.35 times that. The memory comes from the history (:func:`history_variable`) when
-    this cluster has one, otherwise from the ``MEM_PER_CELL`` prior. Its predicted
+    acceptable one is run on the node count chosen before at the nearest resolution on
+    this cluster, scaled by size (:func:`history_optimum`) and rounded to an even count,
+    but not below its memory minimum. Without such a choice it gets the most balanced
+    count between its memory minimum and 1.35 times that. The memory minimum comes from
+    the history (:func:`history_variable`) when this cluster has one, otherwise from the
+    ``MEM_PER_CELL`` prior. Its predicted
     cost is :func:`cost_model` times the tier prior over the mesh balance. Kept: the
     floor, the best-predicted resolution of each tier, and nothing predicted more than
     ``RES_BAND`` above the cheapest; at most ``RES_MAX``.
@@ -1043,13 +1168,22 @@ def plan_resolutions(cfg: dict):
         hv = history_variable(res, cfg)
         n0 = min_nodes(hv[0] if hv else prior_variable(res, cfg), cfg)
         row["mem_how"] = hv[1] if hv else f"MEM_PER_CELL prior, grown x{growth(cfg):.2f}"
-        best = None
-        for nn in range(n0, max(n0, math.ceil(1.35 * n0)) + 1):
+        seed = history_optimum(res, cfg)
+        if seed:
+            nn = even(seed[0], n0)
+            if cfg["NODE_MAX"]:
+                nn = max(min(nn, cfg["NODE_MAX"]), n0)
             mx, my, e = best_mesh(res, nn)
-            key = (round(e, 3), -nn)
-            if best is None or key > best[0]:
-                best = (key, nn, mx, my, e)
-        _, nn, mx, my, e = best
+            row["nodes_how"] = f"{seed[1]} -> {nn}"
+        else:
+            best = None
+            for nn in range(n0, max(n0, math.ceil(1.35 * n0)) + 1):
+                mx, my, e = best_mesh(res, nn)
+                key = (round(e, 3), -nn)
+                if best is None or key > best[0]:
+                    best = (key, nn, mx, my, e)
+            _, nn, mx, my, e = best
+            row["nodes_how"] = "no choice in the history: memory minimum"
         row.update(nodes=nn, n0=n0, mx=mx, my=my, eff=e,
                    pred=cost_model(res, floor, cfg["LX"]) * TIER_PRIOR.get(t, 1.15) / e)
         rows.append(row)
@@ -1113,8 +1247,12 @@ def resolution_report(rows, lines, cfg) -> str:
            f"Predicted cost = work per step (RES_HOR^2 RES_Z log) x steps (max(RES_HOR/Lx, RES_Z)), relative "
            f"to the floor {label(cfg['FLOOR'])}, x tier prior / mesh balance (priors, assumed: "
            + ", ".join(f"{t} {TIER_NAME[t]} {v:.2f}" for t, v in TIER_PRIOR.items()) + ").",
-           f"Nodes: the fewest that hold the projected peak memory (fixed {fixed_per_node(cfg):.0f} GiB/node, "
-           f"budget {budget(cfg):.0f} GiB/node), then the most balanced count up to 1.35x that. Memory from:"]
+           "Nodes: the count chosen before at the nearest resolution on this cluster, scaled by size and "
+           "rounded to even, not below the memory minimum; without one, the most balanced count from the "
+           "memory minimum up to 1.35x it. Node counts from:"]
+    out += [f"  {label(r['res'])}: {r['nodes_how']}" for r in rows if r.get("keep") and "nodes_how" in r]
+    out += [f"Memory minimum (min): the fewest nodes that hold the projected peak (fixed {fixed_per_node(cfg):.0f} "
+            f"GiB/node, budget {budget(cfg):.0f} GiB/node). Memory from:"]
     out += [f"  {h}" for h in sorted({r['mem_how'] for r in rows if 'mem_how' in r})]
     out += ["",
            f"{'RES_Z x RES_HOR':>16} {'factors (z | hor)':<24}{'tier':>5} {'min':>4} {'nodes':>6} {'mesh':>9} "
@@ -1232,14 +1370,95 @@ def decide_resolution(rows, cfg):
 
 # ---------------------------------------------------------------- stage 2
 
-def plan_nodes(rows, res, cfg: dict):
-    """Node counts to benchmark for one resolution, from its memory minimum up to ``NODE_SPAN`` x.
+def node_floor(rows, res, cfg: dict):
+    """Fewest nodes a production job at ``res`` fits on, from the stage 1 measurement.
 
-    The minimum uses the stage 1 measurement with production outputs (``NODE_MIN``
-    raises it). Meshes follow the shape that won stage 1: the most square mesh for
-    each count if a square mesh beat a different, better-balanced one; otherwise the
-    most balanced, keeping counts with balance at least min(0.93, best - 0.03). At
-    most ``NODE_POINTS`` counts, always including the smallest and largest.
+    Memory only bounds the node counts from below; it does not decide where the
+    sweep lies.
+
+    Parameters
+    ----------
+    rows : list of dict
+        Stage 1 results.
+    res : tuple of int
+        ``(RES_HOR, RES_Z)``.
+    cfg : dict
+        Configuration (``NODE_MIN`` raises the floor).
+
+    Returns
+    -------
+    n_min : int
+        Floor.
+    var : float
+        Resolution-dependent memory at a job's peak, GiB over all nodes.
+    how : str
+        Where the memory figure comes from.
+    ref : dict
+        The stage 1 row used (fewest node-seconds per step at ``res``).
+
+    Raises
+    ------
+    SystemExit
+        Without a stage 1 result at ``res``, or if the floor is above ``NODE_MAX``.
+    """
+    at = [r for r in rows if r["res"] == res]
+    if not at:
+        raise SystemExit(f"no stage 1 result at {label(res)}")
+    ref = min(at, key=lambda r: r["node_s"])
+    var, _, how = measured_variable(ref, cfg)
+    n_min = min_nodes(var, cfg)
+    if cfg["NODE_MIN"]:
+        n_min = max(n_min, cfg["NODE_MIN"])
+    if cfg["NODE_MAX"] and n_min > cfg["NODE_MAX"]:
+        raise SystemExit(f"{label(res)} needs at least {n_min} nodes for memory, above NODE_MAX = {cfg['NODE_MAX']}")
+    return n_min, var, how, ref
+
+
+def mesh_rule(ref, res, cfg: dict):
+    """How stage 2 picks the mesh for a node count, following the shape that won stage 1.
+
+    The most square mesh if a square mesh beat a different, better-balanced one in
+    stage 1; otherwise the most balanced. The orientation of the stage 1 winner is kept.
+
+    Parameters
+    ----------
+    ref : dict
+        Stage 1 row at ``res`` with the fewest node-seconds per step.
+    res : tuple of int
+        ``(RES_HOR, RES_Z)``.
+    cfg : dict
+        Configuration (``SQUARE``).
+
+    Returns
+    -------
+    mesh : callable
+        ``mesh(nodes) -> (meshx, meshy, balance)``.
+    square : bool
+        Whether the most square mesh is used.
+    """
+    flip = ref["mx"] < ref["my"]
+    balanced = best_mesh(res, ref["nodes"])[:2]
+    square = bool(cfg["SQUARE"]) and is_square(ref["mx"], ref["my"]) and \
+        (max(ref["mx"], ref["my"]), min(ref["mx"], ref["my"])) != balanced
+    pick = square_mesh if square else best_mesh
+
+    def mesh(nn):
+        mx, my, e = pick(res, nn)
+        return (my, mx, e) if flip else (mx, my, e)
+    return mesh, square
+
+
+def plan_nodes(rows, res, cfg: dict):
+    """Node counts to benchmark for one resolution, spanning ``NODE_SPAN`` around a seed.
+
+    The seed is the count chosen before at the nearest resolution on this cluster,
+    scaled by size (:func:`history_optimum`); without one, the stage 1 count. The sweep
+    runs from seed / sqrt(NODE_SPAN) to seed x sqrt(NODE_SPAN); if the memory floor
+    (:func:`node_floor`) cuts the bottom off, the top moves up so the sweep still spans
+    a factor NODE_SPAN. ``NODE_MAX`` caps it. Meshes follow :func:`mesh_rule`; with the
+    most balanced meshes, counts with balance below min(0.93, best - 0.03) are dropped.
+    At most ``NODE_POINTS`` evenly spaced counts, plus the seed rounded to even. If the
+    best count turns out to be at an edge of the sweep, :func:`edge_counts` adds more.
 
     Parameters
     ----------
@@ -1257,29 +1476,16 @@ def plan_nodes(rows, res, cfg: dict):
     text : str
         Explanation (``nodes.txt``).
     """
-    at = [r for r in rows if r["res"] == res]
-    if not at:
-        raise SystemExit(f"no stage 1 result at {label(res)}")
-    ref = min(at, key=lambda r: r["node_s"])
-    var, _, how = measured_variable(ref, cfg)
-    n_min = min_nodes(var, cfg)
-    if cfg["NODE_MIN"]:
-        n_min = max(n_min, cfg["NODE_MIN"])
-    n_max = math.ceil(cfg["NODE_SPAN"] * n_min)
+    n_min, var, how, ref = node_floor(rows, res, cfg)
     seed = history_optimum(res, cfg)
-    if seed and seed[0] >= n_min:
-        n_max = max(n_max, math.ceil(1.15 * seed[0]))
+    centre, centre_how = seed if seed else (float(ref["nodes"]), f"the stage 1 count, {ref['nodes']}")
+    root = math.sqrt(cfg["NODE_SPAN"])
+    lo = max(n_min, math.floor(centre / root))
+    hi = max(math.ceil(centre * root), math.ceil(lo * cfg["NODE_SPAN"]))
     if cfg["NODE_MAX"]:
-        n_max = min(n_max, cfg["NODE_MAX"])
-    flip = ref["mx"] < ref["my"]
-    balanced = best_mesh(res, ref["nodes"])[:2]
-    square = bool(cfg["SQUARE"]) and is_square(ref["mx"], ref["my"]) and \
-        (max(ref["mx"], ref["my"]), min(ref["mx"], ref["my"])) != balanced
-    pick = square_mesh if square else best_mesh
-    options = []
-    for nn in range(n_min, n_max + 1):
-        mx, my, e = pick(res, nn)
-        options.append((nn, *((my, mx) if flip else (mx, my)), e))
+        hi = min(hi, cfg["NODE_MAX"])
+    mesh, square = mesh_rule(ref, res, cfg)
+    options = [(nn, *mesh(nn)) for nn in range(lo, hi + 1)]
     top = max(o[3] for o in options)
     cut = 0.0 if square else min(top - 0.03, 0.93)
     kept = [o for o in options if o[3] >= cut]
@@ -1287,27 +1493,99 @@ def plan_nodes(rows, res, cfg: dict):
     if len(kept) > pts:
         idx = sorted({round(i * (len(kept) - 1) / (pts - 1)) for i in range(pts)})
         kept = [kept[i] for i in idx]
-    if seed and n_min <= seed[0] <= n_max:
-        near = min(options, key=lambda o: (abs(o[0] - seed[0]), -o[3]))
-        if near not in kept:
-            kept = sorted(kept + [near])
+    target = min(max(even(centre, lo), lo), hi)
+    near = min(options, key=lambda o: (abs(o[0] - target), -o[3]))
+    if near not in kept:
+        kept = sorted(kept + [near])
     nx, nz = res
     lines = [(nz, nn, 1, mx, my, nx) for nn, mx, my, _ in kept]
     out = [f"Stage 2 plan: node counts for RES_Z x RES_HOR = {nz} x {nx}", "",
-           f"Memory ({how}): {var:,.0f} GiB depends on the resolution at a job's peak.",
-           f"Per node: budget {budget(cfg):.0f} GiB minus {fixed_per_node(cfg):.0f} GiB fixed -> "
-           f"minimum {n_min} nodes" + (f" (NODE_MIN = {cfg['NODE_MIN']})" if cfg["NODE_MIN"] else "")
-           + f". Sweep {n_min}-{n_max}."
-           + (f" Also swept: {seed[0]} nodes ({seed[1]})." if seed and n_min <= seed[0] <= n_max else "")
-           + (f" History: {seed[1]} -> {seed[0]}, below the memory minimum." if seed and seed[0] < n_min else ""),
+           f"Seed: {centre_how}. Sweep {lo}-{hi}: a factor NODE_SPAN = {cfg['NODE_SPAN']:g} around the seed"
+           + (f", capped at NODE_MAX = {cfg['NODE_MAX']}" if cfg["NODE_MAX"] and hi == cfg["NODE_MAX"] else "") + ".",
+           f"Memory floor ({how}): {var:,.0f} GiB depends on the resolution at a job's peak; per node, budget "
+           f"{budget(cfg):.0f} GiB minus {fixed_per_node(cfg):.0f} GiB fixed -> at least {n_min} nodes"
+           + (f" (NODE_MIN = {cfg['NODE_MIN']})" if cfg["NODE_MIN"] else "")
+           + (". The floor cut the sweep's bottom, so its top moved up." if lo == n_min and n_min > centre / root
+              else "."),
            f"Meshes: {'most square' if square else 'most balanced'} for each node count, as {ref['mesh']} "
-           f"won stage 1; {'smaller' if flip else 'larger'} dimension first. "
-           + ("Kept: evenly spaced counts." if square else f"Kept: balance >= {cut:.3f}."), "",
+           f"won stage 1. " + ("Kept: evenly spaced counts" if square else f"Kept: balance >= {cut:.3f}")
+           + f", plus {near[0]} (the seed rounded to even).",
+           "If the best count is the largest (or smallest) of the sweep, later runs add counts beyond it.", "",
            f"{'nodes':>5} {'ranks':>6} {'mesh':>9} {'bal':>6}  kept"]
     for nn, mx, my, e in options:
         out.append(f"{nn:>5} {nn * ranks_per_node(1):>6} {str(mx) + 'x' + str(my):>9} {e:6.3f}  "
                    f"{'yes' if (nn, mx, my, e) in kept else ''}")
     return lines, "\n".join(out) + "\n"
+
+
+def edge_counts(pts, best, cfg: dict):
+    """Node counts to add when the best count is at an edge of those measured.
+
+    A lowest J at the largest count measured is not yet a minimum: a larger count may
+    be lower still. The minimum is bracketed once the best count has a measured count
+    on each side (Press et al., Numerical Recipes, section 10.1). So when the best is
+    the largest, :data:`EDGE_STEPS` multiples of it (rounded to even, capped at
+    ``NODE_MAX``) are added; when it is the smallest and the memory floor allows, the
+    same fractions below it. Nothing is added once the best is bracketed.
+
+    Parameters
+    ----------
+    pts : list of dict
+        From :func:`decide_nodes`, one per node count.
+    best : dict
+        Chosen point.
+    cfg : dict
+        Configuration.
+
+    Returns
+    -------
+    counts : list of int
+        Node counts not measured yet (may be empty).
+    note : str
+        One-line explanation.
+    """
+    counts = sorted(p["nodes"] for p in pts)
+    n = best["nodes"]
+    cap = cfg["NODE_MAX"] or float("inf")
+    below = [p for p in pts if p["nodes"] < n]
+    if any(p["fits"] for p in below) and n < counts[-1]:
+        return [], f"bracketed: measured counts on both sides of {n} have a higher J."
+    if n == counts[-1]:
+        if n >= cap:
+            return [], f"the best count, {n}, is the largest measured and NODE_MAX = {cfg['NODE_MAX']}; not extended."
+        new = [m for m in sorted({min(even(n * f), cap) for f in EDGE_STEPS} - set(counts)) if m > n]
+        return new, (f"the best count, {n}, is the largest measured, so larger counts are added: "
+                     + ", ".join(map(str, new)) + "." if new else f"the best count, {n}, is the largest measured.")
+    floor = max(min_nodes(max(p["var"] for p in pts), cfg, best["c"]), cfg["NODE_MIN"] or 1)
+    if below or n <= floor:
+        return [], f"the best count, {n}, is the smallest with memory for a full job; not extended."
+    new = [m for m in sorted({max(even(n / f), floor) for f in EDGE_STEPS} - set(counts)) if m < n]
+    return new, (f"the best count, {n}, is the smallest measured, so smaller counts are added: "
+                 + ", ".join(map(str, new)) + "." if new else f"the best count, {n}, is the smallest measured.")
+
+
+def edge_lines(counts, stage1_rows, res, cfg: dict):
+    """Configuration lines for the counts from :func:`edge_counts`, meshes as in :func:`plan_nodes`.
+
+    Parameters
+    ----------
+    counts : list of int
+        Node counts.
+    stage1_rows : list of dict
+        Stage 1 results.
+    res : tuple of int
+        ``(RES_HOR, RES_Z)``.
+    cfg : dict
+        Configuration.
+
+    Returns
+    -------
+    list of tuple
+    """
+    _, _, _, ref = node_floor(stage1_rows, res, cfg)
+    mesh, _ = mesh_rule(ref, res, cfg)
+    nx, nz = res
+    return [(nz, nn, 1, *mesh(nn)[:2], nx) for nn in counts]
 
 
 def decide_nodes(rows, res, cfg: dict):
@@ -1319,8 +1597,8 @@ def decide_nodes(rows, res, cfg: dict):
     count with memory for a full job), ``J / J0 = r^-k E^-(1+k)``: a larger count beats
     the baseline exactly when ``E > r^(-k/(1+k))``, i.e. ``E > r^-1/2`` for k = 1 (0.82
     at 1.5x the nodes, 0.71 at 2x). Counts whose projected end-of-job memory exceeds
-    the budget are not eligible. Counts whose J is within the measurement noise of the
-    minimum are ties, and the fewest nodes among them is chosen.
+    the budget are not eligible. The count with the lowest J is chosen; the measured
+    times are taken as exact (the noise is reported, but does not change the choice).
 
     Also reported: marginal efficiency against the next smaller count,
     ``(T_prev / T - 1) / (N / N_prev - 1)``, the share of ideal speed-up the added
@@ -1375,8 +1653,7 @@ def decide_nodes(rows, res, cfg: dict):
         prev = p
     eligible = [p for p in pts if p["fits"]] or pts
     top = min(eligible, key=lambda p: p["J"])
-    ties = [p for p in eligible if p["J"] <= top["J"] * (1 + (1 + k) * noise_of(p, top))]
-    best = min(ties, key=lambda p: p["nodes"])
+    best = top
     for p in pts:
         p["Jrel"] = p["J"] / top["J"]
     for p in pts:
@@ -1385,9 +1662,7 @@ def decide_nodes(rows, res, cfg: dict):
         elif not p["fits"]:
             p["why"] = "too little memory for a full job"
         elif p is best:
-            p["why"] = "CHOSEN" + ("" if p is top else f" (within noise of {top['nodes']} nodes; fewer nodes)")
-        elif p in ties:
-            p["why"] = "tie (within noise)"
+            p["why"] = "CHOSEN"
         else:
             p["why"] = f"J {p['J'] / best['J'] - 1:+.0%} vs choice"
 
@@ -1395,20 +1670,24 @@ def decide_nodes(rows, res, cfg: dict):
     out = [f"Node-count decision for RES_Z x RES_HOR = {nz} x {nx}", "",
            f"CHOICE: {best['nodes']} nodes, mesh {best['mesh']}", ""]
     if best is base:
-        out.append(f"Reason: no larger node count lowered node-hours x wall-time^{k:g} beyond the noise.")
+        out.append(f"Reason: no larger node count lowered node-hours x wall-time^{k:g}.")
     else:
         out.append(f"Reason: lowest node-hours x wall-time^{k:g}. Against {base['nodes']} nodes it runs "
                    f"{best['S']:.2f}x as fast ({1 - 1 / best['S']:.0%} less wall time) for "
                    f"{1 / best['E'] - 1:+.0%} node-hours (efficiency {best['E']:.2f}; break-even {best['thr']:.2f}).")
     out += ["", f"Rule: minimise J = nodes x T^{1 + k:g}; against the baseline this means E > r^({-k / (1 + k):.2f}). "
-                "Ties within noise go to fewer nodes; counts without memory for a full job are excluded.", "",
+                "Counts without memory for a full job are excluded. Times are taken as measured: the noise",
+                f"column is for information. Timed blocks slower than {STALL:g}x the median block (stalls) are left",
+                "out of s/step; stall s = their total.", "",
             f"{'nodes':>5} {'mesh':>8} {'bal':>6} {'s/step':>8} {'node-s':>7} {'speedup':>8} {'E':>6} "
-            f"{'E min':>6} {'marginal':>9} {'J/Jmin':>7} {'noise':>6} {'GiB bench':>10} {'GiB end':>8}  result"]
+            f"{'E min':>6} {'marginal':>9} {'J/Jmin':>7} {'noise':>6} {'stall s':>8} {'GiB bench':>10} "
+            f"{'GiB end':>8}  result"]
     for p in pts:
         em = f"{p['Em']:.2f}" if p["Em"] is not None else "-"
         noise = f"{p['noise']:.1%}" if p["noise"] is not None else "n/a"
         out.append(f"{p['nodes']:>5} {p['mesh']:>8} {p['eff']:6.3f} {p['s']:8.4f} {p['node_s']:7.2f} {p['S']:8.2f} "
-                   f"{p['E']:6.2f} {p['thr']:6.2f} {em:>9} {p['Jrel']:7.3f} {noise:>6} {p['bench_gib']:10.0f} "
+                   f"{p['E']:6.2f} {p['thr']:6.2f} {em:>9} {p['Jrel']:7.3f} {noise:>6} {p['stall_s']:8.0f} "
+                   f"{p['bench_gib']:10.0f} "
                    f"{p['peak']:8.0f}  {p['why']}")
     out += ["", f"speedup and E (efficiency) are relative to {base['nodes']} nodes, the smallest count with memory for",
             "a full job; E min = break-even against it; marginal = share of ideal speed-up delivered by the nodes",
@@ -1441,8 +1720,15 @@ def decide_nodes(rows, res, cfg: dict):
     if best["nodes"] * 192 < 1024 and "tri" in cluster_name(cfg).lower():
         out += ["", f"Note: {best['nodes']} nodes is {best['nodes'] * 192} cores, below Trillium's stated intent "
                     "of jobs of 1024 cores or more."]
-    if best is pts[-1]:
-        out += ["", "Note: the largest count tested was chosen; a larger one might be better still."]
+    _, edge = edge_counts(pts, best, cfg)
+    out += ["", f"Edge rule: {edge}"]
+    others = [r for r in rows if r["res"] == res and r is not by_nodes[r["nodes"]]]
+    if others:
+        out += ["", "Other meshes measured at the same node counts (the faster mesh of each count is used above):"]
+        for r in sorted(others, key=lambda r: (r["nodes"], r["mesh"])):
+            q = by_nodes[r["nodes"]]
+            out.append(f"  {r['nodes']:>3} nodes: {r['mesh']:>8} {r['s']:.4f} s/step = {r['s'] / q['s']:.3f}x "
+                       f"{q['mesh']}; balance alone predicts {q['eff'] / r['eff']:.3f}x")
     est = estimate_dt(cfg)
     if est and cfg["SIM_TIME"]:
         out += ["", f"Per job of SIM_TIME = {cfg['SIM_TIME']:g} ({est[2]}, scaled with the steps per unit time):"]
@@ -1757,7 +2043,7 @@ def plot_nodes(pts, best, path: Path, cfg: dict) -> None:
         curve through the choice: a point below the break-even curve has lower J.
     (b) Memory per node, projected to the end of a production job, split into the
         fixed part, the resolution-dependent part at the start and its growth.
-    (c) J relative to its minimum (lower is better), with the noise band of a tie and
+    (c) J relative to its minimum (lower is better), with
         the marginal efficiency of each step up in node count.
     (d) Cost against wall time, each relative to the best feasible value, with curves
         of equal J: the time-to-solution / cost Pareto plot of HPC scaling studies.
@@ -1788,7 +2074,6 @@ def plot_nodes(pts, best, path: Path, cfg: dict) -> None:
     s = np.array([p["s"] for p in pts])
     noise = np.array([p["noise"] or 0 for p in pts])
     nb, sb = best["nodes"], best["s"]
-    top = min(pts, key=lambda p: p["Jrel"] if p["fits"] else np.inf)
     plain = FuncFormatter(lambda v, _: f"{v:g}")
     wt = "wall-time" if k == 1 else f"wall-time^{k:g}"
     idx = np.arange(len(pts))
@@ -1885,8 +2170,6 @@ def plot_nodes(pts, best, path: Path, cfg: dict) -> None:
     # (c) objective
     a = ax[1, 0]
     jr = np.array([p["Jrel"] for p in pts])
-    tie = 1 + (1 + k) * noise_of(best, top)
-    a.axhspan(1 / 1.15, tie, color=green, alpha=0.12, lw=0)
     for x, p in zip(idx, pts):
         a.bar(x, p["Jrel"], color=colour(p) if p["fits"] else "white", edgecolor=colour(p),
               hatch=None if p["fits"] else "xx", lw=1, width=0.7)
@@ -1903,9 +2186,9 @@ def plot_nodes(pts, best, path: Path, cfg: dict) -> None:
     a.set_xlabel("nodes\n(below: share of perfect speed-up gained from the previous count; red: above 100%)")
     a.set_ylabel(f"J / lowest J   (J = node-hours x {wt})")
     a.set_title("(c) Objective, lower is better; labels: change against the choice", fontsize=9)
-    a.legend(handles=[Patch(color=green, alpha=0.25, label="tie with the lowest (within noise)"),
-                      ] + [Patch(facecolor="white", edgecolor=red, hatch="xx", label=no_mem)] * tight,
-             fontsize=7.5, loc="upper right")
+    if tight:
+        a.legend(handles=[Patch(facecolor="white", edgecolor=red, hatch="xx", label=no_mem)],
+                 fontsize=7.5, loc="upper right")
 
     # (d) cost against speed
     a = ax[1, 1]
@@ -2029,6 +2312,13 @@ def do_decide_nodes(nodes_dir: Path, res, cfg: dict) -> None:
         ``(RES_HOR, RES_Z)``.
     cfg : dict
         Configuration.
+
+    Returns
+    -------
+    best : dict
+        Chosen configuration.
+    pts : list of dict
+        One per node count (see :func:`decide_nodes`).
     """
     reused = [r for r in load(nodes_dir.parent / "res") if r["res"] == res]
     rows = load(nodes_dir) + reused
@@ -2039,6 +2329,7 @@ def do_decide_nodes(nodes_dir: Path, res, cfg: dict) -> None:
     (nodes_dir / "decision_nodes.txt").write_text(text)
     plot_nodes(pts, best, nodes_dir / "decision_nodes", cfg)
     print(text + f"(written to {nodes_dir}/decision_nodes.txt, .pdf and .png)")
+    return best, pts
 
 
 def step(folder: Path, yes: bool = False, dry: bool = False) -> None:
@@ -2108,7 +2399,21 @@ def step(folder: Path, yes: bool = False, dry: bool = False) -> None:
     if not print_status("Stage 2 (nodes)", job_status(nodes_dir), nodes_dir):
         return
     print()
-    do_decide_nodes(nodes_dir, chosen_resolution(res_dir), cfg)
+    res = chosen_resolution(res_dir)
+    best, pts = do_decide_nodes(nodes_dir, res, cfg)
+    counts, note = edge_counts(pts, best, cfg)
+    submitted = {line.split("\t")[0] for d in (res_dir, nodes_dir)
+                 for line in (d / "jobs.tsv").read_text().splitlines() if line.strip()}
+    lines = [line for line in edge_lines(counts, load(res_dir), res, cfg) if tag(line) not in submitted]
+    if counts and not lines:
+        print("\nEdge rule: those counts were submitted before without a result (see their slurm_*.out); "
+              "not resubmitted.")
+    if not lines or dry:
+        return
+    print("\nEdge rule, jobs to add:\n" + "\n".join(f"  {tag(line)}" for line in lines))
+    if confirm(lines, cfg, yes):
+        submit(lines, nodes_dir, cfg, folder)
+        print("\nSubmitted. Run 'python -m rbc.bench' again for the decision with them.")
 
 
 def main(argv=None) -> None:
