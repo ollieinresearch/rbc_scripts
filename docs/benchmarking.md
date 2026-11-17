@@ -8,6 +8,19 @@ and the node count. We make these choices with short benchmark jobs rather than 
 assumption. Every rule is derived below, the measurements so far are included, and the
 code that implements each step is quoted in §8.
 
+**Objectives.** Every rule below serves one of these; a change to a rule is checked against all of them.
+
+1. **Accuracy.** The resolution is at least the floor (time-averaged spectra spanning at
+   least 4 decades). Above the floor, stage 1 takes the cheapest resolution, or the larger
+   one when the two are within the measured noise (§4.4).
+2. **Node count.** Minimise J = node-hours × wall time (k = 1), up to `NODE_MAX` = 32, the
+   limit agreed with the supervisor; larger runs go to SciNet for review first.
+3. **Measure, don't predict.** Models (balance, memory, scaling) only choose what to
+   measure. No decision should rest on a single run, so one bad run cannot flip it.
+4. **Benchmarking stays cheap.** Each round costs a few percent of one production job.
+5. **Simple and automatic.** One command, `python -m rbc.bench`, run repeatedly from the
+   benchmark folder.
+
 ## 1. The simulation and what limits it
 
 - **Solver.** Dedalus v3, pseudo-spectral: Fourier in x and y, Chebyshev in z, 3/2
@@ -132,7 +145,7 @@ fresh node:
 
 Run order and orientation are confounded, so we don't yet know whether orientation
 matters. Every job now has a rehearsal launch, and stage 1 benchmarks both orientations.
-Stage 2 uses whichever orientation won.
+Stage 2 keeps the orientation that won.
 
 **cpus-per-task.** On the same 8 nodes at 256, `C = 3` (16 × 24 mesh, 2 ranks per L3
 cache) took 1.087 s per step against 0.512 s for `C = 1` (24 × 64), 2.1× slower. Each `C = 3`
@@ -210,8 +223,8 @@ could change the answer. The planner:
 
 1. takes every even `RES_Z` from the floor `F` up to `1.125 F`, and discards rejected tiers;
 2. gives each one the node count chosen before at the nearest resolution on this cluster
-   (§5.2, History), scaled by size and rounded to an even count, but not below its memory
-   minimum (§5.2). Without such a choice, it gets the most balanced count between its
+   (§5.2, History), scaled by size, then moved to the best-balanced count within 10% of
+   that, but not below its memory minimum (§5.2). Without such a choice, it gets the most balanced count between its
    memory minimum (from a prior per-cell memory before anything is measured) and 1.35×
    that;
 3. predicts its relative cost as `(N/F)⁴ log N / log F × prior / e`. The priors are 1.00,
@@ -331,10 +344,12 @@ kinds are mixed, because their step times are not comparable.
 stage 2 choice is marked. A later benchmark on the same cluster uses it twice:
 - **the node count (seed)**: the count chosen at the nearest resolution, scaled by the
   ratio of `(RES_HOR/2)² RES_Z` (work per step scales with the grid size, up to a
-  logarithm). Stage 1 runs each candidate resolution on the seed rounded to an even count
-  (on Trillium a 128 × M mesh needs `192 N / 128 = 1.5 N` ranks per row, an integer only
-  for even N); stage 2 sweeps around it. For 256 → 288 this is 16 × (288/256)³ = 22.8, so
-  22 nodes;
+  logarithm). Stage 1 runs each candidate resolution on the best-balanced count within
+  10% of the seed; stage 2 sweeps around it. For 256 → 288 the seed is
+  16 × (288/256)³ = 22.8; among 21–25 nodes the best mesh is 144 × 32 on 24 (balance
+  0.964, against 0.842 on 22), so 24 nodes. The seed itself is only accurate to a
+  few nodes, so moving it 10% costs nothing, while a poorly balanced count would bias the
+  comparison between resolutions;
 - **the memory floor**: `V` scaled from the nearest resolution by the same ratio (field and
   transform buffers scale with the grid; the fixed part per node is not scaled).
 
@@ -350,17 +365,28 @@ seed × √2. Without a seed (nothing chosen on this cluster yet), the stage 1 c
 centre. If the memory floor cuts off the bottom, the top moves up so the range still spans
 a factor 2. `NODE_MAX` (32) caps it. Counts whose best mesh has balance below
 `min(0.93, best in range − 0.03)` are dropped; at most 6 are kept, evenly spaced, plus the
-seed rounded to even. A count whose projected end-of-job memory exceeds the budget is
-never chosen.
+best-balanced count within 10% of the seed. A count whose projected end-of-job memory
+exceeds the budget is never chosen.
+
+**Two meshes per count.** Each kept count, and each count the edge rule adds, is run with
+both the most balanced and the most square mesh (one job when they coincide), and the
+faster is used. An earlier version ran only the shape that won stage 1, at every count.
+That turned one comparison at one count into a rule for all counts, although the trade-off
+changes with the count: at 350 on Trillium the most square mesh has balance 0.806 on 22
+nodes and 0.831 on 32, the most balanced 0.967 and 0.880, and the faster shape changed
+between the two. Measuring both costs about one extra job per count. `SQUARE=0` runs only
+the most balanced.
 
 **Edge rule.** A lowest J at the largest count measured is not a minimum yet: a larger
 count may be lower still. A minimum is located only once it is *bracketed*, with a measured
 point on each side that is higher, as one-dimensional minimisers do before refining [7]. So
 when the best count is the largest measured, the next run of `python -m rbc.bench` offers
-1.25× and 1.5× that count (rounded to even, capped at `NODE_MAX`); when it is the smallest
+counts near 1.25× and 1.5× that count (the best-balanced within 10% of each, capped at
+`NODE_MAX`); when it is the smallest
 and the memory floor allows, the same fractions below it. This repeats until the best count
-is bracketed or `NODE_MAX` is reached. Each round costs about `(N₁ + N₂) / 4` node-hours,
-e.g. 11 for 20 and 24 nodes, against 384 node-hours for one 24 h job on 16 nodes.
+is bracketed or `NODE_MAX` is reached. Each round costs about `(N₁ + N₂) / 4` node-hours
+per mesh, e.g. 11 for 20 and 24 nodes (22 with both meshes), against 384 node-hours for one
+24 h job on 16 nodes.
 `NODE_MAX` also keeps the search inside the node counts agreed for production; the
 Alliance treats requesting processors that a job cannot use efficiently as abuse of the
 system [8].
