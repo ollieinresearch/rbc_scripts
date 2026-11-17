@@ -17,6 +17,7 @@ source "$WORKFLOW_PATH"
 print_params
 load_modules
 export HDF5_USE_FILE_LOCKING=FALSE
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 determine_ic
 rm -f stop_reason.txt
