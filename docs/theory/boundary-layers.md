@@ -16,6 +16,8 @@ to resolve in $z$, and at small Pr the thermal layer is much thicker than the vi
 | $\delta_{T,\text{rms}}$ | `delta_T_rms` | distance from the wall to the peak of $\theta_\text{rms}$ |
 | $\delta_u$ | `delta_u` | distance from the wall to the peak of the rms horizontal velocity |
 | $\delta_u^\text{slope}$ | `delta_u_slope` | where the wall tangent of the rms horizontal velocity reaches its peak value |
+| $U_\text{peak}$ | `uh_peak` | peak value of the rms horizontal velocity (free-fall units) |
+| $S_w$ | `u_wall_slope` | wall gradient of the rms horizontal velocity, the rms wall shear rate (free-fall units); $\delta_u^\text{slope} = U_\text{peak}/S_w$ |
 
 ```{dropdown} Derivation: δ_T = 1/(2 Nu)
 :class-container: derivation

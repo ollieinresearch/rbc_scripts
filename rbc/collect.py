@@ -214,7 +214,7 @@ def row(run: Path) -> dict:
         if "Re" in nu:
             r.update(Re=nu["Re"]["Re"], Re_se=nu["Re"]["se"])
     for k in ("delta_T", "delta_T_rms", "delta_u", "delta_u_slope", "n_delta_T", "n_delta_T_rms",
-              "n_delta_u", "n_delta_u_slope", "Nu_flux_spread_pct", "Re_rms"):
+              "n_delta_u", "n_delta_u_slope", "Nu_flux_spread_pct", "Re_rms", "uh_peak", "u_wall_slope"):
         if k in pr:
             r[k] = pr[k]
     r.update({k: v for k, v in sp.items() if k.startswith(("D_", "Dmin_"))})

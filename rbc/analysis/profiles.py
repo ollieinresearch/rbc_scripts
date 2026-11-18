@@ -10,6 +10,8 @@ top): ``delta_T`` = 1/(2 Nu) from the wall gradient; ``delta_T_rms`` and ``delta
 the distance from the wall to the peak of theta_rms and of the horizontal rms velocity;
 ``delta_u_slope``, where the wall tangent of the rms velocity reaches its peak value.
 ``n_*`` is the number of Chebyshev nodes of the simulation grid inside each layer.
+``uh_peak`` is that peak value and ``u_wall_slope`` the wall gradient of the horizontal rms
+velocity (the rms wall shear rate), so ``delta_u_slope = uh_peak / u_wall_slope``.
 """
 from __future__ import annotations
 
@@ -126,6 +128,7 @@ def compute(run: Path, t0=0.0, t1=np.inf) -> dict:
 
     diag = dict(Ra=Ra, Pr=Pr, nz=nz_sim, t0=float(t[0]), t1=float(t[-1]), n_writes=int(t.size),
                 Nu_wall_bot=float(g_bot), Nu_wall_top=float(g_top),
+                uh_peak=float(out["uh_rms"].max()), u_wall_slope=float(u_slope),
                 Re_rms=float((Ra / Pr) ** 0.5 * np.sqrt(cheb(out["u2"]).integ(lbnd=-0.5)(0.5))),
                 **{k: float(v) for k, v in bl.items()}, **nodes)
     if "havg_wT" in m:
