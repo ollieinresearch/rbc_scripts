@@ -13,6 +13,11 @@ exponent is constant there. Usage::
     python -m rbc.plots.exponents --method lines        # one regression per row/column
     python -m rbc.plots.exponents --surface 2           # overlay a quadratic surface fit
     python -m rbc.plots.exponents --q Nu --refs 0.5 0.3333 0.25
+    python -m rbc.plots.exponents --errorbars stat      # statistical bars only (or none)
+
+Error bars: ±1 standard error (capped) and, with ``--errorbars all``, a thin whisker
+adding the worst-case systematic bound propagated from ``Nu_sys``
+(:mod:`rbc.analysis.exponents`). Means and flatness slopes are quoted as ± stat ± sys.
 
 Writes ``figures/exponents_<q>_<method>.pdf``, a CSV of every estimate and a CSV of the
 cell-centre estimates, and prints the surface-fit table, the single global power law,
@@ -32,7 +37,7 @@ from matplotlib.cm import ScalarMappable
 from rbc import cases as rc
 from rbc import style
 from rbc.analysis import exponents as ex
-from rbc.plots.common import decade_ticks
+from rbc.plots.common import add_errorbar_arg, decade_ticks, errorbar
 
 SYMB = {"alpha": r"\alpha", "beta": r"\beta"}
 COORD = {"x": "Ra", "y": "Pr"}
@@ -68,8 +73,8 @@ def gather(d, method, use_cells):
     Returns
     -------
     pandas.DataFrame
-        Columns ``kind``, ``x``, ``y``, ``value``, ``err``, ``Lmin``, ``source`` (and
-        ``lo``, ``hi`` for lines).
+        Columns ``kind``, ``x``, ``y``, ``value``, ``err``, ``sys``, ``Lmin``, ``source``
+        (and ``lo``, ``hi`` for lines).
     """
     parts = [ex.edges(d) if method == "pairs" else ex.lines(d)]
     if use_cells:
@@ -77,7 +82,7 @@ def gather(d, method, use_cells):
         if len(c):
             for k in ("alpha", "beta"):
                 parts.append(pd.DataFrame(dict(kind=k, x=c.x, y=c.y, value=c[k], err=c[f"{k}_err"],
-                                               Lmin=c.Lmin, source="cell")))
+                                               sys=c[f"{k}_sys"], Lmin=c.Lmin, source="cell")))
     return pd.concat(parts, ignore_index=True)
 
 
@@ -144,7 +149,8 @@ def two_tone_marker(lo, hi) -> dict:
     return dict(color=lo, mfc=lo, markerfacecoloralt=hi, fillstyle="left", mec="0.25", ecolor="0.45")
 
 
-def panel(ax, est, kind, coord, ckind, refs, fit_source, grid, surf=None, lmin=-np.inf, ref_labels=True):
+def panel(ax, est, kind, coord, ckind, refs, fit_source, grid, surf=None, lmin=-np.inf, ref_labels=True,
+          bars="all"):
     """One exponent against one parameter, coloured by the other.
 
     Two-point estimates along the same row (same value of the other parameter) are
@@ -178,6 +184,8 @@ def panel(ax, est, kind, coord, ckind, refs, fit_source, grid, surf=None, lmin=-
         Smallest log10 Q of the runs an estimate may use.
     ref_labels : bool, optional
         Label the reference lines at the right edge.
+    bars : {"all", "stat", "none"}, optional
+        Error bars drawn (:func:`rbc.plots.common.errorbar`).
 
     Returns
     -------
@@ -213,9 +221,8 @@ def panel(ax, est, kind, coord, ckind, refs, fit_source, grid, surf=None, lmin=-
     for src, mk, ms in (("edge", "o", 3.4), ("line", "o", 3.6), ("cell", "D", 3.0)):
         g = e[(e.source == src) & ok]
         for _, r in g.iterrows():
-            ax.errorbar(10 ** r[coord], r["value"], yerr=r["err"] if np.isfinite(r["err"]) else None,
-                        fmt=mk, ms=ms, mew=0.6, elinewidth=0.6, capsize=1.2, zorder=3,
-                        **two_tone_marker(*tones(r[other], levels, ckind)))
+            errorbar(ax, 10 ** r[coord], r["value"], r["err"], r.get("sys"), bars, fmt=mk, ms=ms, mew=0.6,
+                     elinewidth=0.6, capsize=1.2, zorder=3, **two_tone_marker(*tones(r[other], levels, ckind)))
     bad = e[~ok]
     if len(bad):
         ax.plot(10 ** bad[coord], bad["value"], ls="none", marker="x", ms=3, mew=0.6, color="0.6", zorder=2)
@@ -226,9 +233,12 @@ def panel(ax, est, kind, coord, ckind, refs, fit_source, grid, surf=None, lmin=-
             lo, hi = min(lo - pad, min(refs, default=lo)), max(hi + pad, max(refs, default=hi))
             ax.set_ylim(lo - 0.02, hi + 0.02)
     fs = e[(e.source == fit_source) & ok]
-    stats = ex.flatness(fs[coord], fs["value"], fs["err"]) if len(fs) > 2 else {}
+    stats = ex.flatness(fs[coord], fs["value"], fs["err"], fs["sys"] if "sys" in fs else None) if len(fs) > 2 else {}
     if stats:
-        ax.set_title(rf"mean ${SYMB[kind]} = {stats['mean']:.3f}\pm{stats['mean_err']:.3f}$", fontsize=7, pad=3)
+        pm = rf"\pm{stats['mean_err']:.3f}" if bars != "none" and np.isfinite(stats["mean_err"]) else ""
+        if bars == "all" and np.isfinite(stats["mean_sys"]):
+            pm += rf"\pm{stats['mean_sys']:.3f}"
+        ax.set_title(rf"mean ${SYMB[kind]} = {stats['mean']:.3f}{pm}$", fontsize=7, pad=3)
     ax.set_xscale("log")
     decade_ticks(ax, "x")
     ax.set_xlabel(style.SYM[COORD[coord]])
@@ -262,6 +272,7 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
+    add_errorbar_arg(p)
     return p
 
 
@@ -295,8 +306,10 @@ def main(argv=None) -> None:
         surf = next((s for s in fits if s.deg == a.surface), None)
     glob = ex.Surface(d, 1)
     (al, ale), (be, bee) = glob.exponent(0, 0, "alpha"), glob.exponent(0, 0, "beta")
+    als, bes = glob.exponent_sys(0, 0, "alpha"), glob.exponent_sys(0, 0, "beta")
     gof = f"chi2/dof = {glob.chi2 / max(glob.dof, 1):.3g}" if glob.weighted else f"rms log10 residual = {glob.rms:.2e}"
-    print(f"single power law over all points: {a.q} ~ Pr^({al:.4f} ± {ale:.4f}) Ra^({be:.4f} ± {bee:.4f})   {gof}")
+    print(f"single power law over all points: {a.q} ~ Pr^({al:.4f} ± {ale:.4f} ± {als:.4f}) "
+          f"Ra^({be:.4f} ± {bee:.4f} ± {bes:.4f})   {gof}   (± stat ± sys; nan: a point has no Nu_sys)")
 
     w, _ = style.figsize(1.0)
     fig, axes = plt.subplots(2, 2, figsize=(w, 0.88 * w), sharey="row", sharex="col")
@@ -308,7 +321,7 @@ def main(argv=None) -> None:
     for i, kind in enumerate(("alpha", "beta")):
         for j, coord in enumerate(("x", "y")):
             st = panel(axes[i, j], est, kind, coord, ckinds[coord], a.refs, fit_source, d,
-                       surf if a.draw_surface else None, lmin, ref_labels=(j == 1))
+                       surf if a.draw_surface else None, lmin, ref_labels=(j == 1), bars=a.errorbars)
             summary.append(dict(kind=kind, vs=COORD[coord], **st))
         lims = [ax.get_ylim() for ax in axes[i]]
         axes[i, 0].set_ylim(min(l[0] for l in lims), max(l[1] for l in lims))
@@ -347,15 +360,17 @@ def main(argv=None) -> None:
     cells = ex.cells(d)
     if len(cells):
         cells.to_csv(a.out / f"exponents_{tag}_cells.csv", index=False, float_format="%.6g")
-    print("\nflatness fits (exponent = mean, or intercept + slope*log10 param):")
+    print("\nflatness fits (exponent = mean, or intercept + slope*log10 param; ± stat ± sys):")
     for r in summary:
         if "mean" in r:
-            print(f"  {r['kind']:>5} vs {r['vs']}: mean {r['mean']:.4f} ± {r['mean_err']:.4f}, "
-                  f"slope {r['slope']:+.4f} ± {r['slope_err']:.4f} per decade, chi2_nu(flat) {r['chi2_flat']:.3g}, n={r['n']}")
+            print(f"  {r['kind']:>5} vs {r['vs']}: mean {r['mean']:.4f} ± {r['mean_err']:.4f} ± {r['mean_sys']:.4f}, "
+                  f"slope {r['slope']:+.4f} ± {r['slope_err']:.4f} ± {r['slope_sys']:.4f} per decade, "
+                  f"chi2_nu(flat) {r['chi2_flat']:.3g}, n={r['n']}")
     with pd.option_context("display.width", 140, "display.precision", 4):
         if len(cells):
             print("\nslope along Pr ~ Ra^-1/2 at cell centres (s = beta - alpha/2; Shishkina-Lohse 1/4):")
-            print(cells[["c", "x", "y", "alpha", "beta", "s_slice", "s_slice_err"]].sort_values(["c", "x"]).to_string(index=False))
+            print(cells[["c", "x", "y", "alpha", "beta", "s_slice", "s_slice_err", "s_slice_sys"]]
+                  .sort_values(["c", "x"]).to_string(index=False))
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ import pandas as pd
 
 from rbc import cases as rc
 from rbc import style
-from rbc.plots.common import fit_loglog
+from rbc.plots.common import add_errorbar_arg, errorbar, fit_loglog, sys_values
 
 LN10 = np.log(10.0)
 FAMILY_TITLE = {-0.5: r"$Pr\propto Ra^{-1/2}$", -1.0: r"$Pr\propto Ra^{-1}$"}
@@ -107,8 +107,9 @@ def slice_exponents(s, p, min_q=0.0):
     Returns
     -------
     dict
-        ``x``, ``y`` (Nu - 1), ``sy`` (errors or None); secants ``x_mid``, ``gamma``,
-        ``gamma_err`` (or None); and ``fit`` (:func:`rbc.plots.common.fit_loglog`
+        ``x``, ``y`` (Nu - 1), ``sy`` (errors or None), ``by`` (systematic bounds, NaN
+        where unknown); secants ``x_mid``, ``gamma``, ``gamma_err`` (or None),
+        ``gamma_sys`` (worst case, linear); and ``fit`` (:func:`rbc.plots.common.fit_loglog`
         quadratic, or None for fewer than four points).
     """
     s = s[(s["Nu"] - 1) >= min_q] if min_q > 0 else s
@@ -117,6 +118,8 @@ def slice_exponents(s, p, min_q=0.0):
     sy = s["Nu_se"].to_numpy(float) if "Nu_se" in s else None
     if sy is not None and not np.all(np.isfinite(sy)):
         sy = None
+    by = sys_values(s, "Nu-1")
+    bl = by / (y * LN10)
     lx, ly = np.log10(x), np.log10(y)
     d = np.diff(lx)
     gamma = np.diff(ly) / d
@@ -124,8 +127,9 @@ def slice_exponents(s, p, min_q=0.0):
     if sy is not None:
         sl = sy / (y * LN10)                       # error of log10(Nu-1)
         gerr = np.sqrt(sl[1:] ** 2 + sl[:-1] ** 2) / d
-    fit = fit_loglog(x, y, sy, "quadratic") if len(x) >= 4 else None
-    return dict(x=x, y=y, sy=sy, x_mid=10 ** (0.5 * (lx[1:] + lx[:-1])), gamma=gamma, gamma_err=gerr, fit=fit)
+    fit = fit_loglog(x, y, sy, "quadratic", by) if len(x) >= 4 else None
+    return dict(x=x, y=y, sy=sy, by=by, x_mid=10 ** (0.5 * (lx[1:] + lx[:-1])), gamma=gamma, gamma_err=gerr,
+                gamma_sys=(bl[1:] + bl[:-1]) / d, fit=fit)
 
 
 def global_exponents(df):
@@ -146,7 +150,7 @@ def global_exponents(df):
     return float(s.exponent(0, 0, "alpha")[0]), float(s.exponent(0, 0, "beta")[0])
 
 
-def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_running, ref_lines):
+def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_running, ref_lines, bars="all"):
     """One family of slices: the compensated scaling plot against x (``ax``) and the local
     exponent gamma against x (``axg``).
 
@@ -174,6 +178,8 @@ def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_
         Also use points whose status is not 'finished'.
     ref_lines : dict
         Label -> gamma, drawn as horizontal lines on ``axg``.
+    bars : {"all", "stat", "none"}, optional
+        Error bars drawn and errors quoted (:mod:`rbc.plots.common`).
 
     Returns
     -------
@@ -186,7 +192,7 @@ def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_
 
     items = []
     fits = scaling.panel(ax, df, "Nu-1", a, ref[0], ref[1], fit_kinds, norm, ref_ra, min_points, include_running,
-                         p=p, legend=False, legend_items=items)
+                         p=p, legend=False, legend_items=items, bars=bars)
     use = df if include_running else df[df["status"] == "finished"]
     secants, xs = [], []
     for c, s in rc.slices(use, a, min_points).items():
@@ -194,7 +200,7 @@ def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_
         xs += list(r["x"])
         kw = style.slice_kw(c, a)
         line = style.slice_kw(c, a, line=True)
-        axg.errorbar(r["x_mid"], r["gamma"], yerr=r["gamma_err"], capsize=1.5, **kw)
+        errorbar(axg, r["x_mid"], r["gamma"], r["gamma_err"], r["gamma_sys"], bars, capsize=1.5, **kw)
         axg.plot(r["x_mid"], r["gamma"], lw=0.8, **line)
         if r["fit"] is not None:
             q2, m, _ = r["fit"]["coef"]
@@ -204,9 +210,10 @@ def family(ax, axg, df, a, p, ref, fit_kinds, norm, ref_ra, min_points, include_
             if f["c"] == c and f["kind"] == "linear":
                 axg.plot([r["x"][0], r["x"][-1]], [f["slope"] + f["slice_exponent"]] * 2, color=line["color"],
                          lw=2.2, alpha=0.3, solid_capstyle="butt", zorder=1)
-        secants += [dict(a=a, p=p, c=c, x_mid=xm, gamma=g, gamma_err=np.nan if r["gamma_err"] is None else ge)
-                    for xm, g, ge in zip(r["x_mid"], r["gamma"],
-                                         r["gamma"] * np.nan if r["gamma_err"] is None else r["gamma_err"])]
+        secants += [dict(a=a, p=p, c=c, x_mid=xm, gamma=g, gamma_err=ge, gamma_sys=gs)
+                    for xm, g, ge, gs in zip(r["x_mid"], r["gamma"],
+                                             r["gamma"] * np.nan if r["gamma_err"] is None else r["gamma_err"],
+                                             r["gamma_sys"])]
     for (lab, gv), ls in zip(ref_lines.items(), ("--", "-.", ":")):
         axg.axhline(gv, color="0.45", lw=0.8, ls=ls, zorder=0, label=lab)
     axg.set_xscale("log")
@@ -250,6 +257,7 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
+    add_errorbar_arg(p)
     return p
 
 
@@ -286,7 +294,7 @@ def main(argv=None) -> None:
             refs[rf"one law for all points: {(fitted[1] + fam * fitted[0]) / span:.3g}"] = \
                 (fitted[1] + fam * fitted[0]) / span
         f, s_ = family(axes[0, k], axes[1, k], df, fam, p, (a.alpha, a.beta), a.fit, a.norm, a.ref_ra,
-                       a.min_points, a.include_running, refs)
+                       a.min_points, a.include_running, refs, a.errorbars)
         axes[0, k].set_xlabel("")
         fits += f
         secants += s_

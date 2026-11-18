@@ -83,5 +83,8 @@ profiles.
 For orientation, Shishkina et al. recommend lower bounds on the number of nodes inside each
 layer; for $Pr \approx 0.7$ their fits are $N_{\text{th}} \gtrsim 0.35\,Ra^{0.15}$ and
 $N_{\text{v}} \gtrsim 0.31\,Ra^{0.15}$, with other prefactors at other Pr. Those were
-derived for finite-volume grids; with spectral accuracy the decisive test here is the
-resolution study ({doc}`resolution`).
+derived for finite-volume grids, where each node is local. Here only $z$ is local: $x$ and
+$y$ are Fourier, and a Fourier mode spans the whole box, so a node count in a layer says
+nothing about horizontal resolution (that is the x and y spectra and $\Delta x/\eta$).
+The counts are therefore reported, not tested; the decisive test is comparing resolutions
+({doc}`resolution`).

@@ -10,10 +10,14 @@ of the run tree, for example the backup on project space:
 Runs are directories ``ra*/pr*/<label>`` with an ``analysis/`` folder; paths matching
 ``--exclude`` (default: ``_old`` or ``test``) are skipped.
 
-For each run, ``outputs/{nusselt,profiles,spectra}.json`` are reused if they are newer
-than the data; ``--recalculate`` redoes them, with the averaging window starting at
+For each run, ``outputs/{nusselt,profiles,spectra,resolution}.json`` are reused if they
+are newer than the data; ``--recalculate`` redoes them, with the averaging window starting at
 AVG_TIME from the run's ``params.conf`` (a number or ``auto``) unless ``--t0`` is given.
-Runs are processed in parallel, one process per run.
+Runs are processed in parallel, one process per run. Then every parameter folder with
+two or more runs is compared (:mod:`rbc.analysis.variants`, ``<Ra>/<Pr>/outputs/variants.*``)
+and the systematic bounds are added to the rows: ``B_res``, ``B_dt``, ``B_sys`` where
+measured, and ``Nu_sys`` / ``Nu_sys_source`` for every production row
+(:func:`rbc.analysis.variants.fill_bounds`).
 
 Each row is tagged with the cluster it was collected on. Rows from other clusters
 already in the output are kept, so copying another cluster's ``results.csv`` in with
@@ -39,6 +43,12 @@ from rbc import cases as rc
 CLUSTER = os.environ.get("CC_CLUSTER") or socket.gethostname().split(".")[0].rstrip("0123456789-")
 #: Identities whose diagnostics enter the convergence columns (as in rbc.analysis.nusselt).
 NU_KEYS = ("avg_wT", "avg_grad_T_sq")
+#: Scalars of resolution.json copied to the row (besides the per-direction decades).
+RES_KEYS = ("D_run", "D_run_at", "D_run_se", "screen", "eta", "eta_T", "dx", "dy", "dz", "dz_wall")
+RES_PREFIXES = tuple(f"{k}_{f}_{d}" for k in ("D", "Dse", "Dk2", "pileup") for f in ("vel", "temp")
+                     for d in ("x", "y", "z", "meanz")) + ("kmax_eta",)
+#: Columns of variants.json copied to the rows.
+VAR_KEYS = ("B_res", "B_res_vs", "B_dt", "B_dt_vs", "B_sys")
 
 
 def default_root() -> Path:
@@ -157,9 +167,19 @@ def process_run(run: Path, recalc: bool, t0, plots: bool) -> tuple[dict | None, 
             else:
                 _spectra_json_only(run, t_win)
             log.append("spectra")
+        if (run / "spectra").exists() and (recalc or _stale(out / "resolution.json", run / "spectra")
+                                           or _newer(out / "nusselt.json", out / "resolution.json")):
+            from rbc.analysis import resolution
+            resolution.run(run, t_win, plots=plots)
+            log.append("resolution")
     except Exception:
         return None, f"FAILED {run}\n{traceback.format_exc(limit=3)}"
     return row(run), f"{run}: {' '.join(log) or 'up to date'}"
+
+
+def _newer(a: Path, b: Path) -> bool:
+    """True if ``a`` exists and is newer than ``b`` (or ``b`` is missing)."""
+    return a.exists() and (not b.exists() or a.stat().st_mtime > b.stat().st_mtime)
 
 
 def _spectra_json_only(run: Path, t0: float) -> None:
@@ -193,8 +213,12 @@ def row(run: Path) -> dict:
     p = rc.parse_run_path(run)
     o = run / "outputs"
     nu, pr, sp = _read(o / "nusselt.json"), _read(o / "profiles.json"), _read(o / "spectra.json")
+    rs = _read(o / "resolution.json")
+    cfg = rc.run_config(run)
     r = dict(cluster=CLUSTER, path=str(run), dim=p["dim"], log_ra=p["log_ra"], log_pr=p["log_pr"],
-             label=p["label"], nz=p["nz"], nx=sp.get("Nx") or p["nx"])
+             label=p["label"], nz=cfg["nz"] or p["nz"], nx=sp.get("Nx") or cfg["nx"],
+             stepper=cfg["stepper"], cfl_safety=cfg["safety"], variant=cfg["variant"],
+             config_mismatch="; ".join(cfg["mismatch"]))
     if nu:
         r.update(t0=nu["t0"], t1=nu["t1"], T_avg=nu["T_avg"], n_samples=nu["n_samples"],
                  Nu=nu["Nu"], Nu_se=nu["Nu_se"], Nu_gradT=nu["avg_grad_T_sq"]["Nu"],
@@ -218,6 +242,7 @@ def row(run: Path) -> dict:
         if k in pr:
             r[k] = pr[k]
     r.update({k: v for k, v in sp.items() if k.startswith(("D_", "Dmin_"))})
+    r.update({k: v for k, v in rs.items() if k in RES_KEYS or k.startswith(RES_PREFIXES)})
     hist = resources.summary(run)
     for k in ("nx", "ny", "nz"):
         if hist.get(k):
@@ -227,11 +252,72 @@ def row(run: Path) -> dict:
     return r
 
 
+def add_variants(df: pd.DataFrame, plots: bool) -> pd.DataFrame:
+    """Compare the runs of every parameter folder and add their systematic bounds.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Rows of this cluster's runs.
+    plots : bool
+        Also write ``variants.pdf``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Copy with the columns :data:`VAR_KEYS` (NaN or empty where not measured).
+    """
+    from rbc.analysis import variants
+
+    df = df.copy()
+    for k in VAR_KEYS:
+        df[k] = "" if k.endswith("_vs") else np.nan
+    if df.empty:
+        return df
+    for param_dir in sorted({str(Path(p).parent) for p in df["path"]}):
+        try:
+            rec = variants.run(param_dir, plots=plots)
+        except Exception:
+            print(f"  FAILED variants {param_dir}\n{traceback.format_exc(limit=3)}")
+            continue
+        if rec is None:
+            continue
+        print(f"  {param_dir}: variants")
+        for lab, v in rec["runs"].items():
+            i = df.index[df["path"] == str(Path(param_dir) / lab)]
+            for k in VAR_KEYS:
+                if v.get(k) is not None:
+                    df.loc[i, k] = v[k]
+    return df
+
+
+def fill_bounds(df: pd.DataFrame) -> pd.DataFrame:
+    """``Nu_sys`` and ``Nu_sys_source`` for every row (see
+    :func:`rbc.analysis.variants.fill_bounds`), estimated per dimension.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Rows with the ``production`` flag.
+
+    Returns
+    -------
+    pandas.DataFrame
+    """
+    from rbc.analysis import variants
+
+    if "B_sys" not in df:
+        df = df.assign(B_sys=np.nan)
+    parts = [variants.fill_bounds(g) for _, g in df.groupby("dim", sort=False)]
+    return pd.concat(parts).loc[df.index] if parts else df
+
+
 def mark_production(df: pd.DataFrame, cases: pd.DataFrame | None) -> pd.DataFrame:
     """Flag one production run per (dim, Ra, Pr).
 
-    The run with the ``nz`` pinned in ``cases.csv`` wins; else the highest-``nz`` run
-    marked converged; else the highest-``nz`` run.
+    Only baseline runs (no timestepper or safety suffix in the label) are candidates
+    unless a point has none. The run with the ``nz`` pinned in ``cases.csv`` wins; else
+    the finest (``nz``, then ``nx``) run marked converged; else the finest run.
 
     Parameters
     ----------
@@ -251,12 +337,15 @@ def mark_production(df: pd.DataFrame, cases: pd.DataFrame | None) -> pd.DataFram
     if cases is not None and "nz" in cases:
         for _, c in cases.dropna(subset=["nz"]).iterrows():
             pinned[(c["dim"], c["log_ra"], c["log_pr"])] = int(c["nz"])
+    variant = df["variant"].fillna("").astype(str) if "variant" in df else pd.Series("", index=df.index)
     for key, g in df.groupby(["dim", "log_ra", "log_pr"]):
+        base = g[variant[g.index] == ""]
+        g = base if len(base) else g
         if key in pinned and (g["nz"] == pinned[key]).any():
             idx = g.index[g["nz"] == pinned[key]][0]
         else:
             ok = g[g.get("converged", pd.Series(False, index=g.index)).fillna(False).astype(bool)]
-            idx = (ok if len(ok) else g)["nz"].idxmax()
+            idx = (ok if len(ok) else g).sort_values(["nz", "nx"]).index[-1]
         df.loc[idx, "production"] = True
     return df
 
@@ -358,14 +447,15 @@ def main(argv=None) -> None:
             print(" ", msg)
             if r is not None:
                 rows.append(r)
-    new = pd.DataFrame(rows)
+    new = add_variants(pd.DataFrame(rows), not a.no_plots)
     old = [pd.read_csv(p) for p in ([a.out] if a.out.exists() else []) + list(a.merge)]
     if old:
         old = pd.concat(old, ignore_index=True)
         old = old[old["cluster"] != CLUSTER].drop_duplicates(subset=["cluster", "path"], keep="last")
         new = pd.concat([old, new], ignore_index=True)
     cases = rc.load_cases() if rc.CASES_CSV.exists() else None
-    new = mark_production(new, cases).sort_values(["dim", "log_ra", "log_pr", "nz"]).reset_index(drop=True)
+    new = mark_production(new, cases)
+    new = fill_bounds(new).sort_values(["dim", "log_ra", "log_pr", "nz"]).reset_index(drop=True)
     for p in write_tables(new, a.out):
         print(f"wrote {len(new)} rows to {p}")
     if cases is not None:

@@ -44,7 +44,7 @@ import pandas as pd
 
 from rbc import cases as rc
 from rbc import style
-from rbc.plots.common import decade_ticks, fit_loglog, proxy, slope_text, tidy_log_y
+from rbc.plots.common import add_errorbar_arg, decade_ticks, errorbar, fit_loglog, proxy, slope_text, sys_values, tidy_log_y
 
 #: Reference exponents (alpha: Pr, beta: Ra) of the low-Pr ultimate sub-regime.
 REF = {"Nu": (0.5, 0.5), "Nu-1": (0.5, 0.5), "Re": (-0.5, 0.5)}
@@ -93,7 +93,7 @@ def qvals(df, q):
 
 
 def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, include_running, p=None,
-          legend=True, legend_items=None):
+          legend=True, legend_items=None, bars="all"):
     """One family of compensated slices on one axes.
 
     Against Ra by default; with ``p``, against x = Ra Pr^p (:mod:`rbc.plots.reduced`).
@@ -129,6 +129,8 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
         Draw the legend under the axes (otherwise only ``legend_items`` is filled).
     legend_items : list, optional
         Receives ``(handle, label)`` of every slice.
+    bars : {"all", "stat", "none"}, optional
+        Error bars drawn and errors quoted (:mod:`rbc.plots.common`).
 
     Returns
     -------
@@ -145,10 +147,10 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
         return frame["Ra"] if p is None else frame["Ra"] * frame["Pr"] ** p
 
     def comp(frame):
-        """Compensated values (and errors) of some rows."""
+        """Compensated values, errors and systematic bounds of some rows."""
         v, e = qvals(frame, q)
         div = frame["Pr"] ** alpha * frame["Ra"] ** beta if norm == "law" else xvals(frame) ** g
-        return v / div, (None if e is None else e / div)
+        return v / div, (None if e is None else e / div), sys_values(frame, q) / div.to_numpy(float)
 
     common = None
     if norm == "common":
@@ -161,10 +163,10 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
     rows, handles, labels = [], [], []
     for c, s in slices.items():
         allpts = df[np.isclose(rc.slice_c(df["log_ra"], df["log_pr"], a), c)].sort_values("log_ra")
-        y, sy = comp(s)
-        y_all, _ = comp(allpts)
+        y, sy, by = comp(s)
+        y_all, _, _ = comp(allpts)
         xs = xvals(s)
-        fits = [fit_loglog(xs.values, y.values, None if sy is None else sy.values, k) for k in fit_kinds]
+        fits = [fit_loglog(xs.values, y.values, None if sy is None else sy.values, k, by) for k in fit_kinds]
         if norm == "first":
             scale = y.iloc[0]
         elif norm == "ref":
@@ -178,17 +180,17 @@ def panel(ax, df, q, a, alpha, beta, fit_kinds, norm, ref_ra, min_points, includ
             scale = 1.0
         kw = style.slice_kw(c, a)
         done = allpts["status"] == "finished" if not include_running else np.ones(len(allpts), bool)
-        ax.errorbar(xs, y / scale, yerr=None if sy is None else sy / scale, capsize=2, **kw)
+        errorbar(ax, xs, y / scale, None if sy is None else sy / scale, by / scale, bars, capsize=2, **kw)
         if (~done).any():
             ax.plot(xvals(allpts)[~done], (y_all / scale)[~done], **dict(kw, **style.marker_kw(kw["color"], filled=False)), alpha=0.6)
         xx = np.logspace(np.log10(xs.min()), np.log10(xs.max()), 100)
         for i, (kind, f) in enumerate(zip(fit_kinds, fits)):
             ax.plot(xx, f["predict"](xx) / scale, ls=["-", ":"][i], lw=1, **style.line_kw(kw["color"]))
             rows.append(dict(q=q, a=a, c=c, kind=kind, slice_exponent=g, n=len(s), slope=f["coef"][-2],
-                             slope_err=f["err"][-2], chi2_dof=f["chi2_dof"], aic=f["aic"], scale=scale,
+                             slope_err=f["err"][-2], slope_sys=f["sys"][-2], chi2_dof=f["chi2_dof"], aic=f["aic"], scale=scale,
                              **({"q2": f["coef"][0]} if kind == "quadratic" else {})))
         handles.append(proxy(kw, style.slice_kw(c, a, line=True)["ls"]))
-        labels.append(f"${style.pow10(c)}$: {slope_text(fits[0])}")
+        labels.append(f"${style.pow10(c)}$: {slope_text(fits[0], bars)}")
         if legend_items is not None:
             legend_items.append((handles[-1], labels[-1]))
         if norm == "none":
@@ -244,6 +246,7 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--width", type=float, default=1.0, help="figure width as a fraction of the text width")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
+    add_errorbar_arg(p)
     return p
 
 
@@ -268,7 +271,8 @@ def main(argv=None) -> None:
     fig, axes = plt.subplots(1, n, figsize=style.figsize(a.width, 0.55 if n > 1 else 0.95), squeeze=False)
     rows = []
     for ax, fam in zip(axes[0], a.family):
-        rows += panel(ax, df, a.q, fam, alpha, beta, a.fit, a.norm, a.ref_ra, a.min_points, a.include_running)
+        rows += panel(ax, df, a.q, fam, alpha, beta, a.fit, a.norm, a.ref_ra, a.min_points, a.include_running,
+                      bars=a.errorbars)
     tag = f"{a.q.replace('-', 'm')}_{'_'.join(a.fit)}_{a.norm}"
     print(style.save(fig, a.out / f"scaling_{tag}", png=a.png))
     fits = pd.DataFrame(rows)

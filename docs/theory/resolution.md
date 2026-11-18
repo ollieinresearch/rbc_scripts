@@ -60,17 +60,58 @@ boundary layers, and often converges faster than the rule suggests. The resoluti
 checks it directly: {mod}`rbc.plots.resolution` `decades` plots the actual Nu error of each
 run against its $D$ with the line $10^{-D/2}$.
 
-## The resolution rule
+## Screening, not a pass mark
 
-A run counts as resolved when **both the horizontal and the vertical marginal spectra, of
-both velocity and temperature, span at least 4 decades**. The figure `resolution_study`
-uses the smallest of those four, `D_run`.
+Decades are a **screening** diagnostic: they say where truncation is most likely to
+matter and which direction limits a run, but they do not measure the error in Nu. Only
+comparing runs that differ in resolution (or timestep) does that, and that comparison is
+what the error bars on Nu are built from ({ref}`resolution-error-budget`). A run at 3.95
+decades is not meaningfully worse than one at 4.00: by the rule of thumb the difference
+is $10^{-1.975}$ against $10^{-2}$, 1.06% against 1.00%.
 
-By the rule of thumb, 4 decades corresponds to an error of about 1% in Nu, larger than the
-0.5% sampling precision recommended in {doc}`convergence`. Whether the resolution error
-really is that large is exactly what the resolution studies show; if their errors sit
-well below $10^{-D/2}$, 4 decades is enough, otherwise the requirement should rise to
-about 5.
+{mod}`rbc.analysis.resolution` runs the screening tests of one run and writes
+`outputs/resolution.txt`, `resolution.pdf` and `resolution.json`:
+
+Decades per direction
+: The x, y and z marginals of velocity and temperature are tested separately (the
+  horizontal one is not averaged over x and y), so the direction that limits the run is
+  named (`D_run_at`). Each $D$ comes with a standard error from a block bootstrap over
+  time, the 5th percentile of the single writes, and the pile-up. A direction is `pass`
+  if $D$ reaches the target (4 by default, `--target`), `within 2 SE` if $D + 2\,\mathrm{SE}$
+  does, `below` otherwise. `D_run` is the smallest over the six. The mean-profile spectrum
+  (`meanz`) is reported with a status but does not enter `D_run`.
+
+Derivative-weighted decades `Dk2`
+: The decades of $n^2E(n)$. $\langle|\nabla T|^2\rangle$ and $\langle|\omega|^2\rangle$ are
+  sums of squared derivatives, whose truncation follows $k^2E$ rather than $E$; this is
+  why those identities converge after $\langle wT\rangle$. Exact in $x$ and $y$; a proxy in
+  $z$ (with $\zeta=\cos\theta$, $n^2E(n)$ is the spectrum of $\sin\theta\,\partial_\zeta f$).
+
+Dissipation scales
+: $\eta = (Pr^2/(Ra(Nu-1)))^{1/4}$ from the exact global dissipation, and the thermal
+  scale $\eta\,Pr^{-3/4}$ for $Pr<1$ (Batchelor $\eta\,Pr^{-1/2}$ for $Pr>1$), against the
+  largest spacing in each direction: $L/N$ horizontally, the mid-plane spacing of the
+  Gauss–Chebyshev grid ($\approx \pi H/(2N_z)$) vertically. $k_\text{max}\eta = \pi\eta/\Delta
+  \ge 1$ is the criterion of Grötzbach (1983), $\ge 1.5$ the stricter spectral-DNS one.
+  These are volume averages; the local scale in plumes and boundary layers is smaller,
+  which is why the spectra, not $\eta$, are the primary test.
+
+Boundary-layer nodes (vertical only)
+: The number of Chebyshev nodes inside the thermal and viscous layers. This says
+  nothing about the horizontal directions: they are Fourier, with uniform spacing, and a
+  Fourier mode is global, so there is no "node inside the layer" to count. Horizontal
+  resolution is judged from the x and y spectra and $\Delta x/\eta$. Even vertically,
+  the decades of the mean-profile spectrum test the layer more directly than a node count,
+  so the counts are reported, not tested.
+
+Exact identities
+: The spread between Nu from $\langle wT\rangle$ and from $\langle|\nabla T|^2\rangle$. In a
+  dealiased Galerkin code these identities hold for the truncated system too, so their
+  agreement is weak evidence of resolution: an under-resolved run can satisfy them and
+  still be wrong.
+
+`screen` in `results.csv` is the status of `D_run`, or `pile-up` if any direction's
+pile-up exceeds 0.1 decades.
 
 ### Why the marginals and not the 3D shells
 
@@ -99,14 +140,9 @@ The 3D shells have more points, so they look smoother, but they carry no informa
 about truncation that the marginals do not. They remain useful as a picture of the
 cascade.
 
-```{admonition} Suggestion
-:class: tip
-
-The marginals leave out the horizontal mean, which is where the mean thermal boundary
-layer lives, so the rule never looks at it. Its spectrum is in `results.csv`
-(`D_temp_meanz`). Since Nu is set by the boundary-layer gradient, requiring 4 decades there
-too would close the gap.
-```
+The horizontal mean ($k_x=k_y=0$) is left out of the marginals, and it is where the mean
+thermal boundary layer lives. Its spectrum is reported separately (`D_<field>_meanz` in
+`resolution.txt` and `results.csv`).
 
 ## Resolution studies
 
@@ -132,12 +168,85 @@ extrapolates to the resolution needed for a target, as long as the runs are alre
 this exponential regime.
 ```
 
+(resolution-error-budget)=
+## Error bars on Nu
+
+Nu has two kinds of error, kept separate:
+
+- **statistical**: the standard error of the time mean (`Nu_se`, {doc}`convergence`).
+  It is random and shrinks with longer averaging;
+- **systematic**: the bias from truncation and timestepping. It is not random: rerunning
+  longer does not reduce it, and it may have the same sign at neighbouring points.
+
+{mod}`rbc.analysis.variants` measures the systematic part by comparing the runs of one
+(Ra, Pr) folder, whatever they are: different resolutions, timesteppers or CFL safety
+factors ({doc}`../user-guide/directories` has the naming). For a pair,
+
+$$
+\delta = Nu_b - Nu_a, \qquad \sigma_\delta = \sqrt{SE_a^2 + SE_b^2}, \qquad
+B = |\delta| + 2\sigma_\delta,
+$$
+
+and $B$ is a 95% upper bound on the bias of the coarser run. A pair agrees when
+$|\delta| \le \max(2\sigma_\delta,\ 0.5\%\,(Nu-1))$ (`--tol`).
+
+Resolution pairs
+: Runs with the same timestepper and safety factor. Each is compared with the finest
+  of its group, which takes the bound from its comparison with the next coarser run. For
+  the finest run this is conservative: with exponential convergence its own error is a
+  small fraction of that difference.
+
+Timestep pairs
+: Runs on the same grid with a different timestepper or safety factor, compared with
+  the baseline (the label without a suffix). A timestep variant inherits the baseline's
+  resolution bound; a run without a timestep pair inherits the largest timestep bound
+  measured with its stepper and safety factor on the same or a coarser grid (with a
+  CFL-limited step, dt shrinks as the grid is refined).
+
+The bounds add linearly, $B_\text{sys} = B_\text{res} + B_{dt}$, because they are biases,
+not independent random errors. Note the floor: when two runs agree, $B$ is still about
+$2\sqrt2\,SE$, so a tight systematic bound needs both runs averaged long enough.
+
+Points without any comparison get an **estimated** bound ({func}`rbc.analysis.variants.fill_bounds`):
+the largest measured relative bound, scaled by $10^{(D_\text{ref}-D_\text{run})/2}$. This
+leans on the rule of thumb above, so `Nu_sys_source` in `results.csv` records whether
+each bound was `measured` or `estimated`.
+
+### Propagation to exponents
+
+Every exponent estimate (two-point secants, cell centres, row fits, surface fits, slopes
+of the compensated plots) is linear in $L = \log_{10}Q$, $\hat\gamma = \sum_i g_iL_i$. A bias
+of at most $b_i = B_i/(Q_i\ln10)$ in each $L_i$ then moves it by at most
+
+$$
+\Delta\gamma \le \sum_i |g_i|\,b_i,
+$$
+
+whatever the signs and correlations of the biases. That is the systematic error bar on
+exponents ({mod}`rbc.analysis.exponents`). It is a worst case: biases of one sign at every
+point leave a slope unchanged, and the bound assumes the opposite. For a two-point secant
+over $h$ decades between points with relative bound $r = B/Q$ it is $2r/(h\ln 10)$: with
+$r = 1\%$ and $h = 1/2$, 0.017. Short steps make large systematic bars. Figures draw the statistical error
+as a capped bar and add the systematic bound as a thin whisker; `--errorbars stat` or
+`none` turns the whiskers or all bars off ({doc}`../user-guide/figures`).
+
+### What not to do about a small shortfall
+
+Filters, hyperviscosity or a larger dealiasing factor all change the equations being
+solved or only hide the tail; none reduces the error of Nu. Changing the timestepper or
+CFL safety factor changes only the time error, which the timestep pairs measure. If a run
+is short of decades, the remedy is resolution, or a resolution pair that shows it does not
+matter.
+
 ## Spectra at a glance
 
 - `outputs/cumulative_spectra_velocity.pdf` and `..._temperature.pdf`: the four panels of
   one run, time-averaged, with the 5–95% range over time;
 - `outputs/decades_timeseries.pdf`: $D(t)$ of every write;
 - `outputs/spec_range.txt`: the table of all decades;
+- `outputs/resolution.txt`, `resolution.pdf`: the screening tests of one run;
+- `<Ra>/<Pr>/outputs/variants.txt`, `variants.pdf`: every run of one point compared, with
+  the bounds;
 - `<Ra>/<Pr>/outputs/spectra_compare.pdf`: every resolution of one point overlaid. The
   curves should lie on top of each other at low mode numbers and peel off one by one at
   their cutoffs; if they disagree at low mode numbers, those modes are under-resolved in the

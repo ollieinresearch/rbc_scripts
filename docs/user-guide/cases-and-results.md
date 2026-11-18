@@ -106,6 +106,8 @@ resolution figures, which need columns this file does not have.
 | `cluster`, `path` | where and which run directory |
 | `dim`, `log_ra`, `log_pr`, `label` | from the path |
 | `nx`, `ny`, `nz` | grid (modes), from the files |
+| `stepper`, `cfl_safety`, `variant` | timestepper, CFL safety factor (from `params.conf`) and the label suffix (empty for a baseline run) |
+| `config_mismatch` | where the label and `params.conf` disagree |
 | `t0`, `t1`, `T_avg`, `n_samples` | averaging window and its length |
 | `Nu`, `Nu_se` | Nu from $\langle wT\rangle$ and its batch-means standard error |
 | `Nu_gradT`, `Nu_vort` | Nu from $\langle\lvert\nabla T\rvert^2\rangle$ and from $\langle\lvert\omega\rvert^2\rangle$ |
@@ -119,10 +121,16 @@ resolution figures, which need columns this file does not have.
 | `converged_stat` | the statistical rule ({doc}`../theory/convergence`) |
 | `Re`, `Re_se`, `Re_rms` | Reynolds number from the volume average and from the profiles |
 | `delta_T`, `delta_T_rms`, `delta_u`, `delta_u_slope` | boundary-layer thicknesses ({doc}`../theory/boundary-layers`) |
-| `n_delta_*` | Chebyshev nodes inside each layer |
+| `n_delta_*` | Chebyshev nodes inside each layer (vertical only) |
 | `Nu_flux_spread_pct` | spread of the total heat flux over $z$ (%) |
 | `D_<field>_<panel>` | spectral decades of the time-mean spectrum; field `vel` or `temp`, panel `nz`, `h`, `perp`, `3d`, `meanz` ({doc}`../theory/resolution`) |
 | `Dmin_<field>_<panel>` | smallest decades of any single write |
+| `D_<field>_<dir>`, `Dse_*`, `Dk2_*`, `pileup_*` | per direction `x`, `y`, `z`, `meanz`: decades, bootstrap standard error, derivative-weighted decades, pile-up ({mod}`rbc.analysis.resolution`) |
+| `D_run`, `D_run_at`, `D_run_se`, `screen` | smallest of the x, y, z decades, where, its standard error; screening verdict (`pass`, `within 2 SE`, `below`, `pile-up`) |
+| `eta`, `eta_T`, `kmax_eta_<dir>`, `kmax_etaT_<dir>` | Kolmogorov and thermal scales, and $\pi\eta/\Delta$ per direction |
+| `dx`, `dy`, `dz`, `dz_wall` | largest grid spacings; first Chebyshev node from the wall |
+| `B_res`, `B_dt`, `B_sys`, `B_res_vs`, `B_dt_vs` | systematic bounds on Nu from resolution and timestep pairs, and the run each came from ({mod}`rbc.analysis.variants`) |
+| `Nu_sys`, `Nu_sys_source` | systematic bound used for error bars, `measured` or `estimated` from the decades ({ref}`resolution-error-budget`) |
 | `n_jobs`, `t_run`, `iterations`, `dt_mean` | job history: jobs, time simulated, steps, mean timestep |
 | `wall_hours`, `ranks`, `core_hours`, `core_hours_source` | cost; the source says whether it is logged or estimated |
 | `production` | the row used for this point's results |

@@ -188,8 +188,12 @@ post_process() {
     local t0
     t0=$(python3 -c "import json; print(json.load(open('outputs/nusselt.json'))['t0'])") || t0=${AVG_TIME:-0}
     python3 -m rbc.analysis.profiles "$PWD" --t0 "$t0"
-    [[ -d spectra ]] && python3 -m rbc.spectra.cumulative "$PWD" --time="$t0"
+    if [[ -d spectra ]]; then
+        python3 -m rbc.spectra.cumulative "$PWD" --time="$t0"
+        python3 -m rbc.analysis.resolution "$PWD" --t0 "$t0"
+    fi
     python3 -m rbc.spectra.compare "$(dirname -- "$PWD")" || true
+    python3 -m rbc.analysis.variants "$(dirname -- "$PWD")" || true
 }
 
 # 3D render movie with the spectra panel underneath (needs SNAPSHOTS and the vis env).

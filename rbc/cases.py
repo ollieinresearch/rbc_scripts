@@ -116,6 +116,57 @@ def folder_value(e: float) -> str:
 
 
 _RUN_RE = re.compile(r"ra(?P<ra>[\d.]+e[-+]?\d+)/pr(?P<pr>[\d.]+e[-+]?\d+)/(?P<res>[^/]+)")
+_STEPPER_RE = re.compile(r"^(rk\d+|rksmr|sbdf\d|cnab\d|mcnab\d|cnlf\d)$", re.I)
+_SAFETY_RE = re.compile(r"^safety(?P<div>\d+(?:p\d+)?)$", re.I)
+
+
+def parse_label(res: str) -> dict:
+    """Resolution and variant encoded in a run label.
+
+    The label is ``<N_z>[_<N_x>]_Gam<Lx>_<Ly>[_<stepper>][_safety<k>]``:
+
+    * ``192_Gam2_2``: N_z = 192, N_x = N_y = 2 N_z (not written), Γ = (2, 2);
+    * ``192_384_Gam2_2``: N_x = N_y = 384 given explicitly;
+    * ``192_Gam2_2_rk443``: the RK443 timestepper instead of the default;
+    * ``192_Gam2_2_safety2``: the CFL safety factor divided by 2.
+
+    The suffixes may come in any order. Labels without ``Gam`` (``288_512``) give N_z and
+    N_x from their first two numbers. Any other suffix is kept in ``tags``.
+
+    Parameters
+    ----------
+    res : str
+        The label (last part of the run path).
+
+    Returns
+    -------
+    dict
+        ``nz``, ``nx`` (None unless written), ``stepper`` (upper case, None if not in the
+        label), ``safety_div`` (None if not in the label), ``tags`` (other suffixes),
+        ``variant`` (the suffixes joined by ``_``, ``""`` for a baseline run) and
+        ``base`` (the label without them).
+    """
+    tokens = res.split("_")
+    gam = next((i for i, t in enumerate(tokens) if t.lower().startswith("gam")), None)
+    if gam is None:
+        nums = [int(t) for t in tokens if t.isdigit()]
+        return dict(nz=nums[0] if nums else None, nx=nums[1] if len(nums) > 1 else None,
+                    stepper=None, safety_div=None, tags=[], variant="", base=res)
+    head = [int(t) for t in tokens[:gam] if t.isdigit()]
+    n_box = 2 if gam + 1 < len(tokens) and tokens[gam + 1].replace(".", "").isdigit() else 1
+    suffix = tokens[gam + n_box:]
+    stepper = safety = None
+    tags = []
+    for t in suffix:
+        if _STEPPER_RE.match(t):
+            stepper = t.upper()
+        elif (m := _SAFETY_RE.match(t)):
+            safety = float(m["div"].replace("p", "."))
+        else:
+            tags.append(t)
+    return dict(nz=head[0] if head else None, nx=head[1] if len(head) > 1 else None,
+                stepper=stepper, safety_div=safety, tags=tags, variant="_".join(suffix),
+                base="_".join(tokens[:gam + n_box]))
 
 
 def parse_run_path(path) -> dict | None:
@@ -124,27 +175,94 @@ def parse_run_path(path) -> dict | None:
     Parameters
     ----------
     path : str or pathlib.Path
-        e.g. ``.../3d/ra1e8/pr3e-3/384_Gam2_2``.
+        e.g. ``.../3d/ra1e8/pr3e-3/384_Gam2_2_rk443``.
 
     Returns
     -------
     dict or None
         ``dim`` (2 if ``/2d/`` is in the path, else 3), ``log_ra``, ``log_pr``,
-        ``nz`` (first number of the label), ``nx`` (second number, unless the label is
-        of the ``<nz>_Gam2_2`` form, which encodes the box rather than nx) and
-        ``label``; None if the path does not match.
+        ``label`` and the fields of :func:`parse_label`; None if the path does not match.
     """
     p = Path(path).as_posix()
     m = _RUN_RE.search(p)
     if not m:
         return None
     dim = 2 if "/2d/" in p else 3
-    res = m["res"]
-    nums = [int(t) for t in res.split("_") if t.isdigit()]
-    nz = nums[0] if nums else None
-    nx = nums[1] if len(nums) > 1 and "Gam" not in res else None
     return dict(dim=dim, log_ra=half_decade(m["ra"]), log_pr=half_decade(m["pr"]),
-                nz=nz, nx=nx, label=res)
+                label=m["res"], **parse_label(m["res"]))
+
+
+def read_params(run) -> dict:
+    """The ``export NAME=value`` settings of a run's ``params.conf``.
+
+    Shell arithmetic of the form ``$((RES_Z * 2))`` is evaluated with the values read so
+    far; other references to variables are left as text.
+
+    Parameters
+    ----------
+    run : str or pathlib.Path
+        Run directory.
+
+    Returns
+    -------
+    dict
+        Name -> value (str), empty if there is no ``params.conf``.
+    """
+    conf = Path(run) / "params.conf"
+    if not conf.exists():
+        return {}
+    out = {}
+    for line in conf.read_text().splitlines():
+        m = re.match(r"^\s*export\s+(\w+)=(\"[^\"]*\"|'[^']*'|\$\(\([^)]*\)\)|\S*)", line)
+        if not m:
+            continue
+        v = m.group(2).strip("\"'")
+        a = re.fullmatch(r"\$\(\((.*)\)\)", v)
+        if a:
+            expr = re.sub(r"\$?\{?([A-Za-z_]\w*)\}?", lambda k: out.get(k.group(1), "x"), a.group(1))
+            if re.fullmatch(r"[\d\s+\-*/()]+", expr):
+                v = str(int(eval(expr.replace("/", "//"))))
+        out[m.group(1)] = v
+    return out
+
+
+#: Defaults of the simulation when params.conf does not say (sim/rayleigh_benard.py).
+DEFAULT_STEPPER = "RK222"
+
+
+def run_config(run) -> dict:
+    """Resolution, timestepper and CFL safety factor of a run.
+
+    ``params.conf`` is what the run used, so it wins; the label (:func:`parse_label`)
+    fills in what it does not say. Disagreements are listed in ``mismatch``.
+
+    Parameters
+    ----------
+    run : str or pathlib.Path
+        Run directory.
+
+    Returns
+    -------
+    dict
+        ``nz``, ``nx``, ``stepper``, ``safety`` (the CFL safety factor, None if unknown),
+        ``safety_div`` and ``variant`` from the label, and ``mismatch`` (list of str).
+    """
+    lab = parse_run_path(run) or parse_label(Path(run).name)
+    prm = read_params(run)
+    num = lambda k: float(prm[k]) if re.fullmatch(r"[-+\d.eE]+", prm.get(k, "")) else None
+    nz = int(num("RES_Z")) if num("RES_Z") else lab["nz"]
+    nx = int(num("RES_HOR")) if num("RES_HOR") else lab["nx"]
+    stepper = (prm.get("STEPPER") or lab["stepper"] or DEFAULT_STEPPER).upper()
+    safety = num("CFL_SAFETY")
+    mismatch = []
+    if lab["nz"] and nz and lab["nz"] != nz:
+        mismatch.append(f"label N_z {lab['nz']} but params.conf RES_Z {nz}")
+    if lab["nx"] and nx and lab["nx"] != nx:
+        mismatch.append(f"label N_x {lab['nx']} but params.conf RES_HOR {nx}")
+    if lab["stepper"] and lab["stepper"] != stepper:
+        mismatch.append(f"label stepper {lab['stepper']} but params.conf STEPPER {stepper}")
+    return dict(nz=nz, nx=nx, stepper=stepper, safety=safety, safety_div=lab["safety_div"],
+                variant=lab["variant"], mismatch=mismatch)
 
 
 def load_cases(path: Path | str = CASES_CSV, dim: int | None = None) -> pd.DataFrame:

@@ -46,10 +46,16 @@ def studies(df, min_runs=3):
     Returns
     -------
     dict
-        (log_ra, log_pr) -> rows sorted by N_z, with ``D_run`` added.
+        (log_ra, log_pr) -> rows sorted by N_z. ``D_run`` is the one of
+        :mod:`rbc.analysis.resolution` (smallest of the x, y and z marginals) where the
+        results have it, else the smallest of :data:`D_COLS`. Timestepper and
+        safety-factor variants are left out (:mod:`rbc.analysis.variants` compares them).
     """
     df = df.copy()
-    df["D_run"] = df[[c for c in D_COLS if c in df]].min(axis=1)
+    if "variant" in df:
+        df = df[df["variant"].fillna("").astype(str) == ""]
+    fallback = df[[c for c in D_COLS if c in df]].min(axis=1)
+    df["D_run"] = df["D_run"].fillna(fallback) if "D_run" in df else fallback
     out = {}
     for key, g in df.groupby(["log_ra", "log_pr"]):
         if g["nz"].nunique() >= min_runs:

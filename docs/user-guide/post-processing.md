@@ -50,6 +50,30 @@ The first writes the time-averaged spectra of one run, the decades table
 (Ra, Pr) in `outputs/spectra_compare.pdf` of the parameter folder
 ({doc}`../theory/resolution`).
 
+## Resolution tests of one run
+
+```bash
+python -m rbc.analysis.resolution RUN --t0 T0
+```
+
+writes `outputs/resolution.txt`, `resolution.pdf` and `resolution.json`: decades of the
+x, y and z marginals separately with bootstrap standard errors, derivative-weighted
+decades, pile-up, $k_\text{max}\eta$ per direction, the boundary-layer node counts
+(vertical only) and the identity spread. These are screening tests; `--target` sets the
+decades target (default 4). See {doc}`../theory/resolution`.
+
+## Comparing the runs of one point
+
+```bash
+python -m rbc.analysis.variants RUN/..
+```
+
+compares every analysed run in the parameter folder (resolutions, timesteppers, safety
+factors, recognised from the labels and `params.conf`) and writes
+`<Ra>/<Pr>/outputs/variants.txt`, `variants.pdf` and `variants.json`: Nu of each run, the
+difference of each pair with its uncertainty, and the systematic bound of each run
+({ref}`resolution-error-budget`). `post.sh` runs both after every job.
+
 ## Choosing the averaging start
 
 `AVG_TIME` in `params.conf` sets it for the automatic post-processing and for

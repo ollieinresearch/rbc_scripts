@@ -80,6 +80,14 @@ grid, and `D_`, `Dmin_`, `pileup_` for each field and panel, and `D_<field>_mean
 
 `outputs/spec_range.txt`: the same decades as a table, with the time statistics of $D(t)$.
 
+`outputs/resolution.json` (and `resolution.txt`, `resolution.pdf`), from
+{func}`rbc.analysis.resolution.compute`: the per-direction decades and their errors, the
+scale tests, grid spacings, node counts and the run's configuration.
+
+`<Ra>/<Pr>/outputs/variants.json` (and `variants.txt`, `variants.pdf`), from
+{func}`rbc.analysis.variants.run`: per run `B_res`, `B_dt`, `B_sys` and where each came
+from; every pair compared.
+
 Figures: `info.pdf`, `profiles.pdf`, `cumulative_spectra_velocity.pdf`,
 `cumulative_spectra_temperature.pdf`, `decades_timeseries.pdf`; in the parameter folder,
 `outputs/spectra_compare.pdf`; renders and movies in `visualization/`.

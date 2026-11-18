@@ -19,6 +19,10 @@ Usage::
     python -m rbc.plots.pr_decay
     python -m rbc.plots.pr_decay --ref-pr -0.5 --guides 0.2 0.5
     python -m rbc.plots.pr_decay --results nusselt.csv          # a simple Ra,Pr,Nusselt file
+    python -m rbc.plots.pr_decay --errorbars none
+
+Error bars: ±1 standard error, and with ``--errorbars all`` a whisker adding the
+worst-case systematic bound from ``Nu_sys`` (:mod:`rbc.plots.common`).
 """
 from __future__ import annotations
 
@@ -31,7 +35,7 @@ import pandas as pd
 
 from rbc import cases as rc
 from rbc import style
-from rbc.plots.common import decade_ticks, plain_log_y
+from rbc.plots.common import add_errorbar_arg, decade_ticks, errorbar, plain_log_y, sys_values
 
 LN10 = np.log(10.0)
 #: Pr exponents of the low-Pr regimes of Grossmann & Lohse (2001, table I).
@@ -51,13 +55,14 @@ def qvals(df, q):
     Returns
     -------
     tuple of numpy.ndarray
-        Values, and errors (None unless every row has a finite error).
+        Values, errors (None unless every row has a finite error) and systematic bounds
+        (NaN where unknown).
     """
     v = (df["Nu"] - 1 if q == "Nu-1" else df["Nu"]).to_numpy(float)
     e = df["Nu_se"].to_numpy(float) if "Nu_se" in df else None
     if e is not None and not np.all(np.isfinite(e)):
         e = None
-    return v, e
+    return v, e, sys_values(df, q)
 
 
 def curves(df, q, ref_pr, min_points=2):
@@ -77,8 +82,9 @@ def curves(df, q, ref_pr, min_points=2):
     Returns
     -------
     rows : list of dict
-        Per Ra: ``log_ra``, ``Pr``, ratio ``r`` and its error ``sr``, and the secants
-        ``Pr_mid``, ``alpha``, ``alpha_err``.
+        Per Ra: ``log_ra``, ``Pr``, ratio ``r``, its error ``sr`` and systematic bound
+        ``br``, and the secants ``Pr_mid``, ``alpha``, ``alpha_err``, ``alpha_sys``.
+        Systematic bounds add linearly (worst case, :mod:`rbc.analysis.exponents`).
     skipped : list of float
         log10 Ra values without a run at the reference Pr.
     """
@@ -91,8 +97,9 @@ def curves(df, q, ref_pr, min_points=2):
         if not ref.any():
             skipped.append(float(lra))
             continue
-        v, e = qvals(g, q)
+        v, e, b = qvals(g, q)
         v0 = v[ref][0]
+        brel = b / v
         rel = None if e is None else e / v                     # relative errors
         r = v / v0
         # independent runs: relative errors add in quadrature; the reference point is exactly 1
@@ -102,12 +109,14 @@ def curves(df, q, ref_pr, min_points=2):
         dx = np.diff(x)
         alpha = np.diff(L) / dx
         aerr = None if rel is None else np.sqrt((rel[1:] / LN10) ** 2 + (rel[:-1] / LN10) ** 2) / dx
-        rows.append(dict(log_ra=float(lra), Pr=g["Pr"].to_numpy(float), r=r, sr=sr,
-                         Pr_mid=10 ** (0.5 * (x[1:] + x[:-1])), alpha=alpha, alpha_err=aerr))
+        br = np.where(ref, 0.0, r * (brel + brel[ref][0]))
+        rows.append(dict(log_ra=float(lra), Pr=g["Pr"].to_numpy(float), r=r, sr=sr, br=br,
+                         Pr_mid=10 ** (0.5 * (x[1:] + x[:-1])), alpha=alpha, alpha_err=aerr,
+                         alpha_sys=(brel[1:] + brel[:-1]) / (LN10 * dx)))
     return rows, skipped
 
 
-def plot(ax, axl, rows, q, ref_pr, guides):
+def plot(ax, axl, rows, q, ref_pr, guides, bars="all"):
     """Draw the normalized curves (``ax``) and their local exponents (``axl``).
 
     Parameters
@@ -124,13 +133,16 @@ def plot(ax, axl, rows, q, ref_pr, guides):
         log10 of the reference Pr.
     guides : list of float
         Exponents drawn as horizontal guides on ``axl``.
+    bars : {"all", "stat", "none"}, optional
+        Error bars drawn.
     """
     for r in rows:
         kw = style.category_kw(r["log_ra"], "ra")
         lab = rf"$Ra={style.pow10(r['log_ra'])}$"
-        ax.errorbar(r["Pr"], r["r"], yerr=r["sr"], ms=3, lw=0.9, capsize=1.5, label=lab, **kw)
+        errorbar(ax, r["Pr"], r["r"], r["sr"], r["br"], bars, ms=3, lw=0.9, capsize=1.5, label=lab, **kw)
         if axl is not None:
-            axl.errorbar(r["Pr_mid"], r["alpha"], yerr=r["alpha_err"], ms=3, lw=0.9, capsize=1.5, **kw)
+            errorbar(axl, r["Pr_mid"], r["alpha"], r["alpha_err"], r["alpha_sys"], bars, ms=3, lw=0.9,
+                     capsize=1.5, **kw)
     qt = "Nu-1" if q == "Nu-1" else "Nu"
     ref_tex = style.pow10(ref_pr)
     ax.axhline(1, color="0.6", lw=0.6, ls=":")
@@ -174,6 +186,7 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
+    add_errorbar_arg(p)
     return p
 
 
@@ -204,14 +217,14 @@ def main(argv=None) -> None:
     else:
         fig, (ax, axl) = plt.subplots(2, 1, figsize=(w, 1.05 * w), sharex=True, layout="constrained",
                                       height_ratios=[1.3, 1])
-    plot(ax, axl, rows, a.q, a.ref_pr, a.guides)
+    plot(ax, axl, rows, a.q, a.ref_pr, a.guides, a.errorbars)
     tag = f"pr_decay_{a.q.replace('-', 'm')}" + ("" if a.ref_pr == 0 else f"_ref{a.ref_pr:g}")
     print(style.save(fig, a.out / tag, png=a.png))
     table = pd.DataFrame([dict(log_ra=r["log_ra"], Pr_mid=pm, alpha=al,
-                               alpha_err=np.nan if r["alpha_err"] is None else ae)
-                          for r in rows for pm, al, ae in zip(r["Pr_mid"], r["alpha"],
-                                                              r["alpha_err"] if r["alpha_err"] is not None
-                                                              else r["alpha"])])
+                               alpha_err=np.nan if r["alpha_err"] is None else ae, alpha_sys=asy)
+                          for r in rows for pm, al, ae, asy in zip(r["Pr_mid"], r["alpha"],
+                                                                   r["alpha_err"] if r["alpha_err"] is not None
+                                                                   else r["alpha"], r["alpha_sys"])])
     a.out.mkdir(parents=True, exist_ok=True)
     table.to_csv(a.out / f"{tag}_local.csv", index=False, float_format="%.6g")
 

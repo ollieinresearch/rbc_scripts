@@ -76,6 +76,28 @@ Time-averaged profiles and boundary layers. See {doc}`../theory/boundary-layers`
 :prog: python -m rbc.analysis.profiles
 ```
 
+(cli-rbc-analysis-resolution)=
+### `rbc.analysis.resolution`
+
+Resolution screening of one run. See {doc}`../theory/resolution`.
+
+```{argparse}
+:module: rbc.analysis.resolution
+:func: get_parser
+:prog: python -m rbc.analysis.resolution
+```
+
+(cli-rbc-analysis-variants)=
+### `rbc.analysis.variants`
+
+Compare the runs of one (Ra, Pr) and bound the systematic error of Nu. See {ref}`resolution-error-budget`.
+
+```{argparse}
+:module: rbc.analysis.variants
+:func: get_parser
+:prog: python -m rbc.analysis.variants
+```
+
 (cli-rbc-spectra-cumulative)=
 ### `rbc.spectra.cumulative`
 

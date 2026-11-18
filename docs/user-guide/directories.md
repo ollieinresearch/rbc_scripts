@@ -36,7 +36,7 @@ Every simulation is one {term}`run directory` on scratch:
 
 ```text
 $SCRATCH/ollie_rb_data/3d/ra1e8/pr1e0/108_Gam2_2
-                      │   │     │     └── label: <N_z>_Gam<Γ>_2
+                      │   │     │     └── label: <N_z>[_<N_x>]_Gam2_2[_<stepper>][_safety<k>]
                       │   │     └──────── Pr = 1   (pr<mantissa>e<exponent>)
                       │   └────────────── Ra = 10^8
                       └────────────────── dimension
@@ -48,11 +48,28 @@ reads them back as exact half-decade exponents ($\log_{10}$ values), which is ho
 script identifies a run; {func}`rbc.cases.folder_value` goes the other way.
 
 The label starts with the number of Chebyshev modes $N_z$. `Gam2_2` is the
-{term}`aspect ratio` Γ = (2,2) (so $N_x = 2N_z, N_y = 2N_z$).
+{term}`aspect ratio` Γ = (2,2). The baseline run has $N_x = N_y = 2N_z$, RK222 and the
+default CFL safety factor; anything else is written into the label
+({func}`rbc.cases.parse_label`):
 
+| Label | Run |
+|---|---|
+| `192_Gam2_2` | $N_z = 192$, $N_x = N_y = 384$, RK222, default safety (the baseline) |
+| `192_384_Gam2_2` | the same, with $N_x$ written out; any other $N_x$ is written this way, e.g. `192_512_Gam2_2` |
+| `192_Gam2_2_rk443` | timestepper RK443 (any Dedalus scheme name, lower case: `rk111`, `sbdf2`, `cnab2`, ...) |
+| `192_Gam2_2_safety2` | CFL safety factor divided by 2 (`safety4`: by 4; `safety1p5`: by 1.5) |
+| `192_Gam2_2_rk443_safety2` | both |
 
-The analysis takes the true grid sizes from the files, not from the label, so a label
-that does not follow the pattern only affects sorting.
+$N_x$ must be even (RealFourier) and should factor into small primes for the FFTs.
+
+The label is a name; `params.conf` is what the run used (`RES_Z`, `RES_HOR`, `STEPPER`,
+`CFL_SAFETY`), so it wins where the two disagree, and the disagreement is reported
+(`config_mismatch` in `results.csv`, a warning in `variants.txt`). The grid sizes used by
+the analysis come from the output files themselves.
+
+Runs in one parameter folder that differ in resolution, timestepper or safety factor are
+compared automatically ({mod}`rbc.analysis.variants`, {ref}`resolution-error-budget`). Only
+baseline runs (no stepper or safety suffix) are candidates for the {term}`production run`.
 
 ## Inside a run directory
 

@@ -56,7 +56,7 @@ import pandas as pd
 
 from rbc import cases as rc
 from rbc import style
-from rbc.plots.common import decade_ticks, fit_loglog, plain_log_y
+from rbc.plots.common import add_errorbar_arg, decade_ticks, errorbar, fit_loglog, plain_log_y, sys_values
 
 #: Markers cycled through the literature sources.
 LIT_MARKERS = "osD^v<>PX*"
@@ -170,7 +170,7 @@ def prefactor(df, q, alpha, beta):
 
 
 def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", alpha=0.5, beta=0.5,
-          fit=None, c=None):
+          fit=None, c=None, bars="all"):
     """One curve per value of the fixed parameter.
 
     Parameters
@@ -201,11 +201,13 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
     c : float, optional
         Prefactor of the reference law (:func:`prefactor`), drawn as a dashed black line
         for ``collapse`` and ``law``.
+    bars : {"all", "stat", "none"}, optional
+        Error bars drawn (:mod:`rbc.plots.common`).
 
     Returns
     -------
     list of dict
-        One row per curve: fixed value, fitted slope and its error.
+        One row per curve: fixed value, fitted slope, its error and systematic bound.
     """
     other, x = ("log_ra", "Pr") if along == "pr" else ("log_pr", "Ra")
     vals = sorted(df[other].unique())
@@ -232,6 +234,7 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
         if norm == "common":
             sel = g[x].isin(shared).to_numpy() if shared else np.ones(len(g), bool)
             div = np.full(len(g), 10 ** np.mean(np.log10(y.to_numpy()[sel])))
+        bsys = sys_values(g, q) / np.asarray(div, float)
         y = y / div
         err = None if err is None else err / div
         lab = rf"${style.pow10(v)}$"
@@ -240,13 +243,13 @@ def panel(ax, df, q, along, lit=None, slopes=False, leg_ax=None, norm="none", al
             kind = fit if fit == "quadratic" and len(g) >= 4 else "linear"
             # fitted about the curve's middle, so a quadratic's slope is the one there
             xc = 10 ** np.mean(np.log10(g[x].to_numpy(float)))
-            f = fit_loglog(g[x].to_numpy() / xc, y.to_numpy(), None if err is None else err.to_numpy(), kind)
-            rows.append(dict(fixed=other, value=v, slope=f["coef"][-2], slope_err=f["err"][-2], fit=kind,
-                             n=len(g)))
+            f = fit_loglog(g[x].to_numpy() / xc, y.to_numpy(), None if err is None else err.to_numpy(), kind, bsys)
+            rows.append(dict(fixed=other, value=v, slope=f["coef"][-2], slope_err=f["err"][-2],
+                             slope_sys=f["sys"][-2], fit=kind, n=len(g)))
         if slopes:      # value first, so the numbers line up in the legend column
             lab = rf"${sym} = {f['coef'][-2]:+.3f}$ at {lab}" if departure else \
                 rf"${sym} = {f['coef'][-2]:.3f}$ at {lab}"
-        ax.errorbar(g[x], y, yerr=err, ms=3, lw=0 if fit else 0.9, capsize=1.5, label=lab, **ckw)
+        errorbar(ax, g[x], y, err, bsys, bars, ms=3, lw=0 if fit else 0.9, capsize=1.5, label=lab, **ckw)
         if fit:
             xx = np.logspace(np.log10(g[x].min()), np.log10(g[x].max()), 60)
             ax.plot(xx, f["predict"](xx / xc), lw=0.9, **style.line_kw(ckw["color"]))
@@ -336,6 +339,7 @@ def get_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("figures"), help="output folder")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
+    add_errorbar_arg(p)
     return p
 
 
@@ -367,7 +371,7 @@ def main(argv=None) -> None:
     rows = []
     for k, along in enumerate(a.along):
         rows += panel(fig.add_subplot(gs[k, 0]), df, a.q, along, lit, a.slopes, fig.add_subplot(gs[k, 1]),
-                      a.norm, alpha, beta, a.fit, c)
+                      a.norm, alpha, beta, a.fit, c, a.errorbars)
     tag = f"fixed_{a.q.replace('-', 'm')}_{'_'.join(a.along)}" + ("" if a.norm == "none" else f"_{a.norm}") \
         + (f"_{a.ref}" if a.norm in ("comp", "collapse", "law") else "") + (f"_{a.fit}" if a.fit else "")
     print(style.save(fig, a.out / tag, png=a.png))

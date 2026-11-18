@@ -66,8 +66,9 @@ results.csv
   until the paper is published. Columns: {ref}`results-columns`.
 
 production run
-  The run used for a parameter point's results when there are several resolutions: the
-  one pinned by `nz` in `cases.csv`, else the finest converged one.
+  The run used for a parameter point's results when there are several resolutions: among
+  baseline runs (no timestepper or safety suffix), the one pinned by `nz` in `cases.csv`,
+  else the finest converged one.
 
 res_check
   Column of `cases.csv`: 1 where a resolution study was done (drawn as a star).
@@ -165,12 +166,18 @@ section test
 spectral decades
 D
   How many decades the energy spectrum drops from its peak to its last modes. With $D$
-  decades, Nu is expected to have about $D/2$ significant figures. See
-  {doc}`theory/resolution`.
+  decades, Nu is expected to have about $D/2$ significant figures. A screening
+  diagnostic, not a measure of the error. See {doc}`theory/resolution`.
+
+systematic bound
+B_sys
+  Upper bound on the bias of Nu from truncation and timestepping, from comparing runs of
+  the same point ({mod}`rbc.analysis.variants`). Drawn as the thin whisker beyond the
+  statistical error bar. See {ref}`resolution-error-budget`.
 
 marginal spectrum
   Energy summed over all modes with a given index in one direction (Chebyshev degree, or
-  horizontal wavenumber). The resolution rule uses the marginals.
+  horizontal wavenumber). The resolution screening uses the x, y and z marginals.
 
 shell spectrum
   Energy summed over shells of constant index radius; the 3D shells mix Fourier

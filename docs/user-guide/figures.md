@@ -11,6 +11,26 @@ python -m rbc.plots.all --results nusselt.csv   # Nu figures from a simple Ra,Pr
 Every figure takes `--results`, which may also be a simple three-column file
 ({ref}`simple-results`).
 
+(errorbars)=
+## Error bars
+
+Figures of Nu and of exponents (scaling, fixed, Pr decay, reduced, exponents, and
+`rbc.plots.all`) take `--errorbars`:
+
+`all` (default)
+: a capped bar of ±1 standard error and a thin whisker out to ±(standard error +
+  systematic bound), the bound being `Nu_sys` ({ref}`resolution-error-budget`); fitted
+  slopes and means are quoted as $m \pm \text{stat} \pm \text{sys}$, and the CSVs have
+  `*_sys` columns.
+`stat`
+: the statistical bar only.
+`none`
+: no bars, and no ± in the legends.
+
+The systematic part of an exponent is a worst-case bound, so it is usually much larger than
+the statistical one, especially for two-point secants over short steps. It is drawn only
+where every point used has a bound.
+
 Figures are made at the size they will be printed, for inclusion at 100% in LaTeX: widths
 are fractions of `rbc.style.TEXTWIDTH_IN`, the one number to match to the journal's text
 width. Text is typeset with LaTeX where it is installed (`--no-tex` turns this off).

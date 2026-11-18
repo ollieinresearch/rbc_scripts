@@ -2,7 +2,7 @@
 
 Usage::
 
-    python -m rbc.plots.all [--out figures] [--png] [--no-tex]
+    python -m rbc.plots.all [--out figures] [--png] [--no-tex] [--errorbars {all,stat,none}]
     python -m rbc.plots.all --results nusselt.csv     # a simple Ra,Pr,Nusselt file
 
 With a simple three-column ``Ra,Pr,Nusselt`` file (see
@@ -19,6 +19,7 @@ import argparse
 import traceback
 
 from rbc import cases as rc
+from rbc.plots.common import add_errorbar_arg
 from rbc.plots import (boundary_layers, contour, exponents, fixed, param_grid, pr_decay, reduced, resolution,
                        scaling)
 
@@ -36,6 +37,7 @@ def get_parser() -> argparse.ArgumentParser:
                                      "(default: data/results.csv)")
     p.add_argument("--png", action="store_true", help="also write PNG previews")
     p.add_argument("--no-tex", action="store_true", help="never use LaTeX for text (default: use it where it is installed)")
+    add_errorbar_arg(p)
     return p
 
 
@@ -82,9 +84,10 @@ def main(argv=None) -> None:
             (resolution.main, ["study"] + res),
             (contour.main, [] + res),
         ]
+    bars = {scaling.main, fixed.main, pr_decay.main, reduced.main, exponents.main}
     for fn, args in jobs:
         try:
-            fn(args + common)
+            fn(args + common + (["--errorbars", a.errorbars] if fn in bars else []))
         except SystemExit as e:
             print(f"{fn.__module__}: {e}")
         except Exception:
