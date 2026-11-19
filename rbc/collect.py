@@ -154,12 +154,18 @@ def process_run(run: Path, recalc: bool, t0, plots: bool) -> tuple[dict | None, 
             log.append("nusselt")
         t_win = json.loads((out / "nusselt.json").read_text())["t0"]
         if (run / "horizontal_analysis").exists() and (recalc or _stale(out / "profiles.json", run / "horizontal_analysis")):
-            prof = profiles.compute(run, t_win)
-            np.savez(out / "profiles.npz", **{k: v for k, v in prof.items() if k != "diag"})
-            (out / "profiles.json").write_text(json.dumps(prof["diag"], indent=1))
-            if plots:
-                profiles.plot(prof, out / "profiles.pdf")
-            log.append("profiles")
+            # A run without profiles in its window keeps its Nu row; only the boundary-layer columns go blank.
+            try:
+                prof = profiles.compute(run, t_win)
+            except (FileNotFoundError, KeyError, ValueError) as e:
+                (out / "profiles.json").unlink(missing_ok=True)
+                log.append(f"profiles skipped ({type(e).__name__}: {e})")
+            else:
+                np.savez(out / "profiles.npz", **{k: v for k, v in prof.items() if k != "diag"})
+                (out / "profiles.json").write_text(json.dumps(prof["diag"], indent=1))
+                if plots:
+                    profiles.plot(prof, out / "profiles.pdf")
+                log.append("profiles")
         if (run / "spectra").exists() and (recalc or _stale(out / "spectra.json", run / "spectra")):
             from rbc.spectra import cumulative
             if plots:
