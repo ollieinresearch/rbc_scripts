@@ -22,8 +22,11 @@ the run's resolution error. A run is
 Without a plateau (the two finest runs disagree), the finest run is the reference for the
 others and is itself compared with the next coarser run.
 
-Only baseline runs (no timestepper or safety-factor suffix in the label) are used, unless
-``--include-variants``. Writes ``PARAM_DIR/outputs/testing/convergence.{txt,pdf,json}``::
+Runs that fail the statistical convergence rule of :mod:`rbc.analysis.nusselt`
+(``converged_stat``) are shown and compared but never used for the plateau or the
+reference, and are classed ``unconverged``: a short average cannot define the converged
+value. Only baseline runs (no timestepper or safety-factor suffix in the label) with the
+folder's most common aspect ratio (``Gam2_2``) are used, unless ``--include-variants``. Writes ``PARAM_DIR/outputs/testing/convergence.{txt,pdf,json}``::
 
     python -m testing.convergence PARAM_DIR [--tol 1] [--alpha 0.05]
 
@@ -34,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -48,7 +52,8 @@ TOL = 1.0
 #: Default significance level of the plateau test.
 ALPHA = 0.05
 #: Run classes, best first, with their markers (filled: shown, open: point estimate only).
-STATUSES = {"good": ("o", True), "likely good": ("o", False), "likely bad": ("s", False), "bad": ("X", True)}
+STATUSES = {"good": ("o", True), "likely good": ("o", False), "likely bad": ("s", False), "bad": ("X", True),
+            "unconverged": ("d", False)}
 #: Resolution measures: column -> (label, True if larger is better, log axis).
 PREDICTORS = {
     "kmax_eta_min": ("k_max η (smallest direction)", True, True),
@@ -112,7 +117,7 @@ def run_row(run: Path) -> dict | None:
     vort = nu.get("vort_diff_pct", np.nan)
     r = dict(label=run.name, path=str(run), log_ra=p["log_ra"], log_pr=p["log_pr"], Ra=Ra, Pr=Pr,
              nz=nz, nx=nx, ny=ny, grid=float(nz * nx * ny), stepper=cfg["stepper"], safety=cfg["safety"],
-             variant=cfg["variant"], Nu=nu["Nu"], se=nu.get("Nu_se", np.nan),
+             variant=cfg["variant"], gam=(re.search(r"Gam[^_]*_[^_]*", run.name) or [""])[0], Nu=nu["Nu"], se=nu.get("Nu_se", np.nan),
              Nu_gradT=nu.get("avg_grad_T_sq", {}).get("Nu", np.nan), Re=nu.get("Re", {}).get("Re", np.nan),
              T_avg=nu.get("T_avg", np.nan), converged=nu.get("converged_stat", nu.get("converged")),
              vort_diff_pct=vort, vort_abs_pct=abs(vort), eta=sc["eta"], eta_T=sc["eta_T"],
@@ -148,6 +153,11 @@ def load_point(param_dir: Path, include_variants: bool = False) -> pd.DataFrame:
         return df
     if not include_variants:
         df = df[df["variant"] == ""]
+    if len(df) and df["gam"].nunique() > 1:
+        gams = df["gam"].value_counts()
+        keep = "Gam2_2" if "Gam2_2" in gams else gams.index[0]
+        print(f"{param_dir}: using {keep} runs only, skipping " + ", ".join(df.loc[df["gam"] != keep, "label"]))
+        df = df[df["gam"] == keep]
     return df.sort_values(["grid", "label"]).reset_index(drop=True)
 
 
@@ -234,16 +244,20 @@ def analyse(df: pd.DataFrame, tol: float = TOL, alpha: float = ALPHA) -> tuple[p
         ``Nu_ref`` and ``Nu_ref_se`` (plateau mean, or the finest run), ``tol``, ``alpha``.
     """
     df = df.copy()
-    k = plateau(df, alpha)
+    df["converged"] = [v is not False and v != False for v in df["converged"]]
+    c = df[df["converged"]]
+    if len(c) < 2:
+        raise ValueError("fewer than two converged runs")
+    k = plateau(c, alpha)
     df["in_plateau"] = False
     if k is not None:
-        df.loc[df.index[k:], "in_plateau"] = True
+        df.loc[c.index[k:], "in_plateau"] = True
         P = df[df["in_plateau"]]
         c2, dof, p = chi2_p(P["Nu"], P["se"])
         mu, se_mu = wmean(P["Nu"], P["se"])
     else:
-        c2, dof, p = chi2_p(df["Nu"].iloc[-2:], df["se"].iloc[-2:])
-        mu, se_mu = float(df["Nu"].iloc[-1]), float(df["se"].iloc[-1])
+        c2, dof, p = chi2_p(c["Nu"].iloc[-2:], c["se"].iloc[-2:])
+        mu, se_mu = float(c["Nu"].iloc[-1]), float(c["se"].iloc[-1])
     out = []
     for i, r in df.iterrows():
         if k is not None and r["in_plateau"]:
@@ -252,15 +266,17 @@ def analyse(df: pd.DataFrame, tol: float = TOL, alpha: float = ALPHA) -> tuple[p
             ref = "plateau without this run"
         elif k is not None:
             m, s, ref = mu, se_mu, "plateau"
-        elif i == df.index[-1]:
-            m, s, ref = float(df["Nu"].iloc[-2]), float(df["se"].iloc[-2]), df["label"].iloc[-2]
+        elif i == c.index[-1]:
+            m, s, ref = float(c["Nu"].iloc[-2]), float(c["se"].iloc[-2]), c["label"].iloc[-2]
         else:
-            m, s, ref = mu, se_mu, df["label"].iloc[-1]
+            m, s, ref = mu, se_mu, c["label"].iloc[-1]
         q1 = m - 1
         d = 100 * (r["Nu"] - m) / q1
         sig = 100 * np.hypot(r["se"], s) / q1
         b = abs(d) + 2 * sig
-        if b <= tol:
+        if not r["converged"]:
+            status = "unconverged"
+        elif b <= tol:
             status = "good"
         elif abs(d) - 2 * sig > tol:
             status = "bad"
@@ -268,7 +284,7 @@ def analyse(df: pd.DataFrame, tol: float = TOL, alpha: float = ALPHA) -> tuple[p
             status = "likely good" if abs(d) <= tol else "likely bad"
         out.append(dict(ref=ref, delta_pct=d, sigma_pct=sig, z=d / sig, bound_pct=b, status=status))
     df = pd.concat([df, pd.DataFrame(out, index=df.index)], axis=1)
-    summary = dict(plateau_start=None if k is None else df["label"].iloc[k],
+    summary = dict(plateau_start=None if k is None else c["label"].iloc[k],
                    plateau_n=0 if k is None else int(df["in_plateau"].sum()), chi2=c2, dof=dof, p=p,
                    Nu_ref=mu, Nu_ref_se=se_mu, tol=tol, alpha=alpha)
     return df, summary
@@ -404,16 +420,24 @@ def run(param_dir, tol: float = TOL, alpha: float = ALPHA, include_variants: boo
     Returns
     -------
     tuple or None
-        Outputs of :func:`analyse`; None with fewer than two runs.
+        Outputs of :func:`analyse`; None with fewer than two converged runs (the point is
+        then skipped, and ``convergence.txt`` says why).
     """
     param_dir = Path(param_dir).resolve()
     df = load_point(param_dir, include_variants)
-    if len(df) < 2:
+    out = param_dir / "outputs" / "testing"
+    title = "/".join(param_dir.parts[-2:])
+    conv = [v is not False and v != False for v in df["converged"]] if len(df) else []
+    if sum(conv) < 2:
+        if len(df):
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "convergence.txt").write_text(
+                f"{title}\n\nSkipped: {sum(conv)} of {len(df)} runs pass the statistical convergence rule; "
+                f"two are needed.\n" + "".join(f"  {l}: {'converged' if c else 'not converged'}\n"
+                                                for l, c in zip(df["label"], conv)))
         return None
     df, s = analyse(df, tol, alpha)
-    out = param_dir / "outputs" / "testing"
     out.mkdir(parents=True, exist_ok=True)
-    title = "/".join(param_dir.parts[-2:])
     write_txt(df, s, out / "convergence.txt", title)
     if plots:
         plot(df, s, out / "convergence.pdf", title)
@@ -450,7 +474,7 @@ def main(argv=None) -> None:
     for d in a.param_dirs:
         r = run(d, a.tol, a.alpha, a.include_variants, not a.no_plot)
         if r is None:
-            print(f"{d}: fewer than two analysed runs")
+            print(f"{d}: fewer than two converged runs, skipped")
             continue
         df, s = r
         print(f"{d}: plateau from {s['plateau_start']} (p = {s['p']:.3g}), Nu = {s['Nu_ref']:.5f} ± "

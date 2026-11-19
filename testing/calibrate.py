@@ -92,11 +92,12 @@ def thresholds(df: pd.DataFrame, col: str, larger_better: bool) -> dict:
     -------
     dict
         ``larger_better``, ``n`` (runs with the measure), counts per status (``n_good``,
-        ``n_likely_good``, ``n_likely_bad``, ``n_bad``), ``t_strict``, ``t_safe``,
+        ``n_likely_good``, ``n_likely_bad``, ``n_bad``; unconverged runs are left out),
+        ``t_strict``, ``t_safe``,
         ``t_bad`` (None if there is no such run), and ``ok_above``, ``ok_below``: good or
         likely good runs beyond and not beyond ``t_safe``.
     """
-    d = df[np.isfinite(df[col].astype(float))]
+    d = df[np.isfinite(df[col].astype(float)) & (df["status"] != "unconverged")]
     sign = 1 if larger_better else -1
     v = sign * d[col].astype(float)
     st = d["status"]
@@ -148,7 +149,7 @@ def _t(v, fmt=".3g") -> str:
 
 
 def write_txt(df: pd.DataFrame, summaries: dict, overall: dict, per_point: dict, path: Path, tol: float,
-              alpha: float) -> None:
+              alpha: float, skipped=()) -> None:
     """Write ``calibration.txt``.
 
     Parameters
@@ -163,6 +164,8 @@ def write_txt(df: pd.DataFrame, summaries: dict, overall: dict, per_point: dict,
         File to write.
     tol, alpha : float
         Tolerance (% of Nu-1) and plateau significance level.
+    skipped : list of str, optional
+        Points left out for having fewer than two converged runs.
     """
     L = [f"Resolution calibration: tol {tol:g}% of Nu-1, plateau alpha {alpha:g}", "",
          "Parameter points (log Ra, log Pr):"]
@@ -172,6 +175,8 @@ def write_txt(df: pd.DataFrame, summaries: dict, overall: dict, per_point: dict,
                 if s["plateau_start"] else f"NO PLATEAU (two finest disagree, p = {s['p']:.2g})")
         L.append(f"  {key:<14} {len(g)} runs, {plat}, Nu = {s['Nu_ref']:.5f} ± {s['Nu_ref_se']:.2g}; "
                  + ", ".join(f"{r.label} {r.status}" for r in g.itertuples()))
+    if skipped:
+        L.append("  skipped (fewer than two converged runs): " + ", ".join(skipped))
     L += ["", "Thresholds, best measure first ('>' larger is better, '<' smaller is). Beyond t_strict every run",
           "was shown good; beyond t_safe none was or looked bad; beyond t_bad none was shown bad.",
           "ok_below: good or likely good runs that t_safe would still reject.", ""]
@@ -273,10 +278,11 @@ def run(roots, out: Path | None = None, tol: float = cv.TOL, alpha: float = cv.A
     dict or None
         The contents of ``calibration.json``; None if no point has two runs.
     """
-    rows, summaries = [], {}
+    rows, summaries, skipped = [], {}, []
     for pdir in param_dirs(roots):
         r = cv.run(pdir, tol, alpha, include_variants, plots)
         if r is None:
+            skipped.append("/".join(pdir.parts[-2:]))
             continue
         df, s = r
         key = f"({df['log_ra'].iloc[0]:g}, {df['log_pr'].iloc[0]:g})"
@@ -289,13 +295,13 @@ def run(roots, out: Path | None = None, tol: float = cv.TOL, alpha: float = cv.A
     out = Path(out) if out else Path(roots[0]).resolve() / "outputs" / "testing"
     out.mkdir(parents=True, exist_ok=True)
     df.to_csv(out / "calibration.csv", index=False)
-    write_txt(df, summaries, overall, per_point, out / "calibration.txt", tol, alpha)
+    write_txt(df, summaries, overall, per_point, out / "calibration.txt", tol, alpha, skipped)
     if plots:
         plot(df, overall, out / "calibration.pdf", tol)
     rec = dict(tol=tol, alpha=alpha, overall=overall, per_point=per_point,
                log_ra_range=[float(df["log_ra"].min()), float(df["log_ra"].max())],
                log_pr_range=[float(df["log_pr"].min()), float(df["log_pr"].max())],
-               points=list(summaries))
+               points=list(summaries), skipped=skipped)
     (out / "calibration.json").write_text(json.dumps(rec, indent=1))
     return rec
 
